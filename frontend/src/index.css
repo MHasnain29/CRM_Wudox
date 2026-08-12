@@ -1,0 +1,309 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Pages scroll inside <main> (below TopBar), so sticky bars pin to the main scrollport. */
+    --app-header-height: 0px;
+
+    --background: 220 17% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 91% 95%;
+    --sidebar-accent-foreground: 217 91% 60%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* KPI card colors */
+    --kpi-blue-bg: 217 92% 96%;
+    --kpi-blue-icon: 217 91% 60%;
+    --kpi-yellow-bg: 48 100% 96%;
+    --kpi-yellow-icon: 38 92% 50%;
+    --kpi-green-bg: 142 76% 96%;
+    --kpi-green-icon: 142 71% 45%;
+    --kpi-purple-bg: 262 83% 96%;
+    --kpi-purple-icon: 262 52% 47%;
+
+    /* Stage colors for pipeline */
+    --stage-new: 199 89% 48%;
+    --stage-contacted: 262 52% 47%;
+    --stage-followup: 38 92% 50%;
+    --stage-meeting: 217 91% 60%;
+    --stage-proposal: 280 67% 60%;
+    --stage-won: 142 71% 45%;
+    --stage-lost: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 217 33% 17%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 47% 11%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 217 91% 60%;
+
+    --kpi-blue-bg: 217 91% 20%;
+    --kpi-blue-icon: 217 91% 60%;
+    --kpi-yellow-bg: 38 92% 20%;
+    --kpi-yellow-icon: 38 92% 50%;
+    --kpi-green-bg: 142 71% 20%;
+    --kpi-green-icon: 142 71% 45%;
+    --kpi-purple-bg: 262 52% 20%;
+    --kpi-purple-icon: 262 52% 47%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/*
+ * Solid accent is brand blue (--accent) with white (--accent-foreground).
+ * Nested text-muted-foreground / slate / gray utilities keep their own dark color
+ * and become unreadable on blue hover/selection. Force those descendants light.
+ * Only solid accent (not accent/50 etc. — those stay pale and work with dark text).
+ */
+.hover\:bg-accent:hover,
+.focus\:bg-accent:focus,
+.focus\:bg-accent:focus-visible,
+.bg-accent,
+[data-selected="true"],
+[data-highlighted]:not([data-highlighted="false"]) {
+  color: hsl(var(--accent-foreground));
+}
+
+.hover\:bg-accent:hover :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+),
+.focus\:bg-accent:focus :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+),
+.focus\:bg-accent:focus-visible :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+),
+.bg-accent :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+),
+[data-selected="true"] :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+),
+[data-highlighted]:not([data-highlighted="false"]) :is(
+  .text-muted-foreground,
+  .text-foreground,
+  .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .text-slate-800,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700,
+  .text-zinc-400, .text-zinc-500, .text-zinc-600,
+  .text-indigo-400, .text-indigo-500, .text-indigo-600
+) {
+  color: hsl(var(--accent-foreground) / 0.9);
+}
+
+/* Same-element muted/gray text on solid accent hover (e.g. "Select all" chips) */
+.hover\:bg-accent:hover:is(
+  .text-muted-foreground,
+  .text-slate-400, .text-slate-500, .text-slate-600,
+  .text-gray-400, .text-gray-500, .text-gray-600
+),
+.focus\:bg-accent:focus:is(.text-muted-foreground),
+.focus\:bg-accent:focus-visible:is(.text-muted-foreground) {
+  color: hsl(var(--accent-foreground));
+}
+
+/* Collapsible scope filter — fade/slide only; height snaps (no grid-row tween).
+   Animating sticky height caused scrollTop to bounce across thresholds → flicker. */
+@layer utilities {
+  .filter-morph {
+    transition-property: opacity, transform, filter;
+    transition-duration: 420ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+  }
+
+  .filter-morph-out {
+    transition-delay: 0ms;
+    transition-duration: 320ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .filter-morph-in {
+    transition-delay: 60ms;
+    transition-duration: 420ms;
+  }
+
+  .filter-expand-panel {
+    transition-property: opacity, transform, filter, box-shadow;
+    transition-duration: 620ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+  }
+
+  .filter-expand-panel-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+    box-shadow:
+      0 1px 0 rgb(15 23 42 / 0.04),
+      0 12px 32px -10px rgb(15 23 42 / 0.18);
+    pointer-events: auto;
+  }
+
+  .filter-expand-panel-closed {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.96);
+    filter: blur(5px);
+    box-shadow: 0 0 0 0 transparent;
+    pointer-events: none;
+  }
+
+  /* Stagger chip rows on open for a richer dissolve */
+  .filter-expand-panel-open > * {
+    animation: filter-expand-row-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .filter-expand-panel-open > *:nth-child(1) { animation-delay: 40ms; }
+  .filter-expand-panel-open > *:nth-child(2) { animation-delay: 90ms; }
+  .filter-expand-panel-open > *:nth-child(3) { animation-delay: 140ms; }
+  .filter-expand-panel-open > *:nth-child(4) { animation-delay: 190ms; }
+  .filter-expand-panel-open > *:nth-child(5) { animation-delay: 240ms; }
+  .filter-expand-panel-open > *:nth-child(n + 6) { animation-delay: 280ms; }
+
+  @keyframes filter-expand-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .filter-morph,
+    .filter-morph-out,
+    .filter-morph-in,
+    .filter-expand-panel {
+      transition: none !important;
+      filter: none !important;
+    }
+
+    .filter-expand-panel-open > * {
+      animation: none !important;
+    }
+  }
+}
+

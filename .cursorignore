@@ -1,0 +1,30 @@
+﻿# Heavy / generated — keep out of Cursor context to save tokens
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/coverage/
+**/.cache/
+**/prisma/generated/
+**/*.min.js
+**/*.map
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+
+# Large binary / media
+**/*.pdf
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+**/*.mp4
+**/*.zip
+**/*.csv
+**/*.xlsx
+
+# Local env (secrets + noise)
+**/.env
+**/.env.*
+!**/.env.example

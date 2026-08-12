@@ -1,0 +1,3145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SubCompany {
+  id                            String                         @id @default(uuid())
+  name                          String
+  /// Optional company display name for public sign-in and director/super-admin app chrome; when unset, `name` is used there.
+  appProjectName                String?                        @map("app_project_name")
+  /// Company / parent brand image: public sign-in + in-app chrome for super_admin and director only.
+  logoUrl                       String?                        @map("logo_url")
+  /// Agency mark: sidebar for all roles at this agency; outbound emails use with organization `name`.
+  agencyLogoUrl                 String?                        @map("agency_logo_url")
+  /// Optional agency contact email (public-facing / directory).
+  agencyEmail                   String?                        @map("agency_email")
+  /// Optional agency phone number.
+  agencyPhone                   String?                        @map("agency_phone")
+  emailFooterText               String?                        @map("email_footer_text")
+  emailSignatureTemplate        String?                        @map("email_signature_template")  @db.Text
+  /// Visual builder config (JSON SignatureConfig v2). When set, template HTML is machine-generated from this.
+  emailSignatureConfig          Json?                          @map("email_signature_config")
+  emailTagline                  String?                        @map("email_tagline")
+  /// SendGrid-authenticated From address for outbound emails. Null → falls back to env EMAIL_FROM.
+  emailFromAddress              String?                        @map("email_from_address")
+  /// Display name in the From field. Null → falls back to env EMAIL_FROM_NAME.
+  emailFromName                 String?                        @map("email_from_name")
+  /// Domain whose users may send as themselves (e.g. hrglobal.ca). Null → send-as disabled for this agency.
+  emailSendAsDomain             String?                        @map("email_send_as_domain")
+  /// Phase 2: per-agency inbound parse subdomain for reply routing. Null → falls back to env EMAIL_INBOUND_DOMAIN.
+  emailInboundDomain            String?                        @map("email_inbound_domain")
+  /// Phase 2: local-part for the inbound reply-to address. Null → falls back to env EMAIL_INBOUND_LOCALPART.
+  emailInboundLocalpart         String?                        @map("email_inbound_localpart")
+  mainOrgId                     String
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+  activityLogs                  ActivityLog[]
+  allowedIndustries             AllowedIndustry[]
+  allowedJobTitles              AllowedJobTitle[]
+  allowedTags                   AllowedTag[]
+  bugReports                    BugReport[]
+  callScripts                   CallScript[]
+  calls                         Call[]
+  clientNotes                   ClientNote[]
+  clientNoteFieldDefs           ClientNoteFieldDef[]
+  clientNoteFieldValues         ClientNoteFieldValue[]
+  remarks                       Remark[]
+  clientSubCompanies            ClientSubCompany[]
+  clientTags                    ClientTag[]
+  clientVisibilitySetting       ClientVisibilitySetting?
+  dailyReportSetting            DailyReportSetting?
+  idleTimeSetting               IdleTimeSetting?
+  conversations                 Conversation[]
+  emailCampaigns                EmailCampaign[]
+  mailingLists                  MailingList[]
+  emailTemplates                EmailTemplate[]
+  emails                        Email[]
+  followUps                     FollowUp[]
+  industryRequests              IndustryRequest[]
+  jobTitleRequests              JobTitleRequest[]
+  leadRequests                  LeadRequest[]
+  leads                         Lead[]
+  meetings                      Meeting[]
+  operationsManagerAssignments  OperationsManagerSubCompany[]
+  pipelineStages                PipelineStage[]
+  tagRequests                   TagRequest[]
+  tasks                         Task[]
+  users                         User[]
+  googleRefreshToken            String?                        @map("google_refresh_token")
+  googleCalendarConnected       Boolean                        @default(false) @map("google_calendar_connected")
+  googleConnectedEmail          String?                        @map("google_connected_email")
+  proposalDefaultFiles          ProposalDefaultFile[]
+  proposalDefaultSetting        ProposalDefaultSetting?
+  proposalAwaitingClientSetting ProposalAwaitingClientSetting?
+  leadDeadlineSetting           LeadDeadlineSetting?
+  proposalTypeTemplateMapping   ProposalTypeTemplateMapping?
+  emailSendWindowSettings       EmailSendWindowSetting[]
+  outboundEmailQueues           OutboundEmailQueue[]
+  performanceTargets            PerformanceTarget[]
+  reviewTemplates               ReviewTemplate[]
+  reviewTemplateMapping         ReviewTemplateMapping?
+  pendingImportedClients        PendingImportedClient[]
+  pendingImportedContacts       PendingImportedContact[]
+  pendingClientSubmissions      PendingClientSubmission[]
+  pendingClientEdits            PendingClientEdit[]
+  importMappingTemplates        ImportMappingTemplate[]
+  leadReassignmentRequests      LeadReassignmentRequest[]
+  documents                     Document[]
+  agencyApprovalPolicy          AgencyApprovalPolicy?
+  agencyNotificationRules       AgencyNotificationRule[]
+  orgDatabaseImportPolicies     OrgApprovalPolicy[]      @relation("OrgDatabaseImportAgency")
+  offboardingLogs               OffboardingLog[]
+  phoneAgencyConfig             PhoneAgencyConfig?
+  phoneNumbers                  PhoneNumber[]
+  inboundCalls                  InboundCall[]
+  signingAuthorities            SigningAuthority[]
+  activeClients                 ActiveClient[]
+  jobs                          Job[]
+
+  @@index([mainOrgId])
+  @@map("sub_companies")
+}
+
+/// Recruitment-side client (separate from Marketing Client DB).
+model ActiveClient {
+  id              String            @id @default(uuid())
+  name            String
+  industry        String
+  location        String
+  contactName     String            @map("contact_name")
+  contactEmail    String            @map("contact_email")
+  contactPhone    String            @map("contact_phone")
+  status          ActiveClientStatus @default(active)
+  notes           String?
+  /// When true, employees linked to this client's jobs require client training paperwork.
+  clientTraining  Boolean           @default(false) @map("client_training")
+  trainingFileKey String?           @map("training_file_key")
+  trainingFileName String?          @map("training_file_name")
+  trainingMimeType String?          @map("training_mime_type")
+  trainingFileSize BigInt?          @map("training_file_size")
+  /// PandaDoc template for client training (preferred over uploaded PDF when set).
+  trainingPandaDocTemplateId   String? @map("training_pandadoc_template_id")
+  trainingPandaDocTemplateName String? @map("training_pandadoc_template_name")
+  subCompanyId    String            @map("sub_company_id")
+  createdById     String            @map("created_by_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  subCompany      SubCompany        @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy       User              @relation("ActiveClientCreatedBy", fields: [createdById], references: [id])
+  jobs            Job[]
+  employeeAssignments EmployeeAssignment[]
+  clientTrainingAssignments ActiveClientTrainingAssignment[]
+
+  @@index([subCompanyId])
+  @@index([subCompanyId, status])
+  @@index([name])
+  @@map("active_clients")
+}
+
+/// Per job-assignment snapshot of Active Client training (separate from Ontario/WHMIS EmployeeTraining).
+model ActiveClientTrainingAssignment {
+  id                 String                       @id @default(uuid())
+  employeeId         String                       @map("employee_id")
+  activeClientId     String                       @map("active_client_id")
+  assignmentId       String                       @unique @map("assignment_id")
+  status             ActiveClientTrainingStatus   @default(pending)
+  /// Snapshot of the client template at link/send time (kept when Active Client template is replaced).
+  templateFileKey    String                       @map("template_file_key")
+  templateFileName   String                       @map("template_file_name")
+  templateMimeType   String?                      @map("template_mime_type")
+  templateFileSize   BigInt?                      @map("template_file_size")
+  sentAt             DateTime?                    @map("sent_at")
+  sentByUserId       String?                      @map("sent_by_user_id")
+  signedFileKey      String?                      @map("signed_file_key")
+  signedFileName     String?                      @map("signed_file_name")
+  signedMimeType     String?                      @map("signed_mime_type")
+  signedFileSize     BigInt?                      @map("signed_file_size")
+  completedAt        DateTime?                    @map("completed_at")
+  completedByUserId  String?                      @map("completed_by_user_id")
+  pandaDocId         String?                      @map("pandadoc_id")
+  pandaDocStatus     String?                      @map("pandadoc_status")
+  pandaDocUpdatedAt  DateTime?                    @map("pandadoc_updated_at")
+  createdAt          DateTime                     @default(now()) @map("created_at")
+  updatedAt          DateTime                     @updatedAt @map("updated_at")
+  employee           Employee                     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  activeClient       ActiveClient                 @relation(fields: [activeClientId], references: [id], onDelete: Cascade)
+  assignment         EmployeeAssignment           @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  sentBy             User?                        @relation("ActiveClientTrainingSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  completedBy        User?                        @relation("ActiveClientTrainingCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([activeClientId])
+  @@index([status])
+  @@index([pandaDocId])
+  @@map("active_client_training_assignments")
+}
+
+/// Per-agency view of a client: status/tab (Active, Ex, Contacted, etc.) and last activity at agency level.
+/// All agencies share the same client record; each agency has its own status and activity.
+model ClientSubCompany {
+  id           String       @id @default(uuid())
+  clientId     String       @map("client_id")
+  subCompanyId String       @map("sub_company_id")
+  status       ClientStatus
+  lastActivity DateTime?    @map("last_activity")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subCompany   SubCompany   @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, subCompanyId])
+  @@index([subCompanyId])
+  @@index([subCompanyId, status])
+  @@map("client_sub_companies")
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  country   Country
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+
+  @@map("locations")
+}
+
+model User {
+  id                                      String                        @id @default(uuid())
+  email                                   String                        @unique
+  passwordHash                            String                        @map("password_hash")
+  firstName                               String                        @map("first_name")
+  lastName                                String                        @map("last_name")
+  phone                                   String?
+  country                                 Country
+  role                                    String                        @db.VarChar(64)
+  roleId                                  String?                       @map("role_id")
+  userType                                String                        @map("user_type")
+  subCompanyId                            String?                       @map("sub_company_id")
+  locationId                              String?                       @map("location_id")
+  accessibleLocationIds                   String[]                      @map("accessible_location_ids")
+  reportingManagerIds                     String[]                      @map("reporting_manager_ids")
+  avatarUrl                               String?                       @map("avatar_url")
+  dailyCallsTarget                        Int                           @default(0) @map("daily_calls_target")
+  dailyEmailsTarget                       Int                           @default(0) @map("daily_emails_target")
+  dailyMeetingScheduleTarget              Int                           @default(0) @map("daily_meeting_schedule_target")
+  workStartTime                           String                        @default("09:00") @map("work_start_time")
+  workEndTime                             String                        @default("17:00") @map("work_end_time")
+  startDate                               DateTime?                     @map("start_date")
+  probationOverride                       Boolean                       @default(false) @map("probation_override")
+  sendAsEmail                             String?                       @map("send_as_email")
+  sendAsDisabled                          Boolean                       @default(false) @map("send_as_disabled")
+  isActive                                Boolean                       @default(true) @map("is_active")
+  offboardingStartedAt                    DateTime?                     @map("offboarding_started_at")
+  /// Set during offboarding commit — new inbound emails for this user are routed here instead.
+  emailForwardingToUserId                 String?                       @map("email_forwarding_to_user_id")
+  /// Super Admin can grant this to let any user run the offboarding wizard.
+  canActAsAdmin                           Boolean                       @default(false) @map("can_act_as_admin")
+  lastLoginAt                             DateTime?                     @map("last_login_at")
+  createdAt                               DateTime                      @default(now()) @map("created_at")
+  updatedAt                               DateTime                      @updatedAt @map("updated_at")
+  activityLogs                            ActivityLog[]
+  bugReportsResolved                      BugReport[]                   @relation("BugReportResolvedBy")
+  bugReportsSubmitted                     BugReport[]                   @relation("BugReportSubmittedBy")
+  calls                                   Call[]
+  answeredInboundCalls                    InboundCall[]                 @relation("InboundCallAnsweredBy")
+  inboundCallParticipants                 InboundCallParticipant[]
+  clientNotes                             ClientNote[]
+  clientNoteFieldDefsCreated              ClientNoteFieldDef[]          @relation("ClientNoteFieldDefCreatedBy")
+  clientNoteFieldValuesUpdated            ClientNoteFieldValue[]        @relation("ClientNoteFieldValueUpdatedBy")
+  remarks                                 Remark[]
+  clientRestrictions                      ClientRestriction[]
+  conversationParticipants                ConversationParticipant[]
+  sentEmails                              Email[]                       @relation("EmailFromUser")
+  sentOnBehalfEmails                      Email[]                       @relation("EmailSentByUser")
+  receivedEmails                          Email[]                       @relation("EmailToUser")
+  forwardedToEmails                       Email[]                       @relation("EmailForwardedTo")
+  forwardedFromEmails                     Email[]                       @relation("EmailForwardedFrom")
+  forwardedFromClients                    Client[]                      @relation("ClientForwardedFrom")
+  forwardedFromLeads                      Lead[]                        @relation("LeadForwardedFrom")
+  forwardedFromMeetings                   Meeting[]                     @relation("MeetingForwardedFrom")
+  forwardedFromTasks                      Task[]                        @relation("TaskForwardedFrom")
+  forwardedFromFollowUps                  FollowUp[]                    @relation("FollowUpForwardedFrom")
+  emailSignatures                         EmailSignature[]
+  ownedEmailTemplates                     EmailTemplate[]                @relation("EmailTemplateOwner")
+  uploadedDocuments                       EmployeeDocument[]
+  addedEmployees                          Employee[]                    @relation("EmployeeAddedBy")
+  approvedEmployees                       Employee[]                    @relation("EmployeeApprovedBy")
+  rejectedEmployees                       Employee[]                    @relation("EmployeeRejectedBy")
+  employeesOnboardingSent                 Employee[]                    @relation("EmployeeOnboardingSentBy")
+  employeeAssignmentsSubmitted            EmployeeAssignment[]          @relation("EmployeeAssignmentSubmittedBy")
+  employeeAssignmentsApproved             EmployeeAssignment[]          @relation("EmployeeAssignmentApprovedBy")
+  employeeAssignmentsRejected             EmployeeAssignment[]          @relation("EmployeeAssignmentRejectedBy")
+  employeeTrainingsSent                   EmployeeTraining[]            @relation("EmployeeTrainingSentBy")
+  filterViews                             FilterView[]
+  followUps                               FollowUp[]
+  industryRequestsDecided                 IndustryRequest[]             @relation("IndustryDecidedBy")
+  industryRequestsRequested               IndustryRequest[]             @relation("IndustryRequestedBy")
+  jobTitleRequestsDecided                 JobTitleRequest[]             @relation("JobTitleDecidedBy")
+  jobTitleRequestsRequested               JobTitleRequest[]             @relation("JobTitleRequestedBy")
+  createdJobs                             Job[]
+  createdActiveClients                    ActiveClient[]                @relation("ActiveClientCreatedBy")
+  activeClientTrainingsSent               ActiveClientTrainingAssignment[] @relation("ActiveClientTrainingSentBy")
+  activeClientTrainingsCompleted          ActiveClientTrainingAssignment[] @relation("ActiveClientTrainingCompletedBy")
+  managedLeadRequests                     LeadRequest[]                 @relation("LeadRequestManager")
+  leadRequests                            LeadRequest[]                 @relation("LeadRequestRequester")
+  reviewedLeadRequests                    LeadRequest[]                 @relation("LeadRequestReviewer")
+  requestedLeadExtensions                 LeadExtensionRequest[]        @relation("LeadExtensionRequester")
+  reviewedLeadExtensions                  LeadExtensionRequest[]        @relation("LeadExtensionReviewer")
+  leadReassignmentRequestsMade            LeadReassignmentRequest[]     @relation("ReassignmentRequester")
+  leadReassignmentRequestsAsOldOwner      LeadReassignmentRequest[]     @relation("ReassignmentCurrentOwner")
+  leadReassignmentRequestsAsNewOwner      LeadReassignmentRequest[]     @relation("ReassignmentProposedOwner")
+  leadReassignmentRequestsReviewed        LeadReassignmentRequest[]     @relation("ReassignmentReviewer")
+  closedLeads                             Lead[]                        @relation("LeadClosedBy")
+  ownedLeads                              Lead[]                        @relation("LeadOwner")
+  reassignedLeads                         Lead[]                        @relation("LeadReassignedBy")
+  meetings                                Meeting[]
+  sentMessages                            Message[]
+  notifications                           Notification[]
+  managedSubCompanies                     OperationsManagerSubCompany[]
+  reviewedProposals                       Proposal[]                    @relation("ProposalReviewer")
+  reviewedProposalExtensions              ProposalExtensionRequest[]    @relation("ProposalExtensionReviewedBy")
+  requestedProposalExtensions             ProposalExtensionRequest[]    @relation("ProposalExtensionRequester")
+  activatedProposals                      Proposal[]                    @relation("ProposalActivator")
+  reviewRequestedProposals                Proposal[]                    @relation("ProposalReviewRequester")
+  reviewRejectedProposals                 Proposal[]                    @relation("ProposalReviewRejector")
+  createdProposals                        Proposal[]                    @relation("ProposalCreatedBy")
+  createdCampaigns                        EmailCampaign[]               @relation("CampaignCreatedBy")
+  uploadedReviewTemplates                 ReviewTemplate[]              @relation("ReviewTemplateUploader")
+  uploadedProposalDocuments               ProposalDocument[]            @relation("ProposalDocumentUploader")
+  tagRequestsDecided                      TagRequest[]                  @relation("TagDecidedBy")
+  tagRequestsRequested                    TagRequest[]                  @relation("TagRequestedBy")
+  assignedByTasks                         Task[]                        @relation("TaskAssignedBy")
+  assignedTasks                           Task[]                        @relation("TaskOwner")
+  userAvailability                        UserAvailability?
+  activitySessions                        UserActivitySession[]
+  performanceTargetsCreated               PerformanceTarget[]           @relation("PerformanceTargetCreatedBy")
+  location                                Location?                     @relation(fields: [locationId], references: [id])
+  subCompany                              SubCompany?                   @relation(fields: [subCompanyId], references: [id])
+  clientsCreated                          Client[]                      @relation("ClientCreatedBy")
+  pendingImportedClients                  PendingImportedClient[]
+  pendingImportedContacts                 PendingImportedContact[]
+  pendingClientSubmissions                PendingClientSubmission[]     @relation("PendingClientSubmittedBy")
+  pendingClientSubmissionsManagerApproved PendingClientSubmission[]     @relation("PendingClientManagerApprovedBy")
+  pendingClientEdits                      PendingClientEdit[]           @relation("PendingClientEditSubmittedBy")
+  pendingClientEditsManagerApproved       PendingClientEdit[]           @relation("PendingClientEditManagerApprovedBy")
+  importMappingTemplates                  ImportMappingTemplate[]
+  createdMailingLists                     MailingList[]                 @relation("MailingListCreatedBy")
+  mailingListAssignments                  MailingListAssignment[]       @relation("MailingListAssignee")
+  mailingListAssignmentsMade              MailingListAssignment[]       @relation("MailingListAssignedByRel")
+  rbacRole                                RbacRole?                     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  offboardingLogsDeparting                OffboardingLog[]              @relation("OffboardingDeparting")
+  offboardingLogsAdmin                    OffboardingLog[]              @relation("OffboardingAdmin")
+  emailForwardingToUser                   User?                         @relation("EmailForwardingTo", fields: [emailForwardingToUserId], references: [id], onDelete: SetNull)
+  emailForwardingUsers                    User[]                        @relation("EmailForwardingTo")
+  agencyLinks                             UserAgencyLink[]
+
+  @@index([email])
+  @@index([subCompanyId])
+  @@index([role])
+  @@index([roleId])
+  @@index([locationId])
+  @@index([isActive])
+  @@index([offboardingStartedAt])
+  @@index([emailForwardingToUserId])
+  @@map("users")
+}
+
+/// Manual “Add Client” submissions awaiting director approval (per agency or global database).
+model PendingClientSubmission {
+  id                  String                      @id @default(uuid())
+  subCompanyId        String?                     @map("sub_company_id")
+  submissionSource    PendingClientSubmissionSource @default(agency) @map("submission_source")
+  submittedById       String     @map("submitted_by_id")
+  name                String
+  industry            String?
+  location            String?
+  address             String?
+  companySize         String?    @map("company_size")
+  tags                String[]   @default([])
+  contacts            Json       @default("[]")
+  locationAddress     Json?      @map("location_address")
+  submitterRole       String?    @map("submitter_role")
+  submittedAt         DateTime   @default(now()) @map("submitted_at")
+  currentStepIndex    Int        @default(0) @map("current_step_index")
+  approvalChain       Json       @default("[]") @map("approval_chain")
+  /// Sales / recruitment / ops manager pre-approval — does not create a client until a director approves.
+  managerApprovedAt   DateTime?  @map("manager_approved_at")
+  managerApprovedById String?    @map("manager_approved_by_id")
+  subCompany          SubCompany? @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  submittedBy         User       @relation("PendingClientSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  managerApprovedBy   User?      @relation("PendingClientManagerApprovedBy", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+
+  @@index([subCompanyId])
+  @@index([submissionSource])
+  @@index([submittedAt])
+  @@index([managerApprovedById])
+  @@map("pending_client_submissions")
+}
+
+/// Manual client detail edits awaiting director approval (per agency).
+model PendingClientEdit {
+  id                  String     @id @default(uuid())
+  subCompanyId        String     @map("sub_company_id")
+  clientId            String     @map("client_id")
+  submittedById       String     @map("submitted_by_id")
+  name                String
+  industry            String?
+  location            String?
+  address             String?
+  companySize         String?    @map("company_size")
+  tags                String[]   @default([])
+  contacts            Json       @default("[]")
+  locationAddress     Json?      @map("location_address")
+  submitterRole       String?    @map("submitter_role")
+  submittedAt         DateTime   @default(now()) @map("submitted_at")
+  currentStepIndex    Int        @default(0) @map("current_step_index")
+  approvalChain       Json       @default("[]") @map("approval_chain")
+  managerApprovedAt   DateTime?  @map("manager_approved_at")
+  managerApprovedById String?    @map("manager_approved_by_id")
+  subCompany          SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  client              Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  submittedBy         User       @relation("PendingClientEditSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  managerApprovedBy   User?      @relation("PendingClientEditManagerApprovedBy", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientId, subCompanyId])
+  @@index([subCompanyId])
+  @@index([submittedAt])
+  @@index([managerApprovedById])
+  @@map("pending_client_edits")
+}
+
+model PendingImportedClient {
+  id           String                      @id @default(uuid())
+  subCompanyId String?                     @map("sub_company_id")
+  submissionSource PendingClientSubmissionSource @default(agency) @map("submission_source")
+  importedById String     @map("imported_by_id")
+  name         String
+  industry     String?
+  location     String?
+  address      String?
+  companySize  String?    @map("company_size")
+  website      String?
+  employees    String?
+  /// Raw "ID" column from the source file (e.g. "NA1") — used as the in-file grouping key.
+  sourceId     String?    @map("source_id")
+  tags         String[]
+  /// Multi-contact list: [{ name, title?, email?, phone?, extension?, linkedin? }]
+  contacts     Json       @default("[]")
+  importedAt   DateTime   @default(now()) @map("imported_at")
+  currentStepIndex Int    @default(0) @map("current_step_index")
+  approvalChain    Json   @default("[]") @map("approval_chain")
+  subCompany   SubCompany? @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  importedBy   User       @relation(fields: [importedById], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([submissionSource])
+  @@map("pending_imported_clients")
+}
+
+/// Staged contact-only CSV/Excel import: contacts append to an existing client on approve.
+model PendingImportedContact {
+  id               String                        @id @default(uuid())
+  subCompanyId     String?                       @map("sub_company_id")
+  submissionSource PendingClientSubmissionSource @default(agency) @map("submission_source")
+  importedById     String                        @map("imported_by_id")
+  targetClientId   String                        @map("target_client_id")
+  /// How the client was matched: corporateCode | companyName | importSourceId
+  matchKey         String                        @map("match_key")
+  matchValue       String                        @map("match_value")
+  /// Multi-contact list: [{ name, title?, email?, phone?, extension?, linkedin?, isPrimary? }]
+  contacts         Json                          @default("[]")
+  importedAt       DateTime                      @default(now()) @map("imported_at")
+  currentStepIndex Int                           @default(0) @map("current_step_index")
+  approvalChain    Json                          @default("[]") @map("approval_chain")
+  subCompany       SubCompany?                   @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  importedBy       User                          @relation(fields: [importedById], references: [id], onDelete: Cascade)
+  targetClient     Client                        @relation(fields: [targetClientId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([submissionSource])
+  @@index([targetClientId])
+  @@index([importedAt])
+  @@map("pending_imported_contacts")
+}
+
+/// Saved column → CRM-field mapping per agency, keyed by a fingerprint of the source file's
+/// headers. When the same vendor's file is re-uploaded, the wizard pre-fills the mapping.
+model ImportMappingTemplate {
+  id                String     @id @default(uuid())
+  subCompanyId      String     @map("sub_company_id")
+  /// client = company+contacts import; contact = contacts-only import
+  entityType        String     @default("client") @map("entity_type")
+  name              String?
+  headerFingerprint String     @map("header_fingerprint")
+  /// { "<source column>": "<crmField | _ignore>" }
+  mapping           Json
+  createdById       String     @map("created_by_id")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  subCompany        SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy         User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, entityType, headerFingerprint])
+  @@index([subCompanyId])
+  @@map("import_mapping_templates")
+}
+
+/// Which agencies (sub-companies) an operations manager is assigned to. Only for role operations_manager.
+model OperationsManagerSubCompany {
+  userId       String     @map("user_id")
+  subCompanyId String     @map("sub_company_id")
+  agencyEmail  String?    @map("agency_email")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, subCompanyId])
+  @@index([subCompanyId])
+  @@index([agencyEmail])
+  @@map("operations_manager_sub_companies")
+}
+
+/// IP restriction by role (and optional country): users matching role/country can only login from allowed IPs.
+model IpRestrictionRule {
+  id         String   @id @default(uuid())
+  role       String   @db.VarChar(64)
+  country    Country?
+  allowedIps String   @map("allowed_ips")
+  name       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([role, country])
+  @@index([role])
+  @@index([country])
+  @@map("ip_restriction_rules")
+}
+
+model Client {
+  id                   String                 @id @default(uuid())
+  /// Stable per-client serial used for cross-associate verbal references (e.g. "client #312").
+  /// Permanent and unique; assigned at insert and never changes.
+  serialNumber         Int                    @unique @default(autoincrement()) @map("serial_number")
+  name                 String
+  industry             String?
+  location             String?
+  address              String?
+  companySize          String?                @map("company_size")
+  status               ClientStatus
+  lastActivity         DateTime?              @map("last_activity")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  /// Business identity (e.g. NESTLE, COCA-COLA). Not a DB FK; use for display/linking. DB row id stays the FK.
+  corporateCode        String                 @unique @map("corporate_code")
+  visibility           ClientVisibility       @default(global)
+  /// UserRole value of the creator at the time of client creation (not the user's current role)
+  createdByRole        String?                @map("created_by_role")
+  /// User who created or submitted the client (e.g. database manager after approval)
+  createdById          String?                @map("created_by_id")
+  createdBy            User?                  @relation("ClientCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Set when an agency-scoped client is auto-promoted to global visibility
+  visibilityPromotedAt DateTime?              @map("visibility_promoted_at")
+  /// Self-FK for parent ↔ branch relationship (e.g. Nestlé Global ← Nestlé Canada).
+  parentClientId       String?                @map("parent_client_id")
+  parent               Client?                @relation("ClientBranches", fields: [parentClientId], references: [id], onDelete: SetNull)
+  branches             Client[]               @relation("ClientBranches")
+  /// Raw "ID" column from the source file at import time (e.g. "NA1"). Lets us trace
+  /// any client back to the batch/vendor reference it came from. Null for manually-added clients.
+  importSourceId       String?                @map("import_source_id")
+  /// 'management' | 'associate' — who owns this client record. Set by super users only.
+  ownershipType        String?                @map("ownership_type")
+  /// userId of the associate owner when ownershipType = 'associate'.
+  ownershipUserId      String?                @map("ownership_user_id")
+  /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
+  forwardedFromUserId  String?                @map("forwarded_from_user_id")
+  forwardedFromUser    User?                  @relation("ClientForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+  calls                Call[]
+  contacts             ClientContact[]
+  locations            ClientLocation[]
+  notes                ClientNote[]
+  noteFieldValues      ClientNoteFieldValue[]
+  remarks              Remark[]
+  restrictions         ClientRestriction[]
+  clientSubCompanies   ClientSubCompany[]
+  tags                 ClientTag[]
+  documents            Document[]
+  emailRecipients      EmailRecipient[]
+  emails               Email[]
+  followUps            FollowUp[]
+  leadRequests         LeadRequest[]
+  leads                Lead[]
+  meetings             Meeting[]
+  mailingListMembers   MailingListClient[]
+  pendingEdits            PendingClientEdit[]
+  pendingImportedContacts PendingImportedContact[]
+  employeeAssignments     EmployeeAssignment[]
+
+  @@index([status])
+  @@index([industry])
+  @@index([location])
+  @@index([corporateCode])
+  @@index([lastActivity])
+  @@index([updatedAt])
+  @@index([visibility])
+  @@index([createdAt])
+  @@index([name])
+  @@index([parentClientId])
+  @@index([importSourceId])
+  @@index([createdById])
+  @@map("clients")
+}
+
+model ClientVisibilitySetting {
+  id           String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  subCompanyId String     @unique @map("sub_company_id")
+  days         Int        @default(7)
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("client_visibility_settings")
+}
+
+model DailyReportSetting {
+  id           String     @id @default(uuid())
+  subCompanyId String     @unique @map("sub_company_id")
+  enabled      Boolean    @default(false)
+  sendHour     Int        @default(18) @map("send_hour")
+  sendMinute   Int        @default(0) @map("send_minute")
+  timezone     String     @default("America/Toronto")
+  shiftHours   Int        @default(8) @map("shift_hours")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("daily_report_settings")
+}
+
+model IdleTimeSetting {
+  id               String     @id @default(uuid())
+  subCompanyId     String     @unique @map("sub_company_id")
+  thresholdMinutes Int        @default(5) @map("threshold_minutes")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  subCompany       SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("idle_time_settings")
+}
+
+model ProposalDefaultSetting {
+  id           String     @id @default(uuid())
+  subCompanyId String     @unique @map("sub_company_id")
+  maxFiles     Int        @default(5) @map("max_files")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("proposal_default_settings")
+}
+
+model ProposalAwaitingClientSetting {
+  id           String     @id @default(uuid())
+  subCompanyId String     @unique @map("sub_company_id")
+  days         Int        @default(7)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("proposal_awaiting_client_settings")
+}
+
+model LeadDeadlineSetting {
+  id           String     @id @default(uuid())
+  subCompanyId String     @unique @map("sub_company_id")
+  days         Int        @default(7)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("lead_deadline_settings")
+}
+
+model ProposalDefaultFile {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  name         String
+  fileUrl      String     @map("file_url")
+  mimeType     String?    @map("mime_type")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@map("proposal_default_files")
+}
+
+model ProposalTypeTemplateMapping {
+  id                 String     @id @default(uuid())
+  subCompanyId       String     @unique @map("sub_company_id")
+  tempTemplateId     String?    @map("temp_template_id")
+  tempTemplateName   String?    @map("temp_template_name")
+  directTemplateId   String?    @map("direct_template_id")
+  directTemplateName String?    @map("direct_template_name")
+  bothTemplateId     String?    @map("both_template_id")
+  bothTemplateName   String?    @map("both_template_name")
+  /// PandaDoc template for employee onboarding agreements (recruitment).
+  employeeOnboardingTemplateId   String? @map("employee_onboarding_template_id")
+  employeeOnboardingTemplateName String? @map("employee_onboarding_template_name")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  subCompany         SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("proposal_type_template_mappings")
+}
+
+model EmailSendWindowSetting {
+  id                String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  subCompanyId      String     @unique @map("sub_company_id")
+  enabled           Boolean    @default(false)
+  startMinuteOfDay  Int?       @map("start_minute_of_day")
+  cutoffMinuteOfDay Int?       @map("cutoff_minute_of_day")
+  timezone          String     @default("America/Toronto")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  subCompany        SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([timezone])
+  @@map("email_send_window_settings")
+}
+
+/// Append-only log of performance targets set by super users for each user in an agency.
+/// Each save inserts a new row (effectiveFrom = today); historical reports resolve the
+/// target active on any given date via MAX(effective_from) WHERE effective_from <= report_date.
+/// userId = NULL means an agency-wide default that applies to users with no individual target.
+model PerformanceTarget {
+  id                         String     @id @default(uuid())
+  subCompanyId               String     @map("sub_company_id")
+  role                       String     @map("role")
+  emailsTarget               Int        @default(0) @map("emails_target")
+  callsTarget                Int        @default(0) @map("calls_target")
+  meetingScheduleCountTarget Int        @default(0) @map("meeting_schedule_count_target")
+  effectiveFrom              DateTime   @map("effective_from") @db.Date
+  createdAt                  DateTime   @default(now()) @map("created_at")
+  createdById                String     @map("created_by_id")
+  subCompany                 SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy                  User       @relation("PerformanceTargetCreatedBy", fields: [createdById], references: [id])
+
+  @@index([subCompanyId])
+  @@index([subCompanyId, role])
+  @@index([subCompanyId, role, effectiveFrom])
+  @@map("performance_targets")
+}
+
+model OutboundEmailQueue {
+  id              String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  dedupeKey       String?    @unique @map("dedupe_key")
+  subCompanyId    String     @map("sub_company_id")
+  kind            String
+  payload         Json
+  requestedSendAt DateTime?  @map("requested_send_at")
+  nextEligibleAt  DateTime   @map("next_eligible_at")
+  status          String     @default("queued")
+  attemptCount    Int        @default(0) @map("attempt_count")
+  lastError       String?    @map("last_error")
+  lastAttemptAt   DateTime?  @map("last_attempt_at")
+  sentAt          DateTime?  @map("sent_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  subCompany      SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextEligibleAt])
+  @@index([subCompanyId, status])
+  @@map("outbound_email_queue")
+}
+
+/// Multiple physical locations per client (e.g. Nestle Toronto HQ, Nestle Toronto Warehouse); same corporateCode.
+model ClientLocation {
+  id         String   @id @default(uuid())
+  clientId   String   @map("client_id")
+  name       String
+  address    String?
+  city       String?
+  region     String?
+  postalCode String?  @map("postal_code")
+  country    String?
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([clientId, isPrimary])
+  @@map("client_locations")
+}
+
+model ClientContact {
+  id                  String            @id @default(uuid())
+  clientId            String            @map("client_id")
+  name                String
+  title               String?
+  email               String?
+  phone               String?
+  phoneExtension      String?           @map("phone_extension")
+  linkedin            String?
+  website             String?
+  isPrimary           Boolean           @default(false) @map("is_primary")
+  isUnsubscribed      Boolean           @default(false) @map("is_unsubscribed")
+  emailBounced        Boolean           @default(false) @map("email_bounced")
+  emailInvalid        Boolean           @default(false) @map("email_invalid")
+  emailBouncedAt      DateTime?         @map("email_bounced_at")
+  emailBouncedReason  String?           @map("email_bounced_reason")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  client              Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  emailRecipients     EmailRecipient[]
+  followUps           FollowUp[]
+  meetingAttendees    MeetingAttendee[]
+  selectedByProposals Proposal[]        @relation("ProposalSelectedContact")
+
+  @@index([clientId])
+  @@index([email])
+  @@index([clientId, isPrimary])
+  @@map("client_contacts")
+}
+
+model ClientTag {
+  clientId     String     @map("client_id")
+  tag          String
+  subCompanyId String     @map("sub_company_id")
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, subCompanyId, tag])
+  @@index([subCompanyId])
+  @@index([tag])
+  @@map("client_tags")
+}
+
+/// Allowed industries per agency (for dropdown in Add Client). Managed in Settings.
+model AllowedIndustry {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  name         String
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, name])
+  @@index([subCompanyId])
+  @@map("allowed_industries")
+}
+
+/// Allowed tags per agency (for client tagging). Managed in Settings.
+model AllowedTag {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  tag          String
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, tag])
+  @@index([subCompanyId])
+  @@map("allowed_tags")
+}
+
+model CallScript {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  name         String
+  clientStatus String?    @map("client_status")
+  content      String     @db.Text
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, name])
+  @@index([subCompanyId])
+  @@map("call_scripts")
+}
+
+/// User requested a new industry (e.g. from Add Client). Admins approve/reject.
+model IndustryRequest {
+  id            String                @id @default(uuid())
+  subCompanyId  String                @map("sub_company_id")
+  requestedById String                @map("requested_by_id")
+  name          String
+  status        ResourceRequestStatus @default(pending)
+  decidedById   String?               @map("decided_by_id")
+  decidedAt     DateTime?             @map("decided_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  decidedBy     User?                 @relation("IndustryDecidedBy", fields: [decidedById], references: [id])
+  requestedBy   User                  @relation("IndustryRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  subCompany    SubCompany            @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([status])
+  @@map("industry_requests")
+}
+
+/// User requested a new tag. Admins approve/reject.
+model TagRequest {
+  id            String                @id @default(uuid())
+  subCompanyId  String                @map("sub_company_id")
+  requestedById String                @map("requested_by_id")
+  name          String
+  status        ResourceRequestStatus @default(pending)
+  decidedById   String?               @map("decided_by_id")
+  decidedAt     DateTime?             @map("decided_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  decidedBy     User?                 @relation("TagDecidedBy", fields: [decidedById], references: [id])
+  requestedBy   User                  @relation("TagRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  subCompany    SubCompany            @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([status])
+  @@map("tag_requests")
+}
+
+/// Allowed job titles per agency (for contact job title dropdown). Managed in Settings.
+model AllowedJobTitle {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  name         String
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, name])
+  @@index([subCompanyId])
+  @@map("allowed_job_titles")
+}
+
+/// User requested a new job title. Admins approve/reject.
+model JobTitleRequest {
+  id            String                @id @default(uuid())
+  subCompanyId  String                @map("sub_company_id")
+  requestedById String                @map("requested_by_id")
+  name          String
+  status        ResourceRequestStatus @default(pending)
+  decidedById   String?               @map("decided_by_id")
+  decidedAt     DateTime?             @map("decided_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  decidedBy     User?                 @relation("JobTitleDecidedBy", fields: [decidedById], references: [id])
+  requestedBy   User                  @relation("JobTitleRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  subCompany    SubCompany            @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([status])
+  @@map("job_title_requests")
+}
+
+model ClientRestriction {
+  clientId String @map("client_id")
+  userId   String @map("user_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, userId])
+  @@index([userId])
+  @@map("client_restrictions")
+}
+
+model ClientNote {
+  id           String     @id @default(uuid())
+  clientId     String     @map("client_id")
+  userId       String     @map("user_id")
+  userName     String     @map("user_name")
+  userRole     String     @map("user_role") @db.VarChar(64)
+  content      String
+  /// Legacy: kept in sync with `visibility` ('public' → true, anything else → false) for back-compat.
+  isPublic     Boolean    @default(false) @map("is_public")
+  isPinned     Boolean    @default(false) @map("is_pinned")
+  /// "only_me" | "public" | "shared" — replicates the Remark visibility model.
+  visibility   String     @default("only_me") @db.VarChar(16)
+  /// User IDs — populated only when visibility = "shared".
+  sharedWith   String[]   @default([]) @map("shared_with")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  subCompanyId String     @map("sub_company_id")
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@index([clientId])
+  @@index([subCompanyId])
+  @@index([userId])
+  @@index([clientId, isPinned])
+  @@index([visibility, subCompanyId])
+  @@map("client_notes")
+}
+
+/// Custom "Field Notes" definitions configured by super users. Visible on a client's Client Notes tab
+/// once the client has a closed_won lead. visibility=global → seen by all agencies (subCompanyId NULL).
+/// visibility=agency → seen only when the viewer is in subCompanyId.
+model ClientNoteFieldDef {
+  id           String              @id @default(uuid())
+  key          String              @db.VarChar(64)
+  label        String              @db.VarChar(128)
+  fieldType    ClientNoteFieldType @map("field_type")
+  options      Json?
+  visibility   ClientVisibility    @default(global)
+  subCompanyId String?             @map("sub_company_id")
+  sortOrder    Int                 @default(0) @map("sort_order")
+  isActive     Boolean             @default(true) @map("is_active")
+  createdById  String              @map("created_by_id")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  subCompany SubCompany?            @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy  User                   @relation("ClientNoteFieldDefCreatedBy", fields: [createdById], references: [id])
+  values     ClientNoteFieldValue[]
+
+  @@unique([subCompanyId, key])
+  @@index([visibility, subCompanyId])
+  @@index([isActive, sortOrder])
+  @@map("client_note_field_defs")
+}
+
+/// One row per (client, fieldDef, subCompany). For global fields, all agencies share one logical row
+/// keyed on (clientId, fieldDefId) enforced by service-layer transactional upsert.
+model ClientNoteFieldValue {
+  id           String   @id @default(uuid())
+  clientId     String   @map("client_id")
+  fieldDefId   String   @map("field_def_id")
+  subCompanyId String   @map("sub_company_id")
+  value        String?  @db.Text
+  updatedById  String   @map("updated_by_id")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  client     Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fieldDef   ClientNoteFieldDef @relation(fields: [fieldDefId], references: [id], onDelete: Cascade)
+  subCompany SubCompany         @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  updatedBy  User               @relation("ClientNoteFieldValueUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([clientId, fieldDefId, subCompanyId])
+  @@index([clientId])
+  @@index([fieldDefId])
+  @@map("client_note_field_values")
+}
+
+model PipelineStage {
+  id           String      @id
+  label        String
+  color        String
+  orderIndex   Int         @map("order_index")
+  isFixed      Boolean     @default(false) @map("is_fixed")
+  subCompanyId String?     @map("sub_company_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  subCompany   SubCompany? @relation(fields: [subCompanyId], references: [id])
+
+  @@index([subCompanyId])
+  @@index([orderIndex])
+  @@map("pipeline_stages")
+}
+
+model Lead {
+  id                   String                    @id @default(uuid())
+  clientId             String                    @map("client_id")
+  ownerId              String                    @map("owner_id")
+  subCompanyId         String                    @map("sub_company_id")
+  stage                String
+  status               LeadStatus
+  temperature          Temperature?
+  value                Decimal?                  @db.Decimal(12, 2)
+  lastActivity         DateTime?                 @map("last_activity")
+  nextFollowUp         DateTime?                 @map("next_follow_up")
+  notes                String?
+  closedAt             DateTime?                 @map("closed_at")
+  closedById           String?                   @map("closed_by_id")
+  lossReason           String?                   @map("loss_reason")
+  reassignedFromLeadId String?                   @map("reassigned_from_lead_id")
+  reassignedById       String?                   @map("reassigned_by_id")
+  leadDeadline         DateTime?                 @map("lead_deadline")
+  extensionRequested   Boolean                   @default(false) @map("extension_requested")
+  extensionReason      String?                   @map("extension_reason")
+  extensionDays        Int?                      @map("extension_days")
+  extensionStatus      String?                   @map("extension_status")
+  extensionRequestedAt DateTime?                 @map("extension_requested_at")
+  extensionReviewedAt  DateTime?                 @map("extension_reviewed_at")
+  reviewedBy           String?                   @map("reviewed_by")
+  managerRemarks       String?                   @map("manager_remarks")
+  reassignmentLocked   Boolean                   @default(false) @map("reassignment_locked")
+  lockedAssociateId    String?                   @map("locked_associate_id")
+  /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
+  forwardedFromUserId  String?                   @map("forwarded_from_user_id")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  calls                Call[]
+  documents            Document[]
+  emails               Email[]
+  followUps            FollowUp[]
+  client               Client                    @relation(fields: [clientId], references: [id])
+  owner                User                      @relation("LeadOwner", fields: [ownerId], references: [id])
+  subCompany           SubCompany                @relation(fields: [subCompanyId], references: [id])
+  closedBy             User?                     @relation("LeadClosedBy", fields: [closedById], references: [id])
+  reassignedBy         User?                     @relation("LeadReassignedBy", fields: [reassignedById], references: [id])
+  forwardedFromUser    User?                     @relation("LeadForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+  reassignedFromLead   Lead?                     @relation("LeadReassignmentChain", fields: [reassignedFromLeadId], references: [id])
+  reassignedToLeads    Lead[]                    @relation("LeadReassignmentChain")
+  meetings             Meeting[]
+  proposals            Proposal[]
+  extensionRequests    LeadExtensionRequest[]
+  reassignmentRequests LeadReassignmentRequest[]
+
+  @@index([clientId])
+  @@index([ownerId])
+  @@index([subCompanyId])
+  @@index([stage])
+  @@index([status])
+  @@index([temperature])
+  @@index([nextFollowUp])
+  @@index([lastActivity])
+  @@index([closedAt])
+  @@index([reassignedFromLeadId])
+  @@index([leadDeadline])
+  @@index([lockedAssociateId])
+  @@map("leads")
+}
+
+model LeadExtensionRequest {
+  id               String                     @id @default(uuid())
+  leadId           String                     @map("lead_id")
+  requestedById    String                     @map("requested_by_id")
+  reason           String
+  requestedDays    Int                        @map("requested_days")
+  status           LeadExtensionRequestStatus @default(pending)
+  managerRemarks   String?                    @map("manager_remarks")
+  requestedAt      DateTime                   @default(now()) @map("requested_at")
+  reviewedAt       DateTime?                  @map("reviewed_at")
+  reviewedById     String?                    @map("reviewed_by_id")
+  currentStepIndex Int                        @default(0) @map("current_step_index")
+  approvalChain    Json                       @default("[]") @map("approval_chain")
+  lead             Lead                       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  requestedBy      User                       @relation("LeadExtensionRequester", fields: [requestedById], references: [id])
+  reviewedBy       User?                      @relation("LeadExtensionReviewer", fields: [reviewedById], references: [id])
+
+  @@index([leadId])
+  @@index([status])
+  @@index([requestedById])
+  @@map("lead_extension_requests")
+}
+
+model LeadReassignmentRequest {
+  id              String                 @id @default(uuid())
+  leadId          String                 @map("lead_id")
+  requestedById   String                 @map("requested_by_id")
+  currentOwnerId  String                 @map("current_owner_id")
+  proposedOwnerId String                 @map("proposed_owner_id")
+  note                String?
+  numberOfPositions   Int?                   @map("number_of_positions")
+  status              LeadReassignmentStatus @default(pending)
+  reviewedById        String?                @map("reviewed_by_id")
+  reviewedAt          DateTime?              @map("reviewed_at")
+  reviewNote          String?                @map("review_note")
+  subCompanyId        String                 @map("sub_company_id")
+  requestedAt     DateTime               @default(now()) @map("requested_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+  currentStepIndex Int                   @default(0) @map("current_step_index")
+  approvalChain    Json                 @default("[]") @map("approval_chain")
+
+  lead          Lead       @relation(fields: [leadId], references: [id])
+  requestedBy   User       @relation("ReassignmentRequester", fields: [requestedById], references: [id])
+  currentOwner  User       @relation("ReassignmentCurrentOwner", fields: [currentOwnerId], references: [id])
+  proposedOwner User       @relation("ReassignmentProposedOwner", fields: [proposedOwnerId], references: [id])
+  reviewedBy    User?      @relation("ReassignmentReviewer", fields: [reviewedById], references: [id])
+  subCompany    SubCompany @relation(fields: [subCompanyId], references: [id])
+
+  @@index([leadId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([subCompanyId])
+  @@map("lead_reassignment_requests")
+}
+
+model Call {
+  id            String      @id @default(uuid())
+  clientId      String?     @map("client_id")
+  employeeId    String?     @map("employee_id")
+  leadId        String?     @map("lead_id")
+  ownerId       String      @map("owner_id")
+  outcome       CallOutcome
+  duration      Int?
+  notes         String?
+  recordingUrl  String?     @map("recording_url")
+  timestamp     DateTime    @default(now())
+  createdAt     DateTime    @default(now()) @map("created_at")
+  subCompanyId    String      @map("sub_company_id")
+  twilioCallSid   String?     @unique @map("twilio_call_sid")
+  conferenceRoom  String?     @map("conference_room")
+  conferenceSid   String?     @map("conference_sid")
+  pstnCallSid     String?     @map("pstn_call_sid")
+  transcription   String?
+  client        Client?     @relation(fields: [clientId], references: [id])
+  employee      Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  lead          Lead?       @relation(fields: [leadId], references: [id])
+  owner         User        @relation(fields: [ownerId], references: [id])
+  subCompany    SubCompany  @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([leadId])
+  @@index([subCompanyId])
+  @@index([ownerId])
+  @@index([timestamp])
+  @@index([outcome])
+  @@map("calls")
+}
+
+model FollowUp {
+  id           String            @id @default(uuid())
+  clientId     String?           @map("client_id")
+  employeeId   String?           @map("employee_id")
+  leadId       String?           @map("lead_id")
+  contactId    String?           @map("contact_id")
+  ownerId      String            @map("owner_id")
+  dueDate      DateTime          @map("due_date")
+  notes        String
+  completed    Boolean           @default(false)
+  outcome      FollowUpOutcome?
+  completedAt  DateTime?         @map("completed_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  subCompanyId String            @map("sub_company_id")
+  /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
+  forwardedFromUserId String?           @map("forwarded_from_user_id")
+  comments     FollowUpComment[]
+  client       Client?           @relation(fields: [clientId], references: [id])
+  employee     Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  contact      ClientContact?    @relation(fields: [contactId], references: [id])
+  lead         Lead?             @relation(fields: [leadId], references: [id])
+  owner        User              @relation(fields: [ownerId], references: [id])
+  forwardedFromUser User?         @relation("FollowUpForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+  subCompany   SubCompany        @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([leadId])
+  @@index([subCompanyId])
+  @@index([ownerId])
+  @@index([dueDate])
+  @@index([completed, dueDate])
+  @@map("follow_ups")
+}
+
+model FollowUpComment {
+  id         String   @id @default(uuid())
+  followUpId String   @map("follow_up_id")
+  userId     String   @map("user_id")
+  userName   String   @map("user_name")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  followUp   FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+
+  @@index([followUpId])
+  @@map("follow_up_comments")
+}
+
+model Task {
+  id              String           @id @default(uuid())
+  title           String
+  description     String?
+  dueDate         DateTime         @map("due_date")
+  priority        TaskPriority
+  status          TaskStatus
+  ownerId         String           @map("owner_id")
+  assignedById    String           @map("assigned_by_id")
+  subCompanyId    String           @map("sub_company_id")
+  reminderEnabled Boolean          @default(false) @map("reminder_enabled")
+  reminderDate    DateTime?        @map("reminder_date")
+  linkType        TaskLinkType?    @map("link_type")
+  linkId          String?          @map("link_id")
+  completedAt     DateTime?        @map("completed_at")
+  /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
+  forwardedFromUserId String?      @map("forwarded_from_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  comments        TaskComment[]
+  attachments     TaskAttachment[]
+  assignedBy          User             @relation("TaskAssignedBy", fields: [assignedById], references: [id])
+  owner               User             @relation("TaskOwner", fields: [ownerId], references: [id])
+  forwardedFromUser   User?            @relation("TaskForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+  subCompany          SubCompany       @relation(fields: [subCompanyId], references: [id])
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([linkType, linkId])
+  @@index([subCompanyId])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  userId    String   @map("user_id")
+  userName  String   @map("user_name")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+model TaskAttachment {
+  id         String   @id @default(uuid())
+  taskId     String   @map("task_id")
+  filename   String
+  fileKey    String   @map("file_key")
+  mimeType   String   @map("mime_type")
+  size       Int?
+  uploadedBy String   @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_attachments")
+}
+
+model Meeting {
+  id                    String            @id @default(uuid())
+  clientId              String            @map("client_id")
+  leadId                String?           @map("lead_id")
+  ownerId               String            @map("owner_id")
+  title                 String
+  startTime             DateTime          @map("start_time")
+  endTime               DateTime          @map("end_time")
+  location              String?
+  meetingLink           String?           @map("meeting_link")
+  googleCalendarEventId String?           @map("google_calendar_event_id")
+  agenda                String?
+  notes                 String?
+  status                MeetingStatus     @default(scheduled)
+  /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
+  forwardedFromUserId   String?           @map("forwarded_from_user_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  subCompanyId          String            @map("sub_company_id")
+  attendees             MeetingAttendee[]
+  client                Client            @relation(fields: [clientId], references: [id])
+  lead                  Lead?             @relation(fields: [leadId], references: [id])
+  owner                 User              @relation(fields: [ownerId], references: [id])
+  forwardedFromUser     User?             @relation("MeetingForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+  subCompany            SubCompany        @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([leadId])
+  @@index([subCompanyId])
+  @@index([ownerId])
+  @@index([startTime])
+  @@index([startTime, endTime])
+  @@index([status])
+  @@map("meetings")
+}
+
+model MeetingAttendee {
+  id        String         @id @default(uuid())
+  meetingId String         @map("meeting_id")
+  userId    String?        @map("user_id")
+  contactId String?        @map("contact_id")
+  contact   ClientContact? @relation(fields: [contactId], references: [id])
+  meeting   Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("meeting_attendees")
+}
+
+model Job {
+  id                 String          @id @default(uuid())
+  /// Human-friendly unique sequential job identifier (e.g. 000001).
+  jobCode            String?         @unique @map("job_code")
+  templateId         String?         @map("template_id")
+  jobType            JobType         @map("job_type")
+  title              String
+  company            String
+  location           String
+  department         String?
+  description        String
+  requirements       String
+  responsibilities   String
+  openPositions      Int             @default(1) @map("open_positions")
+  filledPositions    Int             @default(0) @map("filled_positions")
+  scheduledPositions Int             @default(0) @map("scheduled_positions")
+  backupPercentage   Int             @default(70) @map("backup_percentage")
+  status             JobStatus
+  employmentType     EmploymentType  @map("employment_type")
+  salaryMin          Decimal?        @map("salary_min") @db.Decimal(10, 2)
+  salaryMax          Decimal?        @map("salary_max") @db.Decimal(10, 2)
+  publishLinkedin    Boolean         @default(false) @map("publish_linkedin")
+  publishIndeed      Boolean         @default(false) @map("publish_indeed")
+  publishGlassdoor   Boolean         @default(false) @map("publish_glassdoor")
+  publishedAt        DateTime?       @map("published_at")
+  licenseRequired      Boolean  @default(false) @map("license_required")
+  requiredLicenseTypes String[] @default([]) @map("required_license_types")
+  /// Agency scope (nullable for legacy rows; new jobs always set it).
+  subCompanyId       String?         @map("sub_company_id")
+  activeClientId     String?         @map("active_client_id")
+  screeningCriteria  Json?           @map("screening_criteria")
+  shiftSchedule      Json?           @map("shift_schedule")
+  createdById        String          @map("created_by_id")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  closedAt           DateTime?       @map("closed_at")
+  applicantCount      Int                  @default(0) @map("applicant_count")
+  assignments         JobAssignment[]
+  employeeAssignments EmployeeAssignment[]
+  createdBy           User                 @relation(fields: [createdById], references: [id])
+  subCompany          SubCompany?          @relation(fields: [subCompanyId], references: [id], onDelete: SetNull)
+  activeClient        ActiveClient?        @relation(fields: [activeClientId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([jobType])
+  @@index([location])
+  @@index([createdById])
+  @@index([subCompanyId])
+  @@index([activeClientId])
+  @@map("jobs")
+}
+
+model JobAssignment {
+  id           String   @id @default(uuid())
+  jobId        String   @map("job_id")
+  employeeId   String   @map("employee_id")
+  isBackup     Boolean  @default(false) @map("is_backup")
+  isActive     Boolean  @default(true) @map("is_active")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedById String   @map("assigned_by_id")
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([employeeId])
+  @@index([isActive])
+  @@map("job_assignments")
+}
+
+model Employee {
+  id                     String                   @id @default(uuid())
+  employeeType           EmployeeType             @map("employee_type")
+  firstName              String                   @map("first_name")
+  lastName               String                   @map("last_name")
+  email                  String?
+  phone                  String
+  alternatePhone         String?                  @map("alternate_phone")
+  dateOfBirth            DateTime?                @map("date_of_birth")
+  gender                 Gender?
+  address                String?
+  addressLine2           String?                  @map("address_line_2")
+  city                   String?
+  province               String?
+  postalCode             String?                  @map("postal_code")
+  country                String?
+  emergencyContactName   String?                  @map("emergency_contact_name")
+  emergencyContactPhone  String?                  @map("emergency_contact_phone")
+  educationLevel         String?                  @map("education_level")
+  educationFromYear      Int?                     @map("education_from_year")
+  educationEndYear       Int?                     @map("education_end_year")
+  graduated              Boolean?
+  courseStudied          String?                  @map("course_studied")
+  diplomaName            String?                  @map("diploma_name")
+  experienceDuties       String?                  @map("experience_duties")
+  availableFrom          DateTime?                @map("available_from") @db.Date
+  availabilityTypes      String[]                 @default([]) @map("availability_types")
+  skills                 String[]                 @default([]) @map("skills")
+  residencyStatus        ResidencyStatus?         @map("residency_status")
+  shiftsAvailable        String[]                 @default([]) @map("shifts_available")
+  ableTwelveHourShift    Boolean?                 @map("able_twelve_hour_shift")
+  englishProficiency     String[]                 @default([]) @map("english_proficiency")
+  workStatus             EmployeeWorkStatus?      @map("work_status")
+  approvalStatus         EmployeeApprovalStatus?  @map("approval_status")
+  hireDate               DateTime?                @map("hire_date")
+  terminationDate        DateTime?                @map("termination_date")
+  position               String?
+  department             String?
+  hourlyRate             Decimal?                 @map("hourly_rate") @db.Decimal(10, 2)
+  /// How salary is paid: cheque or direct deposit.
+  salaryPaymentMethod    SalaryPaymentMethod?     @map("salary_payment_method")
+  bankName               String?                  @map("bank_name")
+  bankInstitutionNumber  String?                  @map("bank_institution_number")
+  bankTransitNumber      String?                  @map("bank_transit_number")
+  bankAccountNumber      String?                  @map("bank_account_number")
+  addedById              String                   @map("added_by_id")
+  approvedById           String?                  @map("approved_by_id")
+  approvedAt             DateTime?                @map("approved_at")
+  rejectedById           String?                  @map("rejected_by_id")
+  rejectedAt             DateTime?                @map("rejected_at")
+  rejectionReason        String?                  @map("rejection_reason")
+  /// Role key of the user who submitted the employee for approval.
+  submitterRole          String?                  @map("submitter_role")
+  currentStepIndex       Int                      @default(0) @map("current_step_index")
+  approvalChain          Json                     @default("[]") @map("approval_chain")
+  /// PandaDoc onboarding agreement tracking.
+  onboardingPandaDocId       String?              @map("onboarding_pandadoc_id")
+  onboardingPandaDocStatus   String?              @map("onboarding_pandadoc_status")
+  onboardingPandaDocUpdatedAt DateTime?           @map("onboarding_pandadoc_updated_at")
+  /// CRM user who last sent the onboarding agreement (for signed/declined notifications).
+  onboardingSentById         String?              @map("onboarding_sent_by_id")
+  /// Form-only metadata (photo ID type/number, extra edu/exp, licenses, profile photo doc id).
+  /// Never store SIN here.
+  uiExtras               Json?                    @map("ui_extras")
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+  documents              EmployeeDocument[]
+  notes                  EmployeeNote[]
+  tags                   EmployeeTag[]
+  workExperiences        EmployeeWorkExperience[]
+  employeeAssignments    EmployeeAssignment[]
+  activeClientTrainings  ActiveClientTrainingAssignment[]
+  trainings              EmployeeTraining[]
+  calls                  Call[]
+  followUps              FollowUp[]
+  addedBy                User                     @relation("EmployeeAddedBy", fields: [addedById], references: [id])
+  approvedBy             User?                    @relation("EmployeeApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy             User?                    @relation("EmployeeRejectedBy", fields: [rejectedById], references: [id])
+  onboardingSentBy       User?                    @relation("EmployeeOnboardingSentBy", fields: [onboardingSentById], references: [id], onDelete: SetNull)
+  assignments            JobAssignment[]
+
+  @@index([employeeType])
+  @@index([workStatus])
+  @@index([approvalStatus])
+  @@index([email])
+  @@index([onboardingPandaDocId])
+  @@index([onboardingSentById])
+  @@map("employees")
+}
+
+/// Standalone employee training records (not tied to client placement).
+model EmployeeTraining {
+  id                       String    @id @default(uuid())
+  employeeId               String    @map("employee_id")
+  /// Display name (e.g. Ontario 4 Steps, WHMIS).
+  title                    String?
+  /// Training link sent to the employee (email).
+  url                      String?
+  sentAt                   DateTime? @map("sent_at")
+  /// How the training link was sent: email (sms removed for standalone)
+  channel                  String?
+  certificateDocumentId    String?   @map("certificate_document_id")
+  completedAt              DateTime? @map("completed_at")
+  sentById                 String?   @map("sent_by_id")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+  employee                 Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sentBy                   User?     @relation("EmployeeTrainingSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+  certificateDocument      EmployeeDocument? @relation("EmployeeTrainingCertificate", fields: [certificateDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([sentAt])
+  @@index([completedAt])
+  @@index([certificateDocumentId])
+  @@map("employee_trainings")
+}
+
+/// Pending/approved link of an active employee to a Client, ActiveClient, or Job (step 2 approval).
+model EmployeeAssignment {
+  id                 String                       @id @default(uuid())
+  employeeId         String                       @map("employee_id")
+  targetType         EmployeeAssignmentTargetType @map("target_type")
+  clientId           String?                      @map("client_id")
+  /// Recruitment Active Client (preferred for recruitment placements).
+  activeClientId     String?                      @map("active_client_id")
+  jobId              String?                      @map("job_id")
+  /// Placement details (primarily for client assignments)
+  workLocation       String?                      @map("work_location")
+  positionTitle      String?                      @map("position_title")
+  payRate            String?                      @map("pay_rate")
+  shiftSchedule      String?                      @map("shift_schedule")
+  expectedDuration   String?                      @map("expected_duration")
+  supervisorInfo     String?                      @map("supervisor_info")
+  requiredPpe        String?                      @map("required_ppe")
+  workplaceHazards   String?                      @map("workplace_hazards")
+  /// When assignment details were emailed to the candidate (required before activation).
+  detailsSentToCandidateAt DateTime?              @map("details_sent_to_candidate_at")
+  /// Optional training checklist (does not block approval).
+  trainingMessage                  String?   @map("training_message")
+  trainingSentAt                   DateTime? @map("training_sent_at")
+  /// How the training message was sent: email | sms
+  trainingChannel                  String?   @map("training_channel")
+  trainingCertificateDocumentId    String?   @map("training_certificate_document_id")
+  trainingCompletedAt              DateTime? @map("training_completed_at")
+  status             EmployeeAssignmentStatus     @default(pending)
+  isActive           Boolean                      @default(false) @map("is_active")
+  /// Requested roster role for job targets (primary vs backup pool).
+  isBackup           Boolean                      @default(false) @map("is_backup")
+  endedAt            DateTime?                    @map("ended_at")
+  endReason          PlacementEndReason?          @map("end_reason")
+  endNotes           String?                      @map("end_notes")
+  rating             Int?
+  submittedById      String                       @map("submitted_by_id")
+  submitterRole      String?                      @map("submitter_role")
+  submittedAt        DateTime                     @default(now()) @map("submitted_at")
+  currentStepIndex   Int                          @default(0) @map("current_step_index")
+  approvalChain      Json                         @default("[]") @map("approval_chain")
+  approvedById       String?                      @map("approved_by_id")
+  approvedAt         DateTime?                    @map("approved_at")
+  rejectedById       String?                      @map("rejected_by_id")
+  rejectedAt         DateTime?                    @map("rejected_at")
+  rejectionReason    String?                      @map("rejection_reason")
+  createdAt          DateTime                     @default(now()) @map("created_at")
+  updatedAt          DateTime                     @updatedAt @map("updated_at")
+  employee           Employee                     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  client             Client?                      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  activeClient       ActiveClient?                @relation(fields: [activeClientId], references: [id], onDelete: SetNull)
+  job                Job?                         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  submittedBy        User                         @relation("EmployeeAssignmentSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy         User?                        @relation("EmployeeAssignmentApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy         User?                        @relation("EmployeeAssignmentRejectedBy", fields: [rejectedById], references: [id])
+  trainingCertificateDocument EmployeeDocument? @relation("AssignmentTrainingCertificate", fields: [trainingCertificateDocumentId], references: [id], onDelete: SetNull)
+  activeClientTraining        ActiveClientTrainingAssignment?
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([clientId])
+  @@index([activeClientId])
+  @@index([jobId])
+  @@index([isActive])
+  @@index([trainingCertificateDocumentId])
+  @@map("employee_assignments")
+}
+
+model EmployeeWorkExperience {
+  id            String   @id @default(uuid())
+  employeeId    String   @map("employee_id")
+  companyName   String   @map("company_name")
+  contactNumber String?  @map("contact_number")
+  position      String?
+  duration      String?
+  sortOrder     Int      @map("sort_order")
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_work_experiences")
+}
+
+model EmployeeTag {
+  employeeId String   @map("employee_id")
+  tag        String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, tag])
+  @@map("employee_tags")
+}
+
+model EmployeeDocument {
+  id           String       @id @default(uuid())
+  employeeId   String       @map("employee_id")
+  type         DocumentType
+  name         String
+  fileName     String       @map("file_name")
+  fileSize     BigInt       @map("file_size")
+  mimeType     String?      @map("mime_type")
+  url          String
+  uploadedAt   DateTime     @default(now()) @map("uploaded_at")
+  uploadedById String       @map("uploaded_by_id")
+  expiryDate   DateTime?    @map("expiry_date")
+  notes        String?
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  trainingAssignments EmployeeAssignment[] @relation("AssignmentTrainingCertificate")
+  trainingRecords     EmployeeTraining[]   @relation("EmployeeTrainingCertificate")
+
+  @@index([employeeId])
+  @@index([type])
+  @@index([expiryDate])
+  @@map("employee_documents")
+}
+
+model EmployeeNote {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  userId     String   @map("user_id")
+  userName   String   @map("user_name")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_notes")
+}
+
+model Email {
+  id            String            @id @default(uuid())
+  fromUserId    String?           @map("from_user_id")
+  sentByUserId  String?           @map("sent_by_user_id")
+  fromName      String            @map("from_name")
+  fromEmail     String            @map("from_email")
+  subject       String            @db.VarChar(500)
+  body          String
+  folder        EmailFolder
+  clientId      String?           @map("client_id")
+  leadId        String?           @map("lead_id")
+  inReplyTo     String?           @map("in_reply_to")
+  isRead        Boolean           @default(false) @map("is_read")
+  timestamp     DateTime          @default(now())
+  createdAt     DateTime          @default(now()) @map("created_at")
+  subCompanyId  String            @map("sub_company_id")
+  toUserId      String?           @map("to_user_id")
+  /// Set during offboarding — the user who receives a forwarded copy of this email.
+  forwardedToUserId   String?     @map("forwarded_to_user_id")
+  /// Set during offboarding — the departing user whose email this was originally.
+  forwardedFromUserId String?     @map("forwarded_from_user_id")
+  recipients    EmailRecipient[]
+  attachments   EmailAttachment[]
+  client        Client?           @relation(fields: [clientId], references: [id])
+  fromUser      User?             @relation("EmailFromUser", fields: [fromUserId], references: [id])
+  sentByUser    User?             @relation("EmailSentByUser", fields: [sentByUserId], references: [id])
+  lead          Lead?             @relation(fields: [leadId], references: [id])
+  sub_companies SubCompany        @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  toUser        User?             @relation("EmailToUser", fields: [toUserId], references: [id])
+  forwardedToUser   User?         @relation("EmailForwardedTo", fields: [forwardedToUserId], references: [id], onDelete: SetNull)
+  forwardedFromUser User?         @relation("EmailForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
+
+  @@index([fromUserId])
+  @@index([sentByUserId])
+  @@index([toUserId])
+  @@index([subCompanyId])
+  @@index([clientId])
+  @@index([leadId])
+  @@index([folder])
+  @@index([timestamp])
+  @@map("emails")
+}
+
+model EmailAttachment {
+  id        String   @id @default(uuid())
+  emailId   String   @map("email_id")
+  filename  String
+  fileKey   String   @map("file_key")
+  mimeType  String   @map("mime_type")
+  size      Int?
+  createdAt DateTime @default(now()) @map("created_at")
+  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@map("email_attachments")
+}
+
+model EmailRecipient {
+  id            String         @id @default(uuid())
+  emailId       String         @map("email_id")
+  recipientType String         @map("recipient_type")
+  name          String?
+  emailAddress  String         @map("email")
+  clientId      String?        @map("client_id")
+  contactId     String?        @map("contact_id")
+  client        Client?        @relation(fields: [clientId], references: [id])
+  contact       ClientContact? @relation(fields: [contactId], references: [id])
+  emailRecord   Email          @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@index([emailAddress])
+  @@map("email_recipients")
+}
+
+model MailingList {
+  id           String                  @id @default(uuid())
+  subCompanyId String                  @map("sub_company_id")
+  createdById  String?                 @map("created_by_id")
+  name         String
+  description  String?
+  isArchived   Boolean                 @default(false) @map("is_archived")
+  archivedAt   DateTime?               @map("archived_at")
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+  subCompany   SubCompany              @relation(fields: [subCompanyId], references: [id])
+  createdBy    User?                   @relation("MailingListCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  members      MailingListClient[]
+  assignments  MailingListAssignment[]
+
+  @@index([subCompanyId])
+  @@index([createdById])
+  @@map("mailing_lists")
+}
+
+model MailingListAssignment {
+  id           String      @id @default(uuid())
+  listId       String      @map("list_id")
+  userId       String      @map("user_id")
+  assignedById String      @map("assigned_by_id")
+  assignedAt   DateTime    @default(now()) @map("assigned_at")
+  list         MailingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  user         User        @relation("MailingListAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy   User        @relation("MailingListAssignedByRel", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@unique([listId, userId])
+  @@index([listId])
+  @@index([userId])
+  @@map("mailing_list_assignments")
+}
+
+model MailingListClient {
+  id       String      @id @default(uuid())
+  listId   String      @map("list_id")
+  clientId String      @map("client_id")
+  addedAt  DateTime    @default(now()) @map("added_at")
+  list     MailingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  client   Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, clientId])
+  @@index([listId])
+  @@index([clientId])
+  @@map("mailing_list_clients")
+}
+
+model EmailCampaign {
+  id              String                   @id @default(uuid())
+  subCompanyId    String                   @map("sub_company_id")
+  name            String
+  listId          String                   @map("list_id")
+  listName        String                   @default("") @map("list_name")
+  subject         String                   @db.VarChar(500)
+  body            String
+  templateId      String?                  @map("template_id")
+  scheduledDate   DateTime                 @map("scheduled_date")
+  status          CampaignStatus
+  sentAt          DateTime?                @map("sent_at")
+  totalRecipients Int                      @default(0) @map("total_recipients")
+  statsSent       Int                      @default(0) @map("stats_sent")
+  statsDelivered  Int                      @default(0) @map("stats_delivered")
+  statsOpened     Int                      @default(0) @map("stats_opened")
+  statsClicked    Int                      @default(0) @map("stats_clicked")
+  statsBounced    Int                      @default(0) @map("stats_bounced")
+  statsFailed     Int                      @default(0) @map("stats_failed")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  createdById     String?                  @map("created_by_id")
+  subCompany      SubCompany               @relation(fields: [subCompanyId], references: [id])
+  createdBy       User?                    @relation("CampaignCreatedBy", fields: [createdById], references: [id])
+  recipients      EmailCampaignRecipient[]
+
+  @@index([subCompanyId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("email_campaigns")
+}
+
+model EmailCampaignRecipient {
+  id             String               @id @default(uuid())
+  campaignId     String               @map("campaign_id")
+  clientId       String               @map("client_id")
+  clientName     String               @map("client_name")
+  email          String
+  status         EmailRecipientStatus
+  sentAt         DateTime?            @map("sent_at")
+  deliveredAt    DateTime?            @map("delivered_at")
+  openedAt       DateTime?            @map("opened_at")
+  clickedAt      DateTime?            @map("clicked_at")
+  bouncedAt      DateTime?            @map("bounced_at")
+  spamReportedAt DateTime?            @map("spam_reported_at")
+  failureReason  String?              @map("failure_reason")
+  errorMessage   String?              @map("error_message")
+  campaign       EmailCampaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([status])
+  @@map("email_campaign_recipients")
+}
+
+/// Editable email templates (header, body, footer) for compose and campaigns.
+model EmailTemplate {
+  id               String          @id @default(uuid())
+  subCompanyId     String?         @map("sub_company_id")
+  /// null = shared (agency/global). Set = personal copy owned by that user.
+  ownerUserId      String?         @map("owner_user_id")
+  /// Shared template this personal copy was customized from (optional).
+  sourceTemplateId String?         @map("source_template_id")
+  name             String
+  subject          String
+  bodyHtml         String          @map("body_html")
+  headerHtml       String?         @map("header_html")
+  footerHtml       String?         @map("footer_html")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  subCompany       SubCompany?     @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  ownerUser        User?           @relation("EmailTemplateOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  sourceTemplate   EmailTemplate?  @relation("EmailTemplateSource", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
+  derivedTemplates EmailTemplate[] @relation("EmailTemplateSource")
+
+  @@index([subCompanyId])
+  @@index([ownerUserId])
+  @@index([sourceTemplateId])
+  @@map("email_templates")
+}
+
+model EmailSignature {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  content   String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_signatures")
+}
+
+model ActivityLog {
+  id           String     @id @default(uuid())
+  type         String
+  userId       String     @map("user_id")
+  userName     String     @map("user_name")
+  subCompanyId String     @map("sub_company_id")
+  description  String
+  metadata     Json?
+  timestamp    DateTime   @default(now())
+  subCompany   SubCompany @relation(fields: [subCompanyId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([timestamp])
+  @@index([subCompanyId])
+  @@map("activity_logs")
+}
+
+model BugReport {
+  id                String          @id @default(uuid())
+  submittedById     String          @map("submitted_by_id")
+  subCompanyId      String          @map("sub_company_id")
+  title             String?
+  description       String
+  screenshotUrl     String?         @map("screenshot_url")
+  status            BugReportStatus @default(open)
+  resolutionRemarks String?         @map("resolution_remarks")
+  resolvedById      String?         @map("resolved_by_id")
+  resolvedAt        DateTime?       @map("resolved_at")
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  resolvedBy        User?           @relation("BugReportResolvedBy", fields: [resolvedById], references: [id])
+  subCompany        SubCompany      @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  submittedBy       User            @relation("BugReportSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([status])
+  @@index([submittedById])
+  @@index([createdAt])
+  @@map("bug_reports")
+}
+
+/// Emails that receive bug report notifications (super admin manages in Settings).
+model BugReportRecipient {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("bug_report_recipients")
+}
+
+model Proposal {
+  id                     String                        @id @default(uuid())
+  leadId                 String                        @map("lead_id")
+  locationType           String                        @map("location_type")
+  agreementTypes         String[]                      @map("agreement_types")
+  tempPricingType        String?                       @map("temp_pricing_type")
+  tempPricingValue       Decimal?                      @map("temp_pricing_value") @db.Decimal(10, 2)
+  tempMinimumHours       Int?                          @map("temp_minimum_hours")
+  directPricingType      String?                       @map("direct_pricing_type")
+  directPricingValue     Decimal?                      @map("direct_pricing_value") @db.Decimal(10, 2)
+  paymentTerms           PaymentTerms                  @map("payment_terms")
+  comment                String?
+  clientMessage          String?                       @map("client_message")
+  createdAt              DateTime                      @default(now()) @map("created_at")
+  status                 ProposalStatus                @default(pending)
+  rejectionComment       String?                       @map("rejection_comment")
+  reviewedAt             DateTime?                     @map("reviewed_at")
+  reviewedById           String?                       @map("reviewed_by_id")
+  pandaDocTemplateId     String?                       @map("pandadoc_template_id")
+  pandaDocTemplateName   String?                       @map("pandadoc_template_name")
+  pandaDocId             String?                       @map("pandadoc_id")
+  pandaDocStatus         String?                       @map("pandadoc_status")
+  pandaDocUpdatedAt      DateTime?                     @map("pandadoc_updated_at")
+  previewPdfUrl          String?                       @map("preview_pdf_url")
+  previewPdfHash         String?                       @map("preview_pdf_hash")
+  previewPdfStatus       String?                       @map("preview_pdf_status")
+  activatedAt            DateTime?                     @map("activated_at")
+  activatedById          String?                       @map("activated_by_id")
+  reviewRequestedAt      DateTime?                     @map("review_requested_at")
+  reviewRequestedById    String?                       @map("review_requested_by_id")
+  reviewRejectedAt       DateTime?                     @map("review_rejected_at")
+  reviewRejectedById     String?                       @map("review_rejected_by_id")
+  reviewRejectionComment String?                       @map("review_rejection_comment")
+  isForReview            Boolean                       @default(false) @map("is_for_review")
+  reviewDocumentType     String                        @default("agreement") @map("review_document_type")
+  reviewEmailSentAt      DateTime?                     @map("review_email_sent_at")
+  reviewTemplateId       String?                       @map("review_template_id")
+  selectedContactId      String?                       @map("selected_contact_id")
+  awaitingClientDueAt    DateTime?                     @map("awaiting_client_due_at")
+  awaitingClientReason   String?                       @map("awaiting_client_reason")
+  createdById            String?                       @map("created_by_id")
+  currentStepIndex       Int                           @default(0) @map("current_step_index")
+  approvalChain          Json                          @default("[]") @map("approval_chain")
+  /// Shared UUID when Both (Temp+Direct) is split into two single-type rows.
+  proposalPairId         String?                       @map("proposal_pair_id")
+  /// Role within a Both pair: temp | direct. Null for unpaired proposals.
+  pairRole               String?                       @map("pair_role")
+  attachments            ProposalAttachment[]
+  proposalDocuments      ProposalDocument[]
+  selectedDefaultFiles   ProposalSelectedDefaultFile[]
+  extensionRequests      ProposalExtensionRequest[]
+  positions              ProposalPosition[]
+  lead                   Lead                          @relation(fields: [leadId], references: [id])
+  selectedContact        ClientContact?                @relation("ProposalSelectedContact", fields: [selectedContactId], references: [id], onDelete: SetNull)
+  reviewTemplate         ReviewTemplate?               @relation(fields: [reviewTemplateId], references: [id], onDelete: SetNull)
+  reviewedBy             User?                         @relation("ProposalReviewer", fields: [reviewedById], references: [id])
+  activatedBy            User?                         @relation("ProposalActivator", fields: [activatedById], references: [id])
+  reviewRequestedBy      User?                         @relation("ProposalReviewRequester", fields: [reviewRequestedById], references: [id])
+  reviewRejectedBy       User?                         @relation("ProposalReviewRejector", fields: [reviewRejectedById], references: [id])
+  createdBy              User?                         @relation("ProposalCreatedBy", fields: [createdById], references: [id])
+
+  @@index([leadId])
+  @@index([status])
+  @@index([pandaDocId])
+  @@index([createdById])
+  @@index([proposalPairId])
+  @@map("proposals")
+}
+
+model ProposalExtensionRequest {
+  id               String                         @id @default(uuid())
+  proposalId       String                         @map("proposal_id")
+  requestedById    String                         @map("requested_by_id")
+  reason           String
+  requestedDays    Int                            @map("requested_days")
+  status           ProposalExtensionRequestStatus @default(pending)
+  reviewedById     String?                        @map("reviewed_by_id")
+  reviewedAt       DateTime?                      @map("reviewed_at")
+  reviewComment    String?                        @map("review_comment")
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  updatedAt        DateTime                       @updatedAt @map("updated_at")
+  currentStepIndex Int                            @default(0) @map("current_step_index")
+  approvalChain    Json                           @default("[]") @map("approval_chain")
+  proposal         Proposal                       @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  requestedBy      User                           @relation("ProposalExtensionRequester", fields: [requestedById], references: [id])
+  reviewedBy       User?                          @relation("ProposalExtensionReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([proposalId])
+  @@index([status])
+  @@index([requestedById])
+  @@map("proposal_extension_requests")
+}
+
+model ProposalAttachment {
+  id         String   @id @default(uuid())
+  proposalId String   @map("proposal_id")
+  name       String
+  size       BigInt
+  type       String
+  url        String
+  createdAt  DateTime @default(now()) @map("created_at")
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("proposal_attachments")
+}
+
+/// Positions requested in a proposal (name + count).
+model ProposalPosition {
+  id         String   @id @default(uuid())
+  proposalId String   @map("proposal_id")
+  name       String
+  count      Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("proposal_positions")
+}
+
+/// Snapshot of director-set default files selected at proposal submission time.
+model ProposalSelectedDefaultFile {
+  id            String   @id @default(uuid())
+  proposalId    String   @map("proposal_id")
+  defaultFileId String?  @map("default_file_id")
+  name          String
+  fileUrl       String   @map("file_url")
+  mimeType      String?  @map("mime_type")
+  createdAt     DateTime @default(now()) @map("created_at")
+  proposal      Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("proposal_selected_default_files")
+}
+
+/// Documents exchanged during the Closed Won Pending phase (sent to client / received from client).
+model ProposalDocument {
+  id             String                   @id @default(uuid())
+  proposalId     String                   @map("proposal_id")
+  category       ProposalDocumentCategory
+  name           String
+  size           BigInt
+  type           String
+  url            String
+  uploadedById   String                   @map("uploaded_by_id")
+  /// For sent_to_client: the contact this document was emailed to
+  contactId      String?                  @map("contact_id")
+  contactName    String?                  @map("contact_name")
+  contactEmail   String?                  @map("contact_email")
+  sentAt         DateTime?                @map("sent_at")
+  deliveryStatus String?                  @map("delivery_status")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  proposal       Proposal                 @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  uploadedBy     User                     @relation("ProposalDocumentUploader", fields: [uploadedById], references: [id])
+
+  @@index([proposalId])
+  @@map("proposal_documents")
+}
+
+enum ProposalDocumentCategory {
+  sent_to_client
+  received_from_client
+  generated_for_review
+}
+
+model Document {
+  id            String     @id @default(uuid())
+  name          String
+  type          String
+  templateId    String?    @map("template_id")
+  clientId      String?    @map("client_id")
+  leadId        String?    @map("lead_id")
+  subCompanyId  String     @map("sub_company_id")
+  /// When true, attachment is visible to all agencies (director/super_admin uploads).
+  isPublic      Boolean    @default(false) @map("is_public")
+  content       Json?
+  fileUrl       String?    @map("file_url")
+  generatedById String?    @map("generated_by_id")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  client        Client?    @relation(fields: [clientId], references: [id])
+  lead          Lead?      @relation(fields: [leadId], references: [id])
+  subCompany    SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([leadId])
+  @@index([subCompanyId])
+  @@index([clientId, subCompanyId])
+  @@index([isPublic])
+  @@index([type])
+  @@map("documents")
+}
+
+model LeadRequest {
+  id            String               @id @default(uuid())
+  clientId      String               @map("client_id")
+  requestedById String               @map("requested_by_id")
+  managerId     String               @map("manager_id")
+  note          String
+  status        LeadRequestStatus
+  reviewedById  String?              @map("reviewed_by_id")
+  reviewedAt    DateTime?            @map("reviewed_at")
+  subCompanyId  String               @map("sub_company_id")
+  requestedAt   DateTime             @default(now()) @map("requested_at")
+  currentStepIndex Int              @default(0) @map("current_step_index")
+  approvalChain    Json             @default("[]") @map("approval_chain")
+  comments      LeadRequestComment[]
+  client        Client               @relation(fields: [clientId], references: [id])
+  manager       User                 @relation("LeadRequestManager", fields: [managerId], references: [id])
+  requestedBy   User                 @relation("LeadRequestRequester", fields: [requestedById], references: [id])
+  reviewedBy    User?                @relation("LeadRequestReviewer", fields: [reviewedById], references: [id])
+  subCompany    SubCompany           @relation(fields: [subCompanyId], references: [id])
+
+  @@index([clientId])
+  @@index([requestedById])
+  @@index([managerId])
+  @@index([status])
+  @@index([subCompanyId])
+  @@map("lead_requests")
+}
+
+model LeadRequestComment {
+  id        String      @id @default(uuid())
+  requestId String      @map("request_id")
+  userId    String      @map("user_id")
+  userName  String      @map("user_name")
+  text      String
+  createdAt DateTime    @default(now()) @map("created_at")
+  request   LeadRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("lead_request_comments")
+}
+
+model UserAvailability {
+  userId          String          @id @map("user_id")
+  meetingDuration Int             @default(30) @map("meeting_duration")
+  bufferTime      Int             @default(15) @map("buffer_time")
+  bookingLinkSlug String          @unique @map("booking_link_slug")
+  timezone        String          @default("America/Toronto")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  meetings        BookedMeeting[]
+  timeSlots       TimeSlot[]
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bookingLinkSlug])
+  @@map("user_availability")
+}
+
+model TimeSlot {
+  id               String           @id @default(uuid())
+  userId           String           @map("user_id")
+  dayOfWeek        DayOfWeek        @map("day_of_week")
+  startTime        String           @map("start_time")
+  endTime          String           @map("end_time")
+  isEnabled        Boolean          @default(true) @map("is_enabled")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  userAvailability UserAvailability @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, dayOfWeek])
+  @@map("time_slots")
+}
+
+model BookedMeeting {
+  id           String              @id @default(uuid())
+  hostUserId   String              @map("host_user_id")
+  guestName    String              @map("guest_name")
+  guestEmail   String              @map("guest_email")
+  guestCompany String?             @map("guest_company")
+  startTime    DateTime            @map("start_time")
+  endTime      DateTime            @map("end_time")
+  meetingLink  String?             @map("meeting_link")
+  notes        String?
+  status       BookedMeetingStatus
+  createdAt    DateTime            @default(now()) @map("created_at")
+  host         UserAvailability    @relation(fields: [hostUserId], references: [userId])
+
+  @@index([hostUserId])
+  @@index([startTime])
+  @@index([status])
+  @@map("booked_meetings")
+}
+
+model FilterView {
+  id        String         @id @default(uuid())
+  name      String
+  type      FilterViewType
+  userId    String         @map("user_id")
+  filters   Json
+  createdAt DateTime       @default(now()) @map("created_at")
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, type])
+  @@map("filter_views")
+}
+
+/// 1:1 or small group chat within an agency. Participants are agency users.
+model Conversation {
+  id           String                    @id @default(uuid())
+  subCompanyId String                    @map("sub_company_id")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+  participants ConversationParticipant[]
+  subCompany   SubCompany                @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@index([subCompanyId])
+  @@map("conversations")
+}
+
+/// User in a conversation; lastReadAt used for unread count.
+model ConversationParticipant {
+  conversationId String       @map("conversation_id")
+  userId         String       @map("user_id")
+  lastReadAt     DateTime?    @map("last_read_at")
+  joinedAt       DateTime     @default(now()) @map("joined_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String              @id @default(uuid())
+  conversationId String              @map("conversation_id")
+  senderId       String              @map("sender_id")
+  text           String?
+  // text (default) | call — internal WebRTC history rows
+  type           String              @default("text")
+  // For type=call: { mediaType, outcome, durationSec, callId }
+  metadata       Json?
+  createdAt      DateTime            @default(now()) @map("created_at")
+  attachments    MessageAttachment[]
+  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  name      String
+  fileUrl   String   @map("file_url")
+  mimeType  String?  @map("mime_type")
+  fileSize  Int?     @map("file_size")
+  createdAt DateTime @default(now()) @map("created_at")
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+/// In-app notifications: lead assigned, lead requested, reminders (due/overdue), etc.
+model Notification {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  subCompanyId String    @map("sub_company_id")
+  type         String
+  title        String
+  body         String
+  link         String?
+  relatedId    String?   @map("related_id")
+  readAt       DateTime? @map("read_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, readAt])
+  @@index([subCompanyId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// Per-agency enable/disable and custom templates for in-app notification events.
+model AgencyNotificationRule {
+  id            String     @id @default(uuid())
+  subCompanyId  String     @map("sub_company_id")
+  eventKey      String     @map("event_key")
+  enabled       Boolean    @default(true)
+  titleTemplate String?    @map("title_template")
+  bodyTemplate  String?    @map("body_template")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  subCompany    SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, eventKey])
+  @@index([subCompanyId])
+  @@map("agency_notification_rules")
+}
+
+/// Dynamic RBAC: roles, permission catalog, and role–permission grants (see prisma/seed-rbac.ts).
+model RbacRole {
+  id           String           @id @default(uuid())
+  key          String           @unique
+  name         String
+  description  String?
+  parentRoleId String?          @map("parent_role_id")
+  sortOrder    Int              @default(0) @map("sort_order")
+  isSystem     Boolean          @default(true) @map("is_system")
+  isActive     Boolean          @default(true) @map("is_active")
+  scopeLevel   DataScopeLevel   @default(own) @map("scope_level")
+  version      Int              @default(1)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  parent       RbacRole?        @relation("RbacRoleHierarchy", fields: [parentRoleId], references: [id], onDelete: SetNull)
+  children     RbacRole[]       @relation("RbacRoleHierarchy")
+  permissions  RolePermission[]
+  approvalCapabilities RoleApprovalCapability[]
+  users        User[]
+
+  @@index([parentRoleId])
+  @@index([sortOrder])
+  @@map("rbac_roles")
+}
+
+model AgencyApprovalPolicy {
+  subCompanyId        String   @id @map("sub_company_id")
+  workflows           Json
+  allowLeadSelfAssign Boolean  @default(true) @map("allow_lead_self_assign")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  subCompany          SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@map("agency_approval_policies")
+}
+
+/// Org-wide approval routes for global database workflows (singleton row).
+model OrgApprovalPolicy {
+  id                        String      @id @default("default")
+  workflows                 Json
+  /// Database Manager CSV import: global database queue vs fixed agency (Client Visibility applies).
+  databaseImportDestination String      @default("global") @map("database_import_destination")
+  /// Super Users screen roles: global database vs agency on add/import (Client Visibility applies on agency path).
+  superUserClientDestination String     @default("agency") @map("super_user_client_destination")
+  databaseImportAgencyId    String?     @map("database_import_agency_id")
+  databaseImportAgency      SubCompany? @relation("OrgDatabaseImportAgency", fields: [databaseImportAgencyId], references: [id], onDelete: SetNull)
+  updatedAt                 DateTime    @updatedAt @map("updated_at")
+
+  @@map("org_approval_policies")
+}
+
+model RoleApprovalCapability {
+  roleId   String                 @map("role_id")
+  workflow ApprovalWorkflowType
+  mode     ApprovalActorMode
+  role     RbacRole               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, workflow])
+  @@map("role_approval_capabilities")
+}
+
+model ApprovalStep {
+  id            String               @id @default(uuid())
+  workflow      ApprovalWorkflowType
+  entityType    String               @map("entity_type")
+  entityId      String               @map("entity_id")
+  stepIndex     Int                  @map("step_index")
+  targetRoleKey String               @map("target_role_key")
+  actorUserId   String               @map("actor_user_id")
+  actorRoleKey  String               @map("actor_role_key")
+  action        String
+  remarks       String?
+  createdAt     DateTime             @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([workflow, createdAt])
+  @@map("approval_steps")
+}
+
+model RbacPermission {
+  id          String                @id @default(uuid())
+  key         String                @unique
+  name        String
+  description String?
+  module      String?
+  parentId    String?               @map("parent_id")
+  sortOrder   Int                   @default(0) @map("sort_order")
+  actionType  PermissionActionType? @map("action_type")
+  isGroup     Boolean               @default(false) @map("is_group")
+  isSystem    Boolean               @default(true) @map("is_system")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  parent      RbacPermission?       @relation("RbacPermissionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    RbacPermission[]      @relation("RbacPermissionTree")
+  roles       RolePermission[]
+
+  @@index([parentId])
+  @@index([module])
+  @@map("rbac_permissions")
+}
+
+model RolePermission {
+  roleId       String         @map("role_id")
+  permissionId String         @map("permission_id")
+  role         RbacRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   RbacPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+enum DataScopeLevel {
+  global
+  agency
+  team
+  own
+}
+
+enum PermissionActionType {
+  read
+  write
+  delete
+  custom
+}
+
+enum Country {
+  Canada
+  USA
+  UK
+  Pakistan
+  India
+  Bangladesh
+  Nepal
+  UAE
+  Australia
+  Philippines
+}
+
+enum ClientStatus {
+  contacted
+  active
+  lost
+  ex
+  unsubscribed
+  permanently_closed
+}
+
+enum ClientVisibility {
+  agency
+  global
+}
+
+enum ClientNoteFieldType {
+  text
+  textarea
+  number
+  boolean
+  select
+}
+
+enum LeadStatus {
+  open
+  active
+  closed_won
+  closed_won_pending
+  closed_lost
+}
+
+enum Temperature {
+  hot
+  warm
+  cold
+}
+
+enum CallOutcome {
+  initiated
+  answered
+  no_answer
+  voicemail
+  busy
+}
+
+enum InboundCallOutcome {
+  answered
+  no_answer
+  voicemail
+  abandoned
+  busy
+  failed
+}
+
+enum FollowUpOutcome {
+  closed_won
+  closed_lost
+  next_follow_up
+  no_response
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TaskStatus {
+  to_do
+  in_progress
+  done
+}
+
+enum TaskLinkType {
+  client
+  lead
+  meeting
+  follow_up
+}
+
+enum JobStatus {
+  draft
+  open
+  closed
+  filled
+}
+
+enum JobType {
+  internal
+  external
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  temporary
+}
+
+enum EmployeeType {
+  internal
+  external
+}
+
+enum EmployeeWorkStatus {
+  none
+  active
+  scheduled
+}
+
+enum EmployeeApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum Gender {
+  male
+  female
+  other
+}
+
+enum ResidencyStatus {
+  citizen
+  pr
+  student
+  refugee
+  work_permit
+}
+
+enum DocumentType {
+  photo_id
+  sin
+  proof_of_status
+  resume
+  agreement
+  bank_deposit
+  other
+  training_certificate
+}
+
+enum SalaryPaymentMethod {
+  cheque
+  deposit
+}
+
+enum EmployeeAssignmentTargetType {
+  client
+  job
+}
+
+enum EmployeeAssignmentStatus {
+  pending
+  approved
+  rejected
+}
+
+enum PlacementEndReason {
+  work_complete
+  not_performing
+  other
+}
+
+enum ActiveClientStatus {
+  active
+  inactive
+}
+
+enum ActiveClientTrainingStatus {
+  pending
+  signed
+}
+
+enum EmailFolder {
+  inbox
+  sent
+  drafts
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  failed
+}
+
+enum EmailRecipientStatus {
+  pending
+  sent
+  delivered
+  opened
+  clicked
+  bounced
+  failed
+}
+
+enum PaymentTerms {
+  net_7
+  net_15
+  net_30
+  net_45
+  net_60
+}
+
+enum DayOfWeek {
+  monday
+  tuesday
+  wednesday
+  thursday
+  friday
+  saturday
+  sunday
+}
+
+enum BookedMeetingStatus {
+  scheduled
+  completed
+  cancelled
+}
+
+enum MeetingStatus {
+  scheduled
+  completed
+}
+
+enum LeadRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum LeadExtensionRequestStatus {
+  pending
+  approved
+  rejected
+  returned
+}
+
+enum FilterViewType {
+  clients
+  leads
+  jobs
+}
+
+enum ResourceRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum BugReportStatus {
+  open
+  closed
+}
+
+enum ProposalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum ProposalExtensionRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum LeadReassignmentStatus {
+  pending
+  approved
+  completed
+  rejected
+  cancelled
+  superseded
+}
+
+enum ApprovalChainMode {
+  bypass
+  fixed_steps
+  full_hierarchy
+}
+
+enum ApprovalWorkflowType {
+  client_manual_add
+  client_manual_edit
+  client_import
+  contact_import
+  database_client_add
+  database_client_import
+  database_contact_import
+  lead_request
+  lead_extension
+  lead_reassignment
+  proposal_review
+  proposal_extension
+  employee_add
+  employee_assignment
+}
+
+enum PendingClientSubmissionSource {
+  agency
+  global_database
+}
+
+enum ApprovalActorMode {
+  none
+  forward_only
+  final_only
+  forward_final
+}
+
+enum ActivityState {
+  active
+  idle
+  offline_suspected
+}
+
+model UserActivitySession {
+  id             String              @id @default(cuid())
+  userId         String              @map("user_id")
+  subCompanyId   String              @map("sub_company_id")
+  startedAt      DateTime            @default(now()) @map("started_at")
+  endedAt        DateTime?           @map("ended_at")
+  lastSeenAt     DateTime            @map("last_seen_at")
+  currentState   ActivityState       @default(active) @map("current_state")
+  idleStartedAt  DateTime?           @map("idle_started_at")
+  activeSeconds  Int                 @default(0) @map("active_seconds")
+  idleSeconds    Int                 @default(0) @map("idle_seconds")
+  offlineSeconds Int                 @default(0) @map("offline_seconds")
+  version        Int                 @default(0)
+  user           User                @relation(fields: [userId], references: [id])
+  events         UserActivityEvent[]
+
+  @@index([userId, endedAt])
+  @@index([subCompanyId, startedAt])
+  @@index([lastSeenAt])
+  @@index([currentState, lastSeenAt])
+  @@map("user_activity_sessions")
+}
+
+model ReviewTemplate {
+  id               String                 @id @default(uuid())
+  name             String
+  documentType     String                 @default("agreement") @map("document_type")
+  documentCategory String                 @default("agreement") @map("document_category")
+  originalFilename String                 @map("original_filename")
+  fileKey          String                 @map("file_key")
+  anchorMap        Json?                  @map("anchor_map")
+  /// false = retired (replaced or deleted). Kept so proposal.reviewTemplateId history still resolves.
+  isActive         Boolean                @default(true) @map("is_active")
+  subCompanyId     String                 @map("sub_company_id")
+  uploadedById     String                 @map("uploaded_by_id")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  subCompany       SubCompany             @relation(fields: [subCompanyId], references: [id])
+  uploadedBy       User                   @relation("ReviewTemplateUploader", fields: [uploadedById], references: [id])
+  proposals        Proposal[]
+  mappingsAsTemp   ReviewTemplateMapping? @relation("TempReviewTemplate")
+  mappingsAsDirect ReviewTemplateMapping? @relation("DirectReviewTemplate")
+  mappingsAsBoth   ReviewTemplateMapping? @relation("BothReviewTemplate")
+
+  @@index([subCompanyId])
+  @@index([subCompanyId, documentType, isActive])
+  @@map("review_templates")
+}
+
+model ReviewTemplateMapping {
+  id               String          @id @default(uuid())
+  subCompanyId     String          @unique @map("sub_company_id")
+  tempTemplateId   String?         @unique @map("temp_template_id")
+  directTemplateId String?         @unique @map("direct_template_id")
+  bothTemplateId   String?         @unique @map("both_template_id")
+  subCompany       SubCompany      @relation(fields: [subCompanyId], references: [id])
+  tempTemplate     ReviewTemplate? @relation("TempReviewTemplate", fields: [tempTemplateId], references: [id], onDelete: SetNull)
+  directTemplate   ReviewTemplate? @relation("DirectReviewTemplate", fields: [directTemplateId], references: [id], onDelete: SetNull)
+  bothTemplate     ReviewTemplate? @relation("BothReviewTemplate", fields: [bothTemplateId], references: [id], onDelete: SetNull)
+
+  @@map("review_template_mappings")
+}
+
+model UserActivityEvent {
+  id         String              @id @default(cuid())
+  sessionId  String              @map("session_id")
+  eventType  String              @map("event_type")
+  eventAt    DateTime            @default(now()) @map("event_at")
+  reasonCode String?             @map("reason_code")
+  metadata   Json?
+  session    UserActivitySession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, eventAt])
+  @@map("user_activity_events")
+}
+
+model Remark {
+  id           String   @id @default(uuid())
+  clientId     String   @map("client_id")
+  authorId     String   @map("author_id")
+  authorName   String   @map("author_name")
+  authorRole   String   @map("author_role") @db.VarChar(64)
+  subCompanyId String   @map("sub_company_id")
+  content      String   @db.Text
+  /// "only_me" | "public" | "shared"
+  visibility   String   @db.VarChar(16)
+  /// "agency" | "global" — only set when visibility = "public"
+  scope        String?  @db.VarChar(16)
+  /// User IDs — only set when visibility = "shared"
+  sharedWith   String[] @default([]) @map("shared_with")
+  isPinned     Boolean  @default(false) @map("is_pinned")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  author     User       @relation(fields: [authorId], references: [id])
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt(sort: Desc)])
+  @@index([clientId, isPinned])
+  @@index([authorId])
+  @@index([visibility, scope, subCompanyId])
+  @@map("remarks")
+}
+
+/// Audit trail for every employee offboarding commit.
+model OffboardingLog {
+  id              String     @id @default(uuid())
+  departingUserId String     @map("departing_user_id")
+  adminId         String     @map("admin_id")
+  subCompanyId    String     @map("sub_company_id")
+  /// Full commit payload for reproducibility.
+  payload         Json
+  /// High-level counts: { emailCount, clientCount, pipelineCount, leadCount, taskCount, meetingCount }.
+  summary         Json
+  committedAt     DateTime   @default(now()) @map("committed_at")
+
+  departingUser   User       @relation("OffboardingDeparting", fields: [departingUserId], references: [id])
+  admin           User       @relation("OffboardingAdmin", fields: [adminId], references: [id])
+  subCompany      SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([departingUserId])
+  @@index([adminId])
+  @@index([subCompanyId])
+  @@index([committedAt])
+  @@map("offboarding_logs")
+}
+
+/// Per-agency phone system settings — inbound/outbound toggles, IVR config, and bundle JSON (Phase 2).
+model PhoneAgencyConfig {
+  subCompanyId          String    @id @map("sub_company_id")
+  outboundCallerId      String?   @map("outbound_caller_id")
+  outboundEnabled       Boolean   @default(true) @map("outbound_enabled")
+  inboundEnabled        Boolean   @default(true) @map("inbound_enabled")
+  provider              String    @default("twilio")
+  syncStatus            String    @default("not_connected") @map("sync_status")
+  lastSyncedAt          DateTime? @map("last_synced_at")
+  autoAttendantExtension String   @default("112") @map("auto_attendant_extension")
+  allowExtensionDialing Boolean   @default(true) @map("allow_extension_dialing")
+  gatherTimeoutSec      Int       @default(5) @map("gather_timeout_sec")
+  greetingClipName      String?   @map("greeting_clip_name")
+  timeoutRouteLabel     String?   @map("timeout_route_label")
+  invalidRouteLabel     String?   @map("invalid_route_label")
+  flowTitle             String    @default("Main call flow") @map("flow_title")
+  menuRoutes            Json      @default("[]") @map("menu_routes")
+  ringGroups            Json      @default("[]") @map("ring_groups")
+  staffExtensions       Json      @default("[]") @map("staff_extensions")
+  voicemailBoxes        Json      @default("[]") @map("voicemail_boxes")
+  audioClips            Json      @default("[]") @map("audio_clips")
+  businessHours         Json      @default("[]") @map("business_hours")
+  timezone              String    @default("America/Toronto") @map("timezone")
+  readinessSteps        Json      @default("[]") @map("readiness_steps")
+  draftFlow             Json?     @map("draft_flow")
+  publishedFlow         Json?     @map("published_flow")
+  defaultsSeededAt      DateTime? @map("defaults_seeded_at")
+  twilioAccountSid      String?   @map("twilio_account_sid")
+  twilioAuthTokenEnc    String?   @map("twilio_auth_token_enc") @db.Text
+  twilioApiKeySid       String?   @map("twilio_api_key_sid")
+  twilioApiKeySecretEnc String?   @map("twilio_api_key_secret_enc") @db.Text
+  twilioTwimlAppSid     String?   @map("twilio_twiml_app_sid")
+  twilioRegion          String?   @map("twilio_region")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  subCompany            SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([twilioAccountSid])
+  @@map("phone_agency_configs")
+}
+
+/// Tracks IVR state across Twilio Gather callbacks for inbound PSTN calls.
+model PhoneCallSession {
+  callSid        String   @id @map("call_sid")
+  subCompanyId   String   @map("sub_company_id")
+  inboundCallId  String?  @map("inbound_call_id")
+  flowNodeId     String   @map("flow_node_id")
+  dtmfBuffer     String?  @map("dtmf_buffer")
+  gatherAttempts Int      @default(0) @map("gather_attempts")
+  metadata       Json?
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([subCompanyId])
+  @@index([inboundCallId])
+  @@map("phone_call_sessions")
+}
+
+/// Agency phone numbers (DIDs). Primary = earliest active row.
+model PhoneNumber {
+  id                String     @id @default(uuid())
+  subCompanyId      String     @map("sub_company_id")
+  e164              String
+  label             String     @default("")
+  isActive          Boolean    @default(true) @map("is_active")
+  twilioIncomingSid String?    @map("twilio_incoming_sid")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  subCompany        SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([subCompanyId, e164])
+  @@index([subCompanyId])
+  @@index([subCompanyId, isActive])
+  @@map("phone_numbers")
+}
+
+model InboundCall {
+  id               String               @id @default(uuid())
+  subCompanyId     String               @map("sub_company_id")
+  fromNumber       String               @map("from_number")
+  toNumber         String               @map("to_number")
+  menuKey          Int?                 @map("menu_key")
+  departmentLabel  String?              @map("department_label")
+  ringGroupName    String?              @map("ring_group_name")
+  ringGroupId      String?              @map("ring_group_id")
+  voicemailBoxId   String?              @map("voicemail_box_id")
+  voicemailBoxName String?              @map("voicemail_box_name")
+  answeredByUserId String?              @map("answered_by_user_id")
+  outcome          InboundCallOutcome
+  startedAt        DateTime             @map("started_at")
+  durationSec      Int?                 @map("duration_sec")
+  ringDurationSec  Int?                 @map("ring_duration_sec")
+  recordingUrl     String?              @map("recording_url")
+  twilioCallSid            String?              @unique @map("twilio_call_sid")
+  callerParticipantCallSid String?              @map("caller_participant_call_sid")
+  conferenceSid            String?              @map("conference_sid")
+  conferenceRoom           String?              @map("conference_room")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  subCompany       SubCompany           @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  answeredBy       User?                @relation("InboundCallAnsweredBy", fields: [answeredByUserId], references: [id], onDelete: SetNull)
+  participants     InboundCallParticipant[]
+  conferenceLegs   PhoneConferenceLeg[]
+
+  @@index([subCompanyId])
+  @@index([answeredByUserId])
+  @@index([startedAt])
+  @@index([outcome])
+  @@index([ringGroupId])
+  @@index([voicemailBoxId])
+  @@index([subCompanyId, outcome])
+  @@map("inbound_calls")
+}
+
+model InboundCallParticipant {
+  id            String      @id @default(uuid())
+  inboundCallId String      @map("inbound_call_id")
+  userId        String      @map("user_id")
+  userName      String      @map("user_name")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  inboundCall   InboundCall @relation(fields: [inboundCallId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([inboundCallId])
+  @@index([userId])
+  @@map("inbound_call_participants")
+}
+
+model UserAgencyLink {
+  id        String   @id @default(uuid())
+  groupId   String   @map("group_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+  color     String?  @map("color")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@unique([userId])
+  @@index([groupId])
+  @@map("user_agency_links")
+}
+
+/// Agent phone availability — drives busy-aware dialing and the call queue.
+/// Effective status = manualStatus when set, otherwise busy when activeCallCount > 0.
+enum AgentPresenceStatus {
+  available
+  busy
+  away
+  offline
+}
+
+/// Live queue entry for a caller waiting for an available agent (call-center queue).
+enum PhoneQueueEntryStatus {
+  waiting
+  connecting
+  connected
+  abandoned
+  timeout
+}
+
+model AgentPhonePresence {
+  userId          String               @id @map("user_id")
+  subCompanyId    String?              @map("sub_company_id")
+  manualStatus    AgentPresenceStatus? @map("manual_status")
+  activeCallCount Int                  @default(0) @map("active_call_count")
+  lastCallEndedAt DateTime?            @map("last_call_ended_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  @@index([subCompanyId])
+  @@map("agent_phone_presence")
+}
+
+model PhoneQueueEntry {
+  id              String                @id @default(uuid())
+  subCompanyId    String                @map("sub_company_id")
+  ringGroupId     String?               @map("ring_group_id")
+  ringGroupName   String?               @map("ring_group_name")
+  queueName       String                @map("queue_name")
+  inboundCallId   String?               @map("inbound_call_id")
+  callSid         String                @map("call_sid")
+  callerNumber    String                @map("caller_number")
+  callerName      String?               @map("caller_name")
+  status          PhoneQueueEntryStatus @default(waiting)
+  connectedUserId String?               @map("connected_user_id")
+  enqueuedAt      DateTime              @default(now()) @map("enqueued_at")
+  connectedAt     DateTime?             @map("connected_at")
+  endedAt         DateTime?             @map("ended_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  @@index([subCompanyId, status])
+  @@index([ringGroupId, status])
+  @@index([callSid])
+  @@map("phone_queue_entries")
+}
+
+/// Outbound REST-created agent legs ringing into an inbound conference.
+enum PhoneConferenceLegStatus {
+  ringing
+  joined
+  failed
+  canceled
+}
+
+model PhoneConferenceLeg {
+  agentCallSid   String                   @id @map("agent_call_sid")
+  inboundCallId  String                   @map("inbound_call_id")
+  subCompanyId   String                   @map("sub_company_id")
+  conferenceRoom String                   @map("conference_room")
+  userId         String                   @map("user_id")
+  status         PhoneConferenceLegStatus @default(ringing)
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  inboundCall    InboundCall              @relation(fields: [inboundCallId], references: [id], onDelete: Cascade)
+
+  @@index([inboundCallId])
+  @@index([inboundCallId, status])
+  @@index([userId])
+  @@map("phone_conference_legs")
+}
+
+model SigningAuthority {
+  id            String     @id @default(uuid())
+  subCompanyId  String     @map("sub_company_id")
+  name          String
+  signatureData String     @map("signature_data") @db.Text
+  fontFamily    String     @map("font_family")
+  isPrimary     Boolean    @default(false) @map("is_primary")
+  createdBy     String     @map("created_by")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@map("signing_authorities")
+}

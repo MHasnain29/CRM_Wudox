@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Environment files with secrets — never commit
+frontend/.env.development
+frontend/.env.production
+frontend/.env.local
+backend/.env
+backend/.env.local
+
+# Local dev tunnel URL (ngrok) — copy from dev-tunnel.env.example
+dev-tunnel.env
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+# MS Office lock/temp files (open workbook)
+~$*
+# Local-only dev tools (not committed — activity sim, etc.)
+local-tools/
+
+# Local Windows auto-start (opens terminals for frontend + backend)
+start-dev.bat
+scripts/dev.ps1
+

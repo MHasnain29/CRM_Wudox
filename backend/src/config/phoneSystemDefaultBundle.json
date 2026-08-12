@@ -1,0 +1,202 @@
+{
+  "flowTitle": "Incoming Call Flow · Ext 112",
+  "config": {
+    "autoAttendantExtension": "112",
+    "allowExtensionDialing": true,
+    "gatherTimeoutSec": 5,
+    "greetingClipName": "Greeting Options",
+    "timeoutRouteLabel": "Menu timeout — please try again",
+    "invalidRouteLabel": "Play Locations clip"
+  },
+  "ringGroups": [
+    {
+      "id": "tpl-rg-recruitment",
+      "extension": "1",
+      "name": "Recruitment",
+      "ringStrategy": "simultaneous",
+      "dialTimeoutSec": 25,
+      "fallbackAction": "voicemail",
+      "fallbackVoicemailBoxId": "tpl-vm-11",
+      "fallbackForwardE164": "",
+      "members": []
+    },
+    {
+      "id": "tpl-rg-sales",
+      "extension": "2",
+      "name": "Sales",
+      "ringStrategy": "simultaneous",
+      "dialTimeoutSec": 25,
+      "fallbackAction": "voicemail",
+      "fallbackVoicemailBoxId": "tpl-vm-12",
+      "fallbackForwardE164": "",
+      "members": []
+    },
+    {
+      "id": "tpl-rg-accounts",
+      "extension": "3",
+      "name": "Accounts",
+      "ringStrategy": "simultaneous",
+      "dialTimeoutSec": 25,
+      "fallbackAction": "voicemail",
+      "fallbackVoicemailBoxId": "tpl-vm-13",
+      "fallbackForwardE164": "",
+      "members": []
+    }
+  ],
+  "menuRoutes": [
+    {
+      "id": "tpl-mr-1",
+      "key": 1,
+      "callerIdLabel": "Recruitment",
+      "ringGroupId": "tpl-rg-recruitment",
+      "ringGroupExtension": "1",
+      "ringGroupName": "Recruitment",
+      "dialTimeoutSec": 25,
+      "voicemailBoxId": "tpl-vm-11",
+      "voicemailExtension": "11",
+      "voicemailName": "Recruitment VM",
+      "fallbackAction": "voicemail",
+      "fallbackForwardE164": ""
+    },
+    {
+      "id": "tpl-mr-2",
+      "key": 2,
+      "callerIdLabel": "Sales",
+      "ringGroupId": "tpl-rg-sales",
+      "ringGroupExtension": "2",
+      "ringGroupName": "Sales",
+      "dialTimeoutSec": 25,
+      "voicemailBoxId": "tpl-vm-12",
+      "voicemailExtension": "12",
+      "voicemailName": "Sales VM",
+      "fallbackAction": "voicemail",
+      "fallbackForwardE164": ""
+    },
+    {
+      "id": "tpl-mr-3",
+      "key": 3,
+      "callerIdLabel": "Accounts",
+      "ringGroupId": "tpl-rg-accounts",
+      "ringGroupExtension": "3",
+      "ringGroupName": "Accounts",
+      "dialTimeoutSec": 25,
+      "voicemailBoxId": "tpl-vm-13",
+      "voicemailExtension": "13",
+      "voicemailName": "Accounts VM",
+      "fallbackAction": "voicemail",
+      "fallbackForwardE164": ""
+    },
+    {
+      "id": "tpl-mr-4",
+      "key": 4,
+      "callerIdLabel": "Office hours",
+      "ringGroupId": "tpl-rg-recruitment",
+      "ringGroupExtension": "1",
+      "ringGroupName": "Recruitment",
+      "dialTimeoutSec": 25,
+      "voicemailBoxId": "tpl-vm-13",
+      "voicemailExtension": "13",
+      "voicemailName": "Accounts VM",
+      "fallbackAction": "voicemail",
+      "fallbackForwardE164": ""
+    }
+  ],
+  "voicemailBoxes": [
+    {
+      "id": "tpl-vm-11",
+      "extension": "11",
+      "name": "Recruitment VM",
+      "greetingType": "unavailable",
+      "linkedMenuKey": null,
+      "notifyEmails": []
+    },
+    {
+      "id": "tpl-vm-12",
+      "extension": "12",
+      "name": "Sales VM",
+      "greetingType": "unavailable",
+      "linkedMenuKey": null,
+      "notifyEmails": []
+    },
+    {
+      "id": "tpl-vm-13",
+      "extension": "13",
+      "name": "Accounts VM",
+      "greetingType": "unavailable",
+      "linkedMenuKey": null,
+      "notifyEmails": []
+    }
+  ],
+  "audioClips": [
+    {
+      "id": "tpl-ac-greeting",
+      "name": "Greeting Options",
+      "scriptText": "Thank you for calling. Press 1 for Recruitment, 2 for Sales, 3 for Accounts, or 4 for office hours. Press star for voicemail directory. If you know your party's extension, dial it now followed by the pound key.",
+      "durationSec": 16
+    },
+    {
+      "id": "tpl-ac-locations",
+      "name": "Locations",
+      "scriptText": "Our offices are open Monday through Friday, 9 AM to 5 PM Eastern.",
+      "durationSec": 6
+    },
+    {
+      "id": "tpl-ac-menu-timeout",
+      "name": "Menu timeout",
+      "scriptText": "You did not enter a selection. Please try again.",
+      "durationSec": 4
+    },
+    {
+      "id": "tpl-ac-invalid",
+      "name": "Invalid option",
+      "scriptText": "That is not a valid option. Please try again.",
+      "durationSec": 4
+    },
+    {
+      "id": "tpl-ac-ext-not-found",
+      "name": "Extension not found",
+      "scriptText": "Extension not found. Please try again.",
+      "durationSec": 4
+    },
+    {
+      "id": "tpl-ac-ext-not-available",
+      "name": "Extension not available",
+      "scriptText": "That extension is not available. Returning to the main menu.",
+      "durationSec": 5
+    },
+    {
+      "id": "tpl-ac-no-agents",
+      "name": "No agents available",
+      "scriptText": "No agents are available. Please try again later.",
+      "durationSec": 5
+    },
+    {
+      "id": "tpl-ac-vm-prompt",
+      "name": "Voicemail prompt",
+      "scriptText": "Please leave a message after the tone.",
+      "durationSec": 4
+    },
+    {
+      "id": "tpl-ac-goodbye",
+      "name": "Goodbye",
+      "scriptText": "Thank you for calling. Goodbye.",
+      "durationSec": 3
+    },
+    {
+      "id": "tpl-ac-after-hours",
+      "name": "After hours",
+      "scriptText": "Thank you for calling. You have reached us outside our working hours. Please hold while we connect your call.",
+      "durationSec": 6
+    }
+  ],
+  "businessHours": [
+    { "dayOfWeek": 0, "label": "Sunday", "enabled": false, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 1, "label": "Monday", "enabled": true, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 2, "label": "Tuesday", "enabled": true, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 3, "label": "Wednesday", "enabled": true, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 4, "label": "Thursday", "enabled": true, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 5, "label": "Friday", "enabled": true, "open": "09:00", "close": "17:00" },
+    { "dayOfWeek": 6, "label": "Saturday", "enabled": false, "open": "09:00", "close": "17:00" }
+  ],
+  "readinessSteps": []
+}

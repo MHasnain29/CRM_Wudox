@@ -1,0 +1,57 @@
+---
+description: NA Staffing CRM — single system guide for Cursor (map, stack, patterns, token rules)
+alwaysApply: true
+---
+
+# NA Staffing CRM — Cursor system guide
+
+Staffing-agency CRM. **Do not scan the whole repo.** Use this guide, then open only files for the task.
+
+## Token rules
+
+1. Grep/Glob with a **narrow path** (`backend/src/services`, `frontend/src/pages`).
+2. Never open `node_modules`, `dist`, `build`, lockfiles, or PDFs.
+3. Spec: use **`docs/SYSTEM_UNDERSTANDING.md`** only. Escalate to one `backend/docs/<topic>.md` if needed — never whole folders. Latest product decision wins on conflict.
+4. Domain first (clients, leads, auth…) → open that **route + service + page** only.
+5. Small targeted edits; no drive-by refactors.
+
+## Map
+
+| Area | Path |
+|------|------|
+| API | `backend/src/` — routes → services → Prisma |
+| Schema | `backend/prisma/schema.prisma` |
+| Env | `backend/src/config/env.ts` + `.env.example` |
+| Topic docs | `backend/docs/<topic>.md` (one file, not the folder) |
+| Spec | `docs/SYSTEM_UNDERSTANDING.md` |
+| UI | `frontend/src/` — `pages/`, `components/`, `hooks/`, `lib/` |
+
+- Backend: `routes/<domain>.ts` + `services/<domain>.ts` + `middleware/`
+- Frontend: `pages/<Name>.tsx`, UI in `components/` (+ `ui/` shadcn), API in `lib/`, permissions via `usePermission` / `PermissionRoute`
+
+## System snapshot
+
+- **Stack:** Node, Express, Prisma, PostgreSQL; Redis optional; API `/api/v1`. Frontend: React, Vite, shadcn, `@/` imports.
+- **Roles (enum):** super_admin, dev_team, director, company_director, sales_manager, recruitment_manager, sales_associate, sales_executive, recruiter, sr_recruiter, data_entry_specialist, database_manager, operations_manager, it. Matrix: `backend/docs/ROLES_AND_ACCESS.md`.
+- **Clients:** one shared DB; per-agency status/tags/notes. `id` = FK; `corporateCode` = business id. Detail: `CLIENT_AGENCY_MODEL.md`.
+- **Leads:** agency-scoped; permissions leads:read/write/assign. Detail: `LEADS_AND_PIPELINE.md`.
+- **Auth:** JWT access 15m, refresh 7d in Redis, rotation. Detail: `AUTH.md`.
+- **Voice:** Twilio CRM softphone ≠ staff WebRTC chat calling.
+
+## Principles
+
+Scalable (indexes, pagination, no N+1), secure (Zod validate, auth, no secrets in logs), modular (thin routes / fat services), optional Redis/Twilio/R2 must not crash when unset. Migrations only for schema.
+
+**Isolate new work:** add features as separate services/components; do not disturb unrelated code. See `.cursor/rules/separate-functionality.mdc`.
+
+## Backend patterns
+
+- Routes: validate → service → response; `authenticate` on protected routes.
+- Services: business logic + Prisma; no HTTP objects.
+- Paginate lists; prefer `select`/`include`; new env → `env.ts` + `.env.example`.
+
+## Frontend patterns
+
+- Thin pages; reuse `components/ui`, dialogs/sheets, toast/sonner.
+- Permissions + agency helpers (`useAgencyFilter`, `resolveAgencyId`, act-as) — don’t invent parallel logic.
+- New screen: `pages/` + `App.tsx` route + permission if needed. Match existing CRM chrome.

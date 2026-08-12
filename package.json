@@ -1,0 +1,25 @@
+{
+  "name": "na-staffing-crm",
+  "private": true,
+  "description": "NA Staffing CRM — frontend (React/Vite) and backend (Node/Express/Prisma)",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "lint": "npm run lint --prefix frontend && npm run lint --prefix backend",
+    "test": "npm test --prefix backend",
+    "start": "npm run start --prefix backend",
+    "install:all": "npm install && npm install --prefix frontend && npm install --prefix backend",
+    "db:reset": "npm run db:reset --prefix backend",
+    "db:seed": "npm run prisma:seed --prefix backend",
+    "deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy.ps1",
+    "deploy:force": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy.ps1 -AllowDirty",
+    "version:bump": "npm version patch --prefix frontend --no-git-tag-version && node -e \"const v=require('./frontend/package.json').version; console.log('✅ Version bumped to v'+v+' — restart dev server to see it in the app');\"",
+    "sync:templates": "git pull && npm run prisma:sync-templates --prefix backend",
+    "tunnel:sync": "npm run tunnel:sync --prefix backend",
+    "tunnel:ngrok": "ngrok http 127.0.0.1:3001"
+  }
+}

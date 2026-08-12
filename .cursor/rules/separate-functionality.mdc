@@ -1,0 +1,36 @@
+---
+description: Isolate new AI work as separate entities/components — do not disturb unrelated code
+alwaysApply: true
+---
+
+# Separate functionality (do not disturb)
+
+When adding or changing features, treat new work as a **separate entity**. Do not fold unrelated logic into existing god files or refactor neighbors.
+
+## Rules
+
+1. **New feature = new files** when practical: new service, route handlers file (or clearly scoped section), component, hook, or page section — not a dump into an already huge file.
+2. **Touch only what you must.** Do not rewrite, reformat, rename, or “clean up” unrelated functions in the same file.
+3. **Frontend:** Prefer a new component under a domain folder (`components/clients/`, `employees/`, `dashboard/`, etc.). Wire it into the page with a small import + render. Do not grow megapage files with inline UI for new features.
+4. **Backend:** Prefer a dedicated service module (or clearly named functions in an existing domain service). Keep routes thin: validate → call service → respond. Do not paste business logic into oversized route files when a service can own it.
+5. **Shared helpers:** Extract only what the new feature needs into a small util/hook. Do not merge with unrelated helpers.
+6. **No drive-by edits:** Same PR/task scope only. Unrelated bugs/style/refactors are out of scope unless the user asked.
+
+## Examples
+
+```text
+❌ BAD: Add a new dashboard widget by editing 200 lines inside ManagerDashboard.tsx
+✅ GOOD: New DatabaseManagerWidget.tsx (or feature folder) + thin import in the parent
+
+❌ BAD: Add approval logic inside clients.ts route (4000+ lines)
+✅ GOOD: services/clientApprovals.ts (or similar) + thin route call
+
+❌ BAD: While fixing X, also rename/restructure Y “while we’re here”
+✅ GOOD: Fix X only; leave Y alone
+```
+
+## When editing a large existing file is unavoidable
+
+- Change the smallest region possible.
+- Do not move/split unrelated code in the same edit unless the user explicitly asked for a refactor.
+- Prefer extracting the *new* piece out rather than expanding the monolith.
