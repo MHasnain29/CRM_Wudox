@@ -1,5 +1,5 @@
 /**
- * Seed dummy offboarding test data for Emily Johnson (associate1@nastaffing.com)
+ * Seed dummy offboarding test data for Emily Johnson (associate1@wudox.ca)
  * Run: node backend/prisma/seed-emily-test.js
  */
 const { PrismaClient } = require('../node_modules/@prisma/client');

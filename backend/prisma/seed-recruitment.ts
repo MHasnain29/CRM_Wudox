@@ -50,7 +50,7 @@ const RECRUITMENT_NOTIFICATION_TYPES = [
 ] as const;
 
 async function main() {
-  // ── Resolve agencies ────────────────────────────────────────────────────────
+  // ── Resolve agency ──────────────────────────────────────────────────────────
   const subCompanies = await prisma.subCompany.findMany({
     orderBy: { createdAt: 'asc' },
     select: { id: true, name: true },
@@ -59,23 +59,21 @@ async function main() {
     throw new Error('No sub companies found. Run the full seed first (npm run prisma:seed).');
   }
 
-  const toronto =
-    subCompanies.find((s) => s.name.toLowerCase().includes('toronto')) ?? subCompanies[0]!;
-  const vancouver =
-    subCompanies.find((s) => s.id !== toronto.id && s.name.toLowerCase().includes('vancouver')) ??
-    subCompanies.find((s) => s.id !== toronto.id) ??
-    toronto;
+  const agency =
+    subCompanies.find((s) => s.name.toLowerCase().includes('mississauga')) ??
+    subCompanies.find((s) => s.name.toLowerCase().includes('toronto')) ??
+    subCompanies[0]!;
 
   // ── Resolve users ───────────────────────────────────────────────────────────
   const recruiter1 =
-    (await findUserByRole(['recruiter', 'sr_recruiter'], toronto.id)) ??
+    (await findUserByRole(['recruiter', 'sr_recruiter'], agency.id)) ??
     (await findUserByRole(['recruiter', 'sr_recruiter']));
   const srRecruiter =
-    (await findUserByRole(['sr_recruiter'], toronto.id)) ?? recruiter1;
-  const vancouverRecruiter =
-    (await findUserByRole(['recruiter', 'sr_recruiter'], vancouver.id)) ?? recruiter1;
+    (await findUserByRole(['sr_recruiter'], agency.id)) ?? recruiter1;
+  const pakistanUser =
+    (await findUserByRole(['recruiter'], agency.id)) ?? recruiter1;
   const recruitmentManager =
-    (await findUserByRole(['recruitment_manager'], toronto.id)) ??
+    (await findUserByRole(['recruitment_manager'], agency.id)) ??
     (await findUserByRole(['recruitment_manager'])) ??
     (await findUserByRole(['director', 'super_admin']));
 
@@ -85,7 +83,7 @@ async function main() {
     );
   }
 
-  console.log(`🏢 Agencies: Toronto="${toronto.name}", Vancouver="${vancouver.name}"`);
+  console.log(`🏢 Agency: "${agency.name}"`);
   console.log(`👤 Recruiter: ${recruiter1.email} · RM: ${recruitmentManager.email}`);
 
   // ── Wipe recruitment domain ─────────────────────────────────────────────────
@@ -143,11 +141,9 @@ async function main() {
   const counts = await seedRecruitmentDemo(prisma, {
     recruiter1,
     srRecruiter: srRecruiter ?? recruiter1,
-    vancouverRecruiter: vancouverRecruiter ?? recruiter1,
-    pakistanUser: recruiter1,
+    pakistanUser: pakistanUser ?? recruiter1,
     recruitmentManager,
-    subCompanyTorontoId: toronto.id,
-    subCompanyVancouverId: vancouver.id,
+    subCompanyTorontoId: agency.id,
     daysFromSeed,
   });
 

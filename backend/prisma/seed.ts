@@ -53,7 +53,6 @@ function displayUserName(user: { firstName: string; lastName: string }): string 
 }
 
 type SeedClient = Awaited<ReturnType<typeof prisma.client.create>>;
-type ClientBucket = 'shared' | 'toronto' | 'vancouver';
 
 async function main() {
   console.log('🌱 Starting database seed...');
@@ -70,34 +69,20 @@ async function main() {
     END $$;
   `);
 
-  // Create Sub Companies
-  console.log('📦 Creating sub companies...');
-  const subCompany1 = await prisma.subCompany.create({
+  // Create Sub Company (single-agency demo)
+  console.log('📦 Creating sub company...');
+  const subCompany = await prisma.subCompany.create({
     data: {
-      name: 'NA Staffing - Toronto',
-      appProjectName: 'NA Staffing CRM',
-      agencyEmail: 'toronto@nastaffing.com',
-      agencyPhone: '+1-416-555-1000',
-      emailFooterText: 'NA Staffing Toronto Office',
-      emailTagline: 'Reliable staffing across Ontario',
-      emailFromAddress: 'toronto@nastaffing.com',
-      emailFromName: 'NA Staffing Toronto',
-      emailSendAsDomain: 'nastaffing.com',
-      mainOrgId: 'main-org-001',
-    },
-  });
-
-  const subCompany2 = await prisma.subCompany.create({
-    data: {
-      name: 'NA Staffing - Vancouver',
-      appProjectName: 'NA Staffing CRM',
-      agencyEmail: 'vancouver@nastaffing.com',
-      agencyPhone: '+1-604-555-1000',
-      emailFooterText: 'NA Staffing Vancouver Office',
-      emailTagline: 'West Coast staffing support',
-      emailFromAddress: 'vancouver@nastaffing.com',
-      emailFromName: 'NA Staffing Vancouver',
-      emailSendAsDomain: 'nastaffing.com',
+      name: 'Wudox - Mississauga',
+      appProjectName: 'Wudox CRM',
+      logoUrl: 'https://wudox.ca/favicon.ico',
+      agencyEmail: 'mississauga@wudox.ca',
+      agencyPhone: '+1-905-555-1000',
+      emailFooterText: 'Wudox Mississauga Office',
+      emailTagline: 'Custom software across the GTA',
+      emailFromAddress: 'mississauga@wudox.ca',
+      emailFromName: 'Wudox Mississauga',
+      emailSendAsDomain: 'wudox.ca',
       mainOrgId: 'main-org-001',
     },
   });
@@ -108,15 +93,6 @@ async function main() {
     data: {
       name: 'Toronto Office',
       address: '123 Main St, Toronto, ON',
-      country: 'Canada',
-      isActive: true,
-    },
-  });
-
-  const locationVancouver = await prisma.location.create({
-    data: {
-      name: 'Vancouver Office',
-      address: '456 Oak Ave, Vancouver, BC',
       country: 'Canada',
       isActive: true,
     },
@@ -133,33 +109,19 @@ async function main() {
 
   console.log('👥 Creating users...');
   const {
-    superAdmin,
     director,
-    companyDirector,
-    companyDirectorVancouver,
     salesManager1,
-    salesManager2,
     salesAssociate1,
     salesAssociate2,
-    vancouverAssociate,
-    vancouverAssociate2,
     recruiter1,
-    vancouverRecruiter,
     pakistanUser,
     recruitmentManager,
-    salesExecutive,
     srRecruiter,
-    dataEntrySpecialist,
     databaseManager,
-    operationsManager,
-    itUser,
-    devTeamUser,
     allSeedUsers,
   } = await seedUsers(prisma, {
-    subCompanyTorontoId: subCompany1.id,
-    subCompanyVancouverId: subCompany2.id,
+    subCompanyId: subCompany.id,
     locationTorontoId: locationToronto.id,
-    locationVancouverId: locationVancouver.id,
     locationPakistanId: locationPakistan.id,
   });
 
@@ -227,12 +189,12 @@ ${body}
       footerHtml: null,
       bodyHtml: emailWrap(`
 <tr><td style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:40px 32px;text-align:center;">
-  <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;">NA Staffing</h1>
+  <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;">Wudox</h1>
   <p style="margin:8px 0 0;color:#bfdbfe;font-size:15px;">Your Trusted Staffing Partner</p>
 </td></tr>
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hello {{contact_name}},</h2>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">My name is {{sender_name}} from <strong>NA Staffing</strong>. I'm reaching out because we help companies like <strong>{{company_name}}</strong> find exceptional talent quickly and efficiently.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">My name is {{sender_name}} from <strong>Wudox</strong>. I'm reaching out because we help companies like <strong>{{company_name}}</strong> find exceptional talent quickly and efficiently.</p>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr>
     <td width="33%" style="padding:12px;text-align:center;background:#eff6ff;border-radius:8px 0 0 8px;">
       <p style="margin:0;font-size:24px;font-weight:700;color:#1e40af;">500+</p>
@@ -259,11 +221,11 @@ ${emailFooter()}`),
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
-${emailHeader('NA Staffing', 'Talent Solutions')}
+${emailHeader('Wudox', 'Software Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I wanted to follow up on our recent conversation about staffing solutions for <strong>{{company_name}}</strong>.</p>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">At NA Staffing, we specialize in connecting businesses with top-tier talent. Based on our discussion, I believe we can help you with:</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">At Wudox, we specialize in connecting businesses with top-tier talent. Based on our discussion, I believe we can help you with:</p>
   <ul style="margin:0 0 16px;padding-left:20px;color:#4a4a4a;font-size:14px;line-height:1.9;">
     <li>Temporary and contract staffing</li>
     <li>Direct hire placements</li>
@@ -281,7 +243,7 @@ ${emailFooter()}`),
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
-${emailHeader('NA Staffing', 'Talent Solutions')}
+${emailHeader('Wudox', 'Software Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Thank you, {{contact_name}}!</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I truly appreciate you taking the time to meet with me today. It was great learning more about <strong>{{company_name}}</strong> and your current staffing needs.</p>
@@ -305,7 +267,7 @@ ${emailFooter()}`),
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
-${emailHeader('NA Staffing')}
+${emailHeader('Wudox')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 8px;color:#1a1a1a;font-size:18px;">Meeting Confirmed</h2>
   <p style="margin:0 0 24px;color:#71717a;font-size:13px;">Hi {{contact_name}}, your meeting has been scheduled.</p>
@@ -320,7 +282,7 @@ ${emailHeader('NA Staffing')}
     </td></tr>
     <tr><td style="padding:20px 24px;">
       <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Attendees</p>
-      <p style="margin:0;font-size:14px;color:#1a1a1a;">{{sender_name}} (NA Staffing) &amp; {{contact_name}} ({{company_name}})</p>
+      <p style="margin:0;font-size:14px;color:#1a1a1a;">{{sender_name}} (Wudox) &amp; {{contact_name}} ({{company_name}})</p>
     </td></tr>
   </table>
   <p style="margin:24px 0 0;color:#4a4a4a;font-size:14px;line-height:1.7;">If you need to reschedule, please let me know at least 24 hours in advance.</p>
@@ -360,12 +322,12 @@ ${emailFooter('{{agency_footer}} · This proposal is confidential and intended s
     },
     {
       name: 'Welcome / Onboarding',
-      subject: "Welcome to NA Staffing — Let's get started!",
+      subject: "Welcome to Wudox — Let's get started!",
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
 <tr><td style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:40px 32px;text-align:center;">
-  <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;">Welcome to NA Staffing!</h1>
+  <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;">Welcome to Wudox!</h1>
   <p style="margin:8px 0 0;color:#bfdbfe;font-size:15px;">We're excited to partner with you</p>
 </td></tr>
 <tr><td style="padding:32px;">
@@ -404,7 +366,7 @@ ${emailFooter()}`),
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
-${emailHeader('NA Staffing', 'Talent Solutions')}
+${emailHeader('Wudox', 'Software Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I hope everything is going well at <strong>{{company_name}}</strong>. I wanted to check in and see how things are going with your current team members we placed.</p>
@@ -424,11 +386,11 @@ ${emailFooter()}`),
     },
     {
       name: 'Candidate Introduction',
-      subject: 'Candidate profile for {{company_name}} — NA Staffing',
+      subject: 'Candidate profile for {{company_name}} — Wudox',
       headerHtml: null,
       footerHtml: null,
       bodyHtml: emailWrap(`
-${emailHeader('NA Staffing', 'Candidate Presentation')}
+${emailHeader('Wudox', 'Candidate Presentation')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">I'm excited to present a strong candidate for the open position at <strong>{{company_name}}</strong>.</p>
@@ -481,10 +443,8 @@ ${emailFooter()}`),
   }
 
   const agencyEmailTemplates = new Map<string, Awaited<ReturnType<typeof prisma.emailTemplate.create>>>();
-  for (const agency of [
-    { subCompany: subCompany1, label: 'Toronto', color: '#1e40af' },
-    { subCompany: subCompany2, label: 'Vancouver', color: '#047857' },
-  ]) {
+  {
+    const agency = { subCompany, label: 'Mississauga', color: '#1e40af' };
     const template = await prisma.emailTemplate.create({
       data: {
         subCompanyId: agency.subCompany.id,
@@ -494,7 +454,7 @@ ${emailFooter()}`),
         footerHtml: null,
         bodyHtml: emailWrap(`
 <tr><td style="background:${agency.color};padding:28px 32px;">
-  <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">NA Staffing ${agency.label}</h1>
+  <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">Wudox ${agency.label}</h1>
 </td></tr>
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
@@ -530,39 +490,11 @@ ${emailFooter()}`),
   }
 
   const createdClients: SeedClient[] = [];
-  const sharedClients: SeedClient[] = [];
-  const torontoClients: SeedClient[] = [];
-  const vancouverClients: SeedClient[] = [];
-  const clientBuckets = new Map<string, ClientBucket>();
-  const clientAgencyIds = new Map<string, string[]>();
-  const subCompanyIds = [subCompany1.id, subCompany2.id];
+  const subCompanyId = subCompany.id;
+  const statuses = ['contacted', 'active', 'lost', 'ex'] as const;
 
-  const bucketForClientIndex = (index: number): ClientBucket => {
-    const remainder = index % 5;
-    if (remainder <= 1) return 'shared';
-    if (remainder <= 3) return 'toronto';
-    return 'vancouver';
-  };
-
-  const agenciesForBucket = (bucket: ClientBucket): string[] => {
-    if (bucket === 'shared') return subCompanyIds;
-    return bucket === 'toronto' ? [subCompany1.id] : [subCompany2.id];
-  };
-
-  const statusForAgencyClient = (bucket: ClientBucket, subCompanyId: string, index: number) => {
-    const statuses = bucket === 'shared'
-      ? (subCompanyId === subCompany1.id ? ['active', 'contacted', 'ex'] : ['contacted', 'active', 'lost'])
-      : ['contacted', 'active', 'lost', 'ex'];
-    return statuses[index % statuses.length] as 'contacted' | 'active' | 'lost' | 'ex';
-  };
-
-  const rememberClientBucket = (client: SeedClient, bucket: ClientBucket, agencyIds: string[]) => {
+  const rememberClient = (client: SeedClient) => {
     createdClients.push(client);
-    clientBuckets.set(client.id, bucket);
-    clientAgencyIds.set(client.id, agencyIds);
-    if (bucket === 'shared') sharedClients.push(client);
-    if (bucket === 'toronto') torontoClients.push(client);
-    if (bucket === 'vancouver') vancouverClients.push(client);
   };
 
   if (csvContent) {
@@ -600,8 +532,6 @@ ${emailFooter()}`),
       }
 
       for (const [clientIndex, [corporateCode, groupRows]] of Array.from(byId.entries()).entries()) {
-        const bucket = bucketForClientIndex(clientIndex);
-        const agencyIds = agenciesForBucket(bucket);
         const first = groupRows[0];
         const companyName = (first[idx.companyName] ?? '').trim() || corporateCode;
         const industry = (first[idx.industry] ?? '').trim() || null;
@@ -609,6 +539,7 @@ ${emailFooter()}`),
         const fullAddress = (first[idx.address] ?? '').trim();
         const { street, region, postalCode } = parseAddressParts(fullAddress, city);
         const locationSummary = city && region ? `${city}, ${region}` : city || region || null;
+        const isGlobal = clientIndex % 3 === 0;
 
         const client = await prisma.client.create({
           data: {
@@ -620,8 +551,8 @@ ${emailFooter()}`),
             companySize: null,
             status: 'contacted',
             lastActivity: new Date(),
-            visibility: bucket === 'shared' ? 'global' : 'agency',
-            createdByRole: bucket === 'shared' ? 'director' : 'sales_associate',
+            visibility: isGlobal ? 'global' : 'agency',
+            createdByRole: isGlobal ? 'director' : 'sales_associate',
             contacts: {
               create: groupRows.map((row, i) => ({
                 name: (row[idx.concernedPerson] ?? '').trim() || 'Unknown',
@@ -649,20 +580,18 @@ ${emailFooter()}`),
             },
           },
         });
-        rememberClientBucket(client, bucket, agencyIds);
+        rememberClient(client);
 
-        for (const subId of agencyIds) {
-          await prisma.clientSubCompany.create({
-            data: {
-              clientId: client.id,
-              subCompanyId: subId,
-              status: statusForAgencyClient(bucket, subId, clientIndex),
-              lastActivity: daysFromSeed(-(clientIndex % 15)),
-            },
-          });
-        }
+        await prisma.clientSubCompany.create({
+          data: {
+            clientId: client.id,
+            subCompanyId,
+            status: statuses[clientIndex % statuses.length],
+            lastActivity: daysFromSeed(-(clientIndex % 15)),
+          },
+        });
       }
-      console.log(`   Created ${createdClients.length} clients from CSV: ${sharedClients.length} shared, ${torontoClients.length} Toronto-only, ${vancouverClients.length} Vancouver-only.`);
+      console.log(`   Created ${createdClients.length} clients from CSV for Wudox - Mississauga.`);
     }
   }
 
@@ -683,10 +612,10 @@ ${emailFooter()}`),
         contacts: { create: [{ name: 'Placeholder Contact', title: 'HR', email: 'placeholder@example.com', isPrimary: true }] },
       },
     });
-    rememberClientBucket(placeholder, 'shared', subCompanyIds);
-    for (const subId of subCompanyIds) {
-      await prisma.clientSubCompany.create({ data: { clientId: placeholder.id, subCompanyId: subId, status: 'contacted' } });
-    }
+    rememberClient(placeholder);
+    await prisma.clientSubCompany.create({
+      data: { clientId: placeholder.id, subCompanyId, status: 'contacted' },
+    });
   }
 
   // Seed allowed industries from current clients + defaults (per subcompany)
@@ -730,7 +659,7 @@ ${emailFooter()}`),
     'Closed Won',
     'Do Not Contact',
   ];
-  for (const subId of subCompanyIds) {
+  for (const subId of [subCompanyId]) {
     for (const name of industrySet) {
       await prisma.allowedIndustry.upsert({
         where: { subCompanyId_name: { subCompanyId: subId, name } },
@@ -777,10 +706,7 @@ ${emailFooter()}`),
 
   // Add sample client tags to first few clients (so tags appear in UI)
   if (createdClients.length > 0) {
-    const agencyTagClients = [
-      { subCompanyId: subCompany1.id, clients: [...sharedClients.slice(0, 3), ...torontoClients.slice(0, 3)] },
-      { subCompanyId: subCompany2.id, clients: [...sharedClients.slice(0, 3), ...vancouverClients.slice(0, 3)] },
-    ];
+    const tagClients = createdClients.slice(0, 6);
     const sampleTagSets = [
       ['High Priority', 'Key Account'],
       ['Hot Lead'],
@@ -789,19 +715,17 @@ ${emailFooter()}`),
       ['Nurture'],
       ['At Risk'],
     ];
-    for (const agency of agencyTagClients) {
-      for (let clientIndex = 0; clientIndex < agency.clients.length; clientIndex++) {
-        const c = agency.clients[clientIndex];
-        const tagNames = sampleTagSets[clientIndex % sampleTagSets.length];
-        for (const tag of tagNames) {
-          await prisma.clientTag.upsert({
-            where: {
-              clientId_subCompanyId_tag: { clientId: c.id, subCompanyId: agency.subCompanyId, tag },
-            },
-            create: { clientId: c.id, subCompanyId: agency.subCompanyId, tag },
-            update: {},
-          });
-        }
+    for (let clientIndex = 0; clientIndex < tagClients.length; clientIndex++) {
+      const c = tagClients[clientIndex];
+      const tagNames = sampleTagSets[clientIndex % sampleTagSets.length];
+      for (const tag of tagNames) {
+        await prisma.clientTag.upsert({
+          where: {
+            clientId_subCompanyId_tag: { clientId: c.id, subCompanyId, tag },
+          },
+          create: { clientId: c.id, subCompanyId, tag },
+          update: {},
+        });
       }
     }
     console.log('   Added agency-specific sample tags.');
@@ -818,24 +742,14 @@ ${emailFooter()}`),
 
   const agencyDatasets = [
     {
-      key: 'toronto',
-      label: 'Toronto',
-      subCompany: subCompany1,
+      key: 'mississauga',
+      label: 'Mississauga',
+      subCompany,
       manager: salesManager1,
       associates: [salesAssociate1, salesAssociate2],
       recruiter: recruiter1,
-      clients: [...sharedClients.slice(0, 6), ...torontoClients.slice(0, 8)],
-      meetingBaseUrl: 'https://meet.nastaffing.test/toronto',
-    },
-    {
-      key: 'vancouver',
-      label: 'Vancouver',
-      subCompany: subCompany2,
-      manager: salesManager2,
-      associates: [vancouverAssociate, vancouverAssociate2],
-      recruiter: vancouverRecruiter,
-      clients: [...sharedClients.slice(0, 6), ...vancouverClients.slice(0, 8)],
-      meetingBaseUrl: 'https://meet.nastaffing.test/vancouver',
+      clients: createdClients.slice(0, 14),
+      meetingBaseUrl: 'https://meet.wudox.test/mississauga',
     },
   ];
 
@@ -856,7 +770,7 @@ ${emailFooter()}`),
   const createdLeads: Awaited<ReturnType<typeof prisma.lead.create>>[] = [];
   const leadsByAgency = new Map<string, Awaited<ReturnType<typeof prisma.lead.create>>[]>();
   for (const agency of agencyDatasets) {
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     const agencyLeads: Awaited<ReturnType<typeof prisma.lead.create>>[] = [];
     for (let i = 0; i < Math.min(leadPlans.length, agencyClients.length); i++) {
       const plan = leadPlans[i];
@@ -893,7 +807,7 @@ ${emailFooter()}`),
   const outcomes: Array<'answered' | 'no_answer' | 'voicemail' | 'busy'> = ['answered', 'no_answer', 'voicemail', 'busy'];
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     for (let i = 0; i < 10; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -919,7 +833,7 @@ ${emailFooter()}`),
   let followUpCount = 0;
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     for (let i = 0; i < 8; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -959,7 +873,7 @@ ${emailFooter()}`),
   const taskStatuses = ['to_do', 'in_progress', 'done'] as const;
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     for (let i = 0; i < 8; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -989,7 +903,7 @@ ${emailFooter()}`),
   let meetingCount = 0;
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     for (let i = 0; i < 5; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -1039,7 +953,7 @@ ${emailFooter()}`),
 
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     const users = [agency.manager, ...agency.associates];
     for (let i = 0; i < 16; i++) {
       const user = users[i % users.length];
@@ -1055,7 +969,6 @@ ${emailFooter()}`),
           metadata: {
             clientId: client.id,
             clientName: client.name,
-            clientBucket: clientBuckets.get(client.id),
             leadId: lead?.id,
           },
           timestamp: daysFromSeed(-i, 9),
@@ -1069,12 +982,12 @@ ${emailFooter()}`),
   console.log('📝 Creating client notes...');
   let clientNoteCount = 0;
   for (const agency of agencyDatasets) {
-    const agencyClients = agency.clients.length ? agency.clients : sharedClients;
+    const agencyClients = agency.clients.length ? agency.clients : createdClients;
     const noteUsers = [agency.associates[0], agency.manager, director];
     for (let i = 0; i < Math.min(6, agencyClients.length); i++) {
       const client = agencyClients[i];
       const user = noteUsers[i % noteUsers.length];
-      const isPublic = user.role === 'director' && clientBuckets.get(client.id) === 'shared';
+      const isPublic = user.role === 'director' && client.visibility === 'global';
       await prisma.clientNote.create({
         data: {
           clientId: client.id,
@@ -1082,7 +995,7 @@ ${emailFooter()}`),
           userId: user.id,
           userName: displayUserName(user),
           userRole: user.role,
-          content: `${agency.label} note for ${client.name}: ${isPublic ? 'public director note visible across agencies' : 'agency-private follow-up details'}.`,
+          content: `${agency.label} note for ${client.name}: ${isPublic ? 'public director note' : 'agency-private follow-up details'}.`,
           isPublic,
           isPinned: i === 0,
           createdAt: daysFromSeed(-i, 8),
@@ -1120,25 +1033,25 @@ ${emailFooter()}`),
     await prisma.clientVisibilitySetting.create({
       data: {
         subCompanyId: agency.subCompany.id,
-        days: agency.key === 'toronto' ? 7 : 10,
+        days: 7,
       },
     });
     await prisma.proposalDefaultSetting.create({
       data: {
         subCompanyId: agency.subCompany.id,
-        maxFiles: agency.key === 'toronto' ? 5 : 4,
+        maxFiles: 5,
       },
     });
     await prisma.proposalAwaitingClientSetting.create({
       data: {
         subCompanyId: agency.subCompany.id,
-        days: agency.key === 'toronto' ? 7 : 5,
+        days: 7,
       },
     });
     await prisma.leadDeadlineSetting.create({
       data: {
         subCompanyId: agency.subCompany.id,
-        days: agency.key === 'toronto' ? 7 : 6,
+        days: 7,
       },
     });
 
@@ -1164,7 +1077,7 @@ ${emailFooter()}`),
       proposalDefaultFileCount++;
     }
 
-    const listClients = (agency.clients.length ? agency.clients : sharedClients).slice(0, 6);
+    const listClients = (agency.clients.length ? agency.clients : createdClients).slice(0, 6);
     const localList = await prisma.mailingList.create({
       data: {
         subCompanyId: agency.subCompany.id,
@@ -1284,11 +1197,11 @@ ${emailFooter()}`),
 
   await prisma.userAvailability.create({
     data: {
-      userId: salesManager2.id,
+      userId: salesAssociate1.id,
       meetingDuration: 30,
       bufferTime: 15,
-      bookingLinkSlug: `book-${salesManager2.id.substring(0, 8)}`,
-      timezone: 'America/Vancouver',
+      bookingLinkSlug: `book-${salesAssociate1.id.substring(0, 8)}`,
+      timezone: 'America/Toronto',
       timeSlots: {
         create: [
           { dayOfWeek: 'monday', startTime: '09:00', endTime: '17:00', isEnabled: true },
@@ -1314,26 +1227,26 @@ ${emailFooter()}`),
     {
       name: 'Active Client Script',
       clientStatus: 'active',
-      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from NA Staffing. How are you today?"\n\n**Purpose:**\n"I'm calling to check in on your current staffing needs and see how our partnership has been working for you."\n\n**Key Questions:**\n• How has your experience been with our recent placements?\n• Are there any upcoming projects that might require additional staff?\n• Is there anything we could be doing better to support your team?\n\n**Value Proposition:**\n"We've recently expanded our talent pool in [relevant industry], and I thought of your company..."\n\n**Closing:**\n"Thank you for your time. I'll follow up with [specific action]. Is there anything else I can help with today?"`,
+      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from Wudox. How are you today?"\n\n**Purpose:**\n"I'm calling to check in on your current staffing needs and see how our partnership has been working for you."\n\n**Key Questions:**\n• How has your experience been with our recent placements?\n• Are there any upcoming projects that might require additional staff?\n• Is there anything we could be doing better to support your team?\n\n**Value Proposition:**\n"We've recently expanded our talent pool in [relevant industry], and I thought of your company..."\n\n**Closing:**\n"Thank you for your time. I'll follow up with [specific action]. Is there anything else I can help with today?"`,
     },
     {
       name: 'Ex-Client Win-Back Script',
       clientStatus: 'ex',
-      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from NA Staffing. I hope I'm not catching you at a bad time."\n\n**Acknowledge History:**\n"I noticed it's been a while since we last worked together, and I wanted to personally reach out."\n\n**Discovery:**\n"May I ask what led to the change? We value your feedback and want to understand how we can improve."\n\n**Win-Back Offer:**\n"Since your last experience with us, we've made several improvements including [specific improvements]. We'd love the opportunity to earn your business back."\n\n**Special Incentive:**\n"As a returning client, we're offering [special rate/service] for your next placement."\n\n**Closing:**\n"Would you be open to a brief meeting to discuss how we can better serve your needs this time?"`,
+      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from Wudox. I hope I'm not catching you at a bad time."\n\n**Acknowledge History:**\n"I noticed it's been a while since we last worked together, and I wanted to personally reach out."\n\n**Discovery:**\n"May I ask what led to the change? We value your feedback and want to understand how we can improve."\n\n**Win-Back Offer:**\n"Since your last experience with us, we've made several improvements including [specific improvements]. We'd love the opportunity to earn your business back."\n\n**Special Incentive:**\n"As a returning client, we're offering [special rate/service] for your next placement."\n\n**Closing:**\n"Would you be open to a brief meeting to discuss how we can better serve your needs this time?"`,
     },
     {
       name: 'Lost Client Recovery Script',
       clientStatus: 'lost',
-      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from NA Staffing. I appreciate you taking my call."\n\n**Be Direct:**\n"I understand we weren't able to meet your needs previously, and I wanted to personally follow up."\n\n**Listen First:**\n"Could you share what factors influenced your decision? Your honest feedback helps us improve."\n\n**Address Concerns:**\n[After listening] "I understand. Since then, we've [specific changes made to address their concern]."\n\n**New Value:**\n"We now offer [new service/capability] that I believe could address your previous concerns."\n\n**Soft Close:**\n"I'm not asking for a commitment today. Would you be open to a brief conversation about your current situation?"`,
+      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from Wudox. I appreciate you taking my call."\n\n**Be Direct:**\n"I understand we weren't able to meet your needs previously, and I wanted to personally follow up."\n\n**Listen First:**\n"Could you share what factors influenced your decision? Your honest feedback helps us improve."\n\n**Address Concerns:**\n[After listening] "I understand. Since then, we've [specific changes made to address their concern]."\n\n**New Value:**\n"We now offer [new service/capability] that I believe could address your previous concerns."\n\n**Soft Close:**\n"I'm not asking for a commitment today. Would you be open to a brief conversation about your current situation?"`,
     },
     {
       name: 'New Contact Introduction Script',
       clientStatus: 'contacted',
-      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from NA Staffing. Thank you for taking my call."\n\n**Introduction:**\n"We specialize in [staffing services] and have been helping companies in [industry] find top talent."\n\n**Qualification Questions:**\n• "What does your current hiring process look like?"\n• "What are your biggest staffing challenges right now?"\n• "How do you typically source candidates?"\n\n**Value Statement:**\n"Based on what you've shared, I think we could help by [specific benefit]. We've helped similar companies achieve [specific result]."\n\n**Next Steps:**\n"I'd love to schedule a brief meeting to learn more about your needs. Would [specific time] work for you?"`,
+      content: `**Opening:**\n"Hi [Contact Name], this is [Your Name] from Wudox. Thank you for taking my call."\n\n**Introduction:**\n"We specialize in [staffing services] and have been helping companies in [industry] find top talent."\n\n**Qualification Questions:**\n• "What does your current hiring process look like?"\n• "What are your biggest staffing challenges right now?"\n• "How do you typically source candidates?"\n\n**Value Statement:**\n"Based on what you've shared, I think we could help by [specific benefit]. We've helped similar companies achieve [specific result]."\n\n**Next Steps:**\n"I'd love to schedule a brief meeting to learn more about your needs. Would [specific time] work for you?"`,
     },
   ];
 
-  for (const agency of [subCompany1, subCompany2]) {
+  for (const agency of [subCompany]) {
     for (const script of scriptData) {
       await prisma.callScript.upsert({
         where: { subCompanyId_name: { subCompanyId: agency.id, name: script.name } },
@@ -1374,18 +1287,12 @@ ${emailFooter()}`),
   console.log('  ✓ Org approval policy (global database destination)');
 
   const workflowDemoCounts = await seedWorkflowDemos(prisma, {
-    subCompany1,
-    subCompany2,
+    subCompany,
     salesAssociate1,
     salesAssociate2,
-    vancouverAssociate,
-    vancouverAssociate2,
     salesManager1,
-    salesManager2,
     databaseManager,
-    sharedClients,
-    torontoClients,
-    vancouverClients,
+    clients: createdClients,
     leadsByAgency,
     daysFromSeed,
   });
@@ -1394,11 +1301,9 @@ ${emailFooter()}`),
   const recruitmentDemoCounts = await seedRecruitmentDemo(prisma, {
     recruiter1,
     srRecruiter,
-    vancouverRecruiter,
     pakistanUser,
     recruitmentManager,
-    subCompanyTorontoId: subCompany1.id,
-    subCompanyVancouverId: subCompany2.id,
+    subCompanyTorontoId: subCompany.id,
     daysFromSeed,
   });
   jobCount = recruitmentDemoCounts.jobCount;
@@ -1408,10 +1313,10 @@ ${emailFooter()}`),
 
   console.log('✅ Database seed completed successfully!');
   console.log('\n📊 Summary:');
-  console.log(`   - Sub Companies: 2`);
-  console.log(`   - Locations: 3`);
+  console.log(`   - Sub Companies: 1`);
+  console.log(`   - Locations: 2`);
   console.log(`   - Users: ${allSeedUsers.length}`);
-  console.log(`   - Clients: ${createdClients.length} (${sharedClients.length} shared, ${torontoClients.length} Toronto-only, ${vancouverClients.length} Vancouver-only)`);
+  console.log(`   - Clients: ${createdClients.length}`);
   console.log(`   - Leads: ${createdLeads.length}`);
   console.log(`   - Calls: ${callCount}`);
   console.log(`   - Follow-ups: ${followUpCount}`);

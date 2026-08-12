@@ -1,6 +1,6 @@
-# Setup Guide - NA Staffing CRM Backend
+# Setup Guide - Wudox CRM Backend
 
-This guide will walk you through setting up the backend for NA Staffing CRM.
+This guide will walk you through setting up the backend for Wudox CRM.
 
 ## Step 1: Prerequisites Installation
 
@@ -12,7 +12,25 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
    npm --version
    ```
 
-### Install PostgreSQL
+### Install Docker (recommended for Postgres + Redis)
+
+From `backend/`:
+
+```bash
+docker compose up -d
+```
+
+This starts an **isolated** stack that can run beside NA Staffing on the same machine:
+
+| Service | Container | Host port |
+|---|---|---|
+| Postgres 15 | `wudox_crm_postgres` | `5433` |
+| Redis 7 | `wudox_crm_redis` | `6380` |
+| pgAdmin | `wudox_crm_pgadmin` | `5051` |
+
+Database name: `wudox_crm` (user/password: `postgres` / `postgres`).
+
+### Install PostgreSQL (optional — if not using Docker)
 1. **macOS:**
    ```bash
    brew install postgresql@15
@@ -31,7 +49,7 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
    sudo systemctl start postgresql
    ```
 
-### Install Redis
+### Install Redis (optional — if not using Docker)
 1. **macOS:**
    ```bash
    brew install redis
@@ -51,10 +69,20 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
 ### Install pgAdmin 4
 1. Download from https://www.pgadmin.org/download/
 2. Install and launch pgAdmin 4
+3. Or use Docker pgAdmin at http://localhost:5051 (`admin@wudox.local` / `admin123`)
 
 ## Step 2: Database Setup
 
-### Create Database in pgAdmin 4
+### Using Docker Compose (recommended)
+
+No manual DB create is needed — `POSTGRES_DB=wudox_crm` is created on first start. Connect with:
+
+- Host: `localhost`
+- Port: `5433`
+- Database: `wudox_crm`
+- User / password: `postgres` / `postgres`
+
+### Create Database in pgAdmin 4 (non-Docker)
 
 1. **Open pgAdmin 4**
 
@@ -64,7 +92,7 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
      - Name: `Local PostgreSQL`
    - Connection tab:
      - Host: `localhost`
-     - Port: `5432`
+     - Port: `5433` (Docker) or `5432` (local install)
      - Maintenance database: `postgres`
      - Username: `postgres`
      - Password: (your PostgreSQL password)
@@ -74,7 +102,7 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
    - Expand "Local PostgreSQL" → "Databases"
    - Right-click "Databases" → "Create" → "Database"
    - General tab:
-     - Database: `na_staffing_crm`
+     - Database: `wudox_crm`
    - Owner: `postgres`
    - Click "Save"
 
@@ -97,16 +125,16 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
 
 4. **Edit `.env` file:**
    ```env
-   # Update these values:
-   DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/na_staffing_crm?schema=public
+   # Docker Compose defaults (isolated ports):
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5433/wudox_crm?schema=public
    
    # Generate secure secrets (you can use: openssl rand -base64 32)
    JWT_SECRET=your-super-secret-jwt-key-min-32-characters-long
    JWT_REFRESH_SECRET=your-super-secret-refresh-key-min-32-characters-long
    
-   # Redis (defaults should work if Redis is running locally)
+   # Redis (Docker maps host 6380 → container 6379)
    REDIS_HOST=localhost
-   REDIS_PORT=6379
+   REDIS_PORT=6380
    ```
 
 5. **Generate Prisma Client:**
@@ -127,17 +155,10 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
    ```
    
    This will populate the database with dummy data including:
-   - 2 sub-companies
-   - 7 users (director, managers, associates, recruiters)
-   - 8 clients
-   - 6 leads
-   - 20 calls
-   - 15 follow-ups
-   - 12 tasks
-   - 8 meetings
-   - 3 jobs
-   - 8 employees
-   - And more...
+   - 1 sub-company (Wudox - Mississauga)
+   - Demo users for every role (`hassan@wudox.com` + `*@wudox.ca` personas)
+   - Clients, leads, calls, follow-ups, tasks, meetings
+   - Jobs, employees, approvals, and more...
 
 ## Step 4: Verify Setup
 
@@ -176,7 +197,7 @@ This guide will walk you through setting up the backend for NA Staffing CRM.
 
 In pgAdmin 4:
 
-1. Expand `na_staffing_crm` database
+1. Expand `wudox_crm` database
 2. Expand "Schemas" → "public" → "Tables"
 3. You should see all the tables:
    - users
@@ -187,10 +208,11 @@ In pgAdmin 4:
    - etc.
 
 4. Right-click on `users` table → "View/Edit Data" → "All Rows"
-   - You should see 7 users including:
-     - director@nastaffing.com
-     - manager1@nastaffing.com
-     - associate1@nastaffing.com
+   - You should see seeded users including:
+     - hassan@wudox.com
+     - director@wudox.ca
+     - manager1@wudox.ca
+     - associate1@wudox.ca
      - etc.
 
 ## Step 6: Cloudflare R2 Setup (Optional - for file storage)
@@ -201,7 +223,7 @@ In pgAdmin 4:
 2. **Enable R2:**
    - Go to R2 section in dashboard
    - Click "Create bucket"
-   - Name: `na-staffing-crm-documents`
+   - Name: `wudox-crm-documents`
    - Choose location
 
 3. **Get API credentials:**
@@ -215,7 +237,7 @@ In pgAdmin 4:
    R2_ACCOUNT_ID=your-account-id
    R2_ACCESS_KEY_ID=your-access-key
    R2_SECRET_ACCESS_KEY=your-secret-key
-   R2_BUCKET_NAME=na-staffing-crm-documents
+   R2_BUCKET_NAME=wudox-crm-documents
    R2_PUBLIC_URL=https://your-bucket.r2.cloudflarestorage.com
    ```
 
@@ -228,21 +250,21 @@ In pgAdmin 4:
 2. **Create API key:**
    - Go to Settings → API Keys
    - Click "Create API Key"
-   - Name: `NA Staffing CRM`
+   - Name: `Wudox CRM`
    - Permissions: Full Access (or Mail Send)
    - Copy the API key
 
 3. **Update `.env`:**
    ```env
    SENDGRID_API_KEY=your-api-key-here
-   EMAIL_FROM=noreply@nastaffing.com
-   EMAIL_FROM_NAME=NA Staffing CRM
+   EMAIL_FROM=noreply@wudox.ca
+   EMAIL_FROM_NAME=Wudox CRM
    ```
 
 ## Troubleshooting
 
 ### "Cannot connect to database"
-- Check PostgreSQL is running
+- Check Docker Postgres is running: `docker compose ps` (port `5433`)
 - Verify DATABASE_URL in .env
 - Check password is correct
 - Try connecting with pgAdmin 4 first
@@ -260,9 +282,9 @@ npm run prisma:migrate
 ```
 
 ### "Redis connection error"
-- Check Redis is running: `redis-cli ping`
+- Check Docker Redis: `docker exec wudox_crm_redis redis-cli ping`
 - Should return: `PONG`
-- Verify REDIS_HOST and REDIS_PORT in .env
+- Verify REDIS_HOST=`localhost` and REDIS_PORT=`6380` in .env (or REDIS_URL)
 
 ### "Port 3001 already in use"
 - Change PORT in .env to another port (e.g., 3002)
@@ -280,12 +302,13 @@ Once setup is complete:
 
 ## Default Login Credentials
 
-After seeding, you can use these credentials (when auth is implemented):
+After seeding:
 
-- **Director**: `director@nastaffing.com` / `password123`
-- **Sales Manager**: `manager1@nastaffing.com` / `password123`
-- **Sales Associate**: `associate1@nastaffing.com` / `password123`
-- **Recruiter**: `recruiter1@nastaffing.com` / `password123`
+- **Super Admin**: `hassan@wudox.com` / `NA-Staffing-SuperAdmin-2025!` (or `SUPER_ADMIN_INITIAL_PASSWORD`)
+- **Director**: `director@wudox.ca` / `password123`
+- **Sales Manager**: `manager1@wudox.ca` / `password123`
+- **Sales Associate**: `associate1@wudox.ca` / `password123`
+- **Recruiter**: `recruiter1@wudox.ca` / `password123`
 
 ---
 

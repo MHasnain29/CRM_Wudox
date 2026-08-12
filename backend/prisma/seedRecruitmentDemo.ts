@@ -1,5 +1,5 @@
 /**
- * Recruitment seed: Active Clients → Jobs → Employees → placements for both agencies.
+ * Recruitment seed: Active Clients → Jobs → Employees → placements for Mississauga/Toronto only.
  * Covers every pipeline stage: unregistered, pending (submitted), master, active-with-client,
  * scheduled (backup), ended placements with ratings (history), pending client assignment requests.
  *
@@ -43,16 +43,6 @@ const TORONTO_LAST = [
   'Morales', 'Murphy', 'Cook', 'Rogers', 'Gutierrez', 'Ortiz', 'Morgan', 'Cooper', 'Peterson', 'Bailey',
 ];
 
-const VANCOUVER_FIRST = [
-  'Noah', 'Maya', 'Ethan', 'Olivia', 'Lucas', 'Aria', 'Jasper', 'Sienna', 'Caleb', 'Freya',
-  'Miles', 'Quinn', 'Theo', 'Luna', 'Asher',
-];
-
-const VANCOUVER_LAST = [
-  'Singh', 'Chen', 'Walsh', 'Reed', 'Park', 'Nguyen', 'Patel', 'Brooks', 'Kim', 'Torres',
-  'Nguyen', 'Lopez', 'Grant', 'Shaw', 'Vu',
-];
-
 const POSITIONS = [
   'Warehouse Associate',
   'Registered Nurse',
@@ -76,14 +66,6 @@ const TORONTO_CITIES = [
   { city: 'Scarborough', province: 'Ontario', postal: 'M1B 2K1' },
   { city: 'North York', province: 'Ontario', postal: 'M2N 5W9' },
   { city: 'Etobicoke', province: 'Ontario', postal: 'M9W 1A1' },
-];
-
-const VANCOUVER_CITIES = [
-  { city: 'Vancouver', province: 'British Columbia', postal: 'V6B 1A1' },
-  { city: 'Burnaby', province: 'British Columbia', postal: 'V5C 3Y3' },
-  { city: 'Surrey', province: 'British Columbia', postal: 'V3T 1W4' },
-  { city: 'Richmond', province: 'British Columbia', postal: 'V6X 2A9' },
-  { city: 'Coquitlam', province: 'British Columbia', postal: 'V3B 0A1' },
 ];
 
 // ─── Active Clients (recruitment-side) ───────────────────────────────────────
@@ -111,13 +93,6 @@ const TORONTO_ACTIVE_CLIENTS: ActiveClientSpec[] = [
   { key: 'aurora', name: 'Aurora Foods', industry: 'Food Production', location: 'Markham, ON', contactName: 'Peter Novak', contactEmail: 'p.novak@aurorafoods.ca', contactPhone: '+1-905-555-0187' },
   { key: 'pinnacle', name: 'Pinnacle Security Services', industry: 'Security', location: 'Toronto, ON', contactName: 'Grace Oduya', contactEmail: 'g.oduya@pinnaclesecurity.ca', contactPhone: '+1-416-555-0198' },
   { key: 'northern', name: 'Northern Textiles', industry: 'Manufacturing', location: 'Mississauga, ON', contactName: 'Raj Kapoor', contactEmail: 'raj@northerntextiles.ca', contactPhone: '+1-905-555-0209', status: 'inactive', notes: 'Seasonal — reactivates every spring.' },
-];
-
-const VANCOUVER_ACTIVE_CLIENTS: ActiveClientSpec[] = [
-  { key: 'pacific', name: 'Pacific Care Homes', industry: 'Healthcare', location: 'Vancouver, BC', contactName: 'Janet Wong', contactEmail: 'j.wong@pacificcare.ca', contactPhone: '+1-604-555-0110' },
-  { key: 'westcoast', name: 'WestCoast Metals', industry: 'Manufacturing', location: 'Burnaby, BC', contactName: 'Steve Baran', contactEmail: 's.baran@westcoastmetals.ca', contactPhone: '+1-604-555-0121' },
-  { key: 'cascade', name: 'Cascade Retail', industry: 'Retail', location: 'Surrey, BC', contactName: 'Dana Price', contactEmail: 'd.price@cascaderetail.ca', contactPhone: '+1-604-555-0132' },
-  { key: 'fraser', name: 'Fraser Logistics', industry: 'Logistics & Warehousing', location: 'Richmond, BC', contactName: 'Ken Ito', contactEmail: 'k.ito@fraserlogistics.ca', contactPhone: '+1-604-555-0143' },
 ];
 
 // ─── Jobs ────────────────────────────────────────────────────────────────────
@@ -490,11 +465,9 @@ export async function seedRecruitmentDemo(
   deps: {
     recruiter1: SeedUser;
     srRecruiter: SeedUser;
-    vancouverRecruiter: SeedUser;
     pakistanUser: SeedUser;
     recruitmentManager: SeedUser;
     subCompanyTorontoId: string;
-    subCompanyVancouverId: string;
     daysFromSeed: DaysFromSeed;
   },
 ): Promise<SeedRecruitmentDemoResult> {
@@ -503,15 +476,13 @@ export async function seedRecruitmentDemo(
   const {
     recruiter1,
     srRecruiter,
-    vancouverRecruiter,
     pakistanUser,
     recruitmentManager,
     subCompanyTorontoId,
-    subCompanyVancouverId,
     daysFromSeed,
   } = deps;
 
-  // ── 1. Active Clients per agency ───────────────────────────────────────────
+  // ── 1. Active Clients (Mississauga/Toronto agency) ─────────────────────────
   const activeClientsByKey = new Map<string, { id: string; name: string }>();
 
   const createActiveClients = async (
@@ -540,11 +511,9 @@ export async function seedRecruitmentDemo(
   };
 
   await createActiveClients(TORONTO_ACTIVE_CLIENTS, subCompanyTorontoId, recruiter1.id, 'to');
-  await createActiveClients(VANCOUVER_ACTIVE_CLIENTS, subCompanyVancouverId, vancouverRecruiter.id, 'va');
 
   const activeClientCount = activeClientsByKey.size;
   const toClient = (key: string) => activeClientsByKey.get(`to:${key}`)!;
-  const vaClient = (key: string) => activeClientsByKey.get(`va:${key}`)!;
 
   // ── 2. Jobs (agency-scoped, linked to active clients) ──────────────────────
   const torontoJobs: JobSpec[] = [
@@ -569,13 +538,6 @@ export async function seedRecruitmentDemo(
     { jobType: 'external', title: 'Warehouse Associate (Draft)', clientKey: 'maple', location: 'Mississauga, Ontario', department: 'Warehouse', description: 'Draft order — publish when client confirms headcount.', requirements: '1+ year warehouse experience.', responsibilities: 'Picking, packing, inventory.', openPositions: 5, status: 'draft', employmentType: 'full_time', createdById: recruiter1.id, applicantCount: 0, shift: DAY_SHIFT },
   ];
 
-  const vancouverJobs: JobSpec[] = [
-    { jobType: 'external', title: 'LPN - Long Term Care', clientKey: 'pacific', location: 'Vancouver, British Columbia', department: 'Healthcare', description: 'LPNs for Vancouver LTC partners.', requirements: 'Active BCCNM registration.', responsibilities: 'Resident care and charting.', openPositions: 5, status: 'open', employmentType: 'full_time', createdById: vancouverRecruiter.id, applicantCount: 11, shift: DAY_SHIFT },
-    { jobType: 'external', title: 'Senior CNC Operator', clientKey: 'westcoast', location: 'Burnaby, British Columbia', department: 'Production', description: 'CNC for Burnaby plant.', requirements: 'CNC experience; night shift flexible.', responsibilities: 'Setup and QC.', openPositions: 3, status: 'open', employmentType: 'full_time', createdById: vancouverRecruiter.id, applicantCount: 8, shift: NIGHT_SHIFT },
-    { jobType: 'external', title: 'Store Manager', clientKey: 'cascade', location: 'Surrey, British Columbia', department: 'Retail', description: 'Store manager for Surrey.', requirements: '3+ years retail management.', responsibilities: 'Floor ops and scheduling.', openPositions: 1, status: 'open', employmentType: 'full_time', createdById: vancouverRecruiter.id, applicantCount: 4, shift: DAY_SHIFT },
-    { jobType: 'external', title: 'Warehouse Associate', clientKey: 'fraser', location: 'Richmond, British Columbia', department: 'Warehouse', description: 'DC associates for Richmond.', requirements: 'Prior warehouse experience.', responsibilities: 'Picking and packing.', openPositions: 6, status: 'open', employmentType: 'full_time', createdById: vancouverRecruiter.id, applicantCount: 12, shift: AFTERNOON_SHIFT },
-  ];
-
   const createdJobs: Array<{
     id: string;
     title: string;
@@ -594,7 +556,7 @@ export async function seedRecruitmentDemo(
   const createJobs = async (
     specs: JobSpec[],
     subCompanyId: string,
-    keyPrefix: 'to' | 'va',
+    keyPrefix: 'to',
   ) => {
     for (const [i, spec] of specs.entries()) {
       const client = activeClientsByKey.get(`${keyPrefix}:${spec.clientKey}`);
@@ -675,7 +637,6 @@ export async function seedRecruitmentDemo(
   };
 
   await createJobs(torontoJobs, subCompanyTorontoId, 'to');
-  await createJobs(vancouverJobs, subCompanyVancouverId, 'va');
 
   // ── 3. Employees ────────────────────────────────────────────────────────────
   const torontoEmployees = buildRoster({
@@ -782,36 +743,7 @@ export async function seedRecruitmentDemo(
     addedById: recruiter1.id,
   });
 
-  const vancouverEmployees = buildRoster({
-    firstNames: VANCOUVER_FIRST,
-    lastNames: VANCOUVER_LAST,
-    cities: VANCOUVER_CITIES,
-    phonePrefix: '+1-604-555-',
-    emailDomain: 'mail.demo',
-    adders: [vancouverRecruiter],
-    // ~13 Vancouver
-    counts: { unregistered: 2, pending: 2, active: 5, master: 2, rejected: 2 },
-  });
-
-  vancouverEmployees.push({
-    firstName: 'Riley',
-    lastName: 'Fraser',
-    email: 'riley.fraser.demo@mail.demo',
-    phone: '+1-604-555-9001',
-    city: 'Richmond',
-    province: 'British Columbia',
-    postalCode: 'V6X 2A9',
-    employeeType: 'external',
-    availabilityTypes: ['full_time'],
-    skills: ['Warehouse', 'General Labour'],
-    workStatus: 'none',
-    approvalStatus: 'approved',
-    position: 'Warehouse Associate',
-    addedById: vancouverRecruiter.id,
-    hireDaysAgo: 28,
-  });
-
-  const employeesSpec = [...torontoEmployees, ...vancouverEmployees];
+  const employeesSpec = [...torontoEmployees];
   const createdEmployees: Array<{
     id: string;
     approvalStatus: string | null;
@@ -1200,74 +1132,6 @@ export async function seedRecruitmentDemo(
     });
   }
 
-  // Vancouver: place actives on jobs (leave last for client-only), capacity-safe.
-  const vancouverActive = createdEmployees.filter(
-    (e) => e.approvalStatus === 'approved' && e.workStatus === 'active' && e.province === 'British Columbia' && cleanEmp(e),
-  );
-  const vancouverOpenJobs = createdJobs.filter(
-    (j) => j.status === 'open' && j.subCompanyId === subCompanyVancouverId && j.activeClientId,
-  );
-  const usedVancouver = new Set<string>();
-  const VA_CLIENT_RESERVE = 1;
-  for (const job of vancouverOpenJobs) {
-    const capacity = rosterCapacity(job.openPositions, job.backupPercentage);
-    if (capacity < 1) continue;
-    const employee = takeNextActive(
-      vancouverActive,
-      usedVancouver,
-      VA_CLIENT_RESERVE,
-      job.requiredSkills,
-    );
-    if (!employee) break;
-    usedVancouver.add(employee.id);
-    await placeOnJob({
-      employee,
-      job,
-      isBackup: false,
-      assignedById: vancouverRecruiter.id,
-      daysAgo: 4 + usedVancouver.size,
-    });
-  }
-  if (vancouverActive.length > 0) {
-    const last =
-      vancouverActive.find((e) => !usedVancouver.has(e.id)) ??
-      vancouverActive[vancouverActive.length - 1]!;
-    usedVancouver.add(last.id);
-    const client = vaClient('pacific');
-    await prisma.employeeAssignment.create({
-      data: {
-        employeeId: last.id,
-        targetType: 'client',
-        activeClientId: client.id,
-        workLocation: 'Vancouver care home',
-        positionTitle: 'LPN - Long Term Care',
-        payRate: '$26–$30/hr',
-        shiftSchedule: shiftLabel(DAY_SHIFT),
-        expectedDuration: 'Ongoing',
-        supervisorInfo: 'Director of Care',
-        requiredPpe: 'Scrubs, N95 fit-tested',
-        detailsSentToCandidateAt: daysFromSeed(-4, 9),
-        status: 'approved',
-        isActive: true,
-        submittedById: vancouverRecruiter.id,
-        submitterRole: 'recruiter',
-        approvedById: recruitmentManager.id,
-        approvedAt: daysFromSeed(-3, 12),
-        approvalChain: [...RM_CHAIN] as unknown as Prisma.InputJsonValue,
-        currentStepIndex: 0,
-      },
-    });
-    employeeAssignmentCount++;
-  }
-
-  // Leftover Vancouver actives without placement → Master.
-  for (const employee of vancouverActive.filter((e) => !usedVancouver.has(e.id))) {
-    await prisma.employee.update({
-      where: { id: employee.id },
-      data: { workStatus: 'none' },
-    });
-  }
-
   // ── 5. Ended placements with ratings (employment history) ──────────────────
   const torontoMaster = createdEmployees.filter(
     (e) => e.approvalStatus === 'approved' && e.workStatus === 'none' && e.province === 'Ontario' && cleanEmp(e),
@@ -1358,35 +1222,6 @@ export async function seedRecruitmentDemo(
     employeeAssignmentCount++;
   }
 
-  const vancouverMaster = createdEmployees.filter(
-    (e) => e.approvalStatus === 'approved' && e.workStatus === 'none' && e.province === 'British Columbia' && cleanEmp(e),
-  );
-  if (vancouverMaster[0]) {
-    const client = vaClient('fraser');
-    await prisma.employeeAssignment.create({
-      data: {
-        employeeId: vancouverMaster[0].id,
-        targetType: 'client',
-        activeClientId: client.id,
-        workLocation: 'Richmond DC — Dock B',
-        positionTitle: 'Warehouse Associate',
-        payRate: '$20–$24/hr',
-        shiftSchedule: shiftLabel(AFTERNOON_SHIFT),
-        expectedDuration: '6 months',
-        supervisorInfo: 'DC supervisor — K. Ito',
-        requiredPpe: 'Steel-toe boots, hi-vis vest',
-        detailsSentToCandidateAt: daysFromSeed(-1, 10),
-        status: 'pending',
-        isActive: false,
-        submittedById: vancouverRecruiter.id,
-        submitterRole: 'recruiter',
-        approvalChain: [...RM_CHAIN] as unknown as Prisma.InputJsonValue,
-        currentStepIndex: 0,
-      },
-    });
-    employeeAssignmentCount++;
-  }
-
   // ── 7. Recompute job filled/scheduled counts from the actual roster ────────
   for (const job of createdJobs) {
     const roster = await prisma.jobAssignment.findMany({
@@ -1404,7 +1239,7 @@ export async function seedRecruitmentDemo(
 
   console.log(
     `  ✓ Recruitment seed: ${activeClientCount} active clients, ${createdJobs.length} jobs, ${createdEmployees.length} employees ` +
-    `(${torontoEmployees.length} Toronto / ${vancouverEmployees.length} Vancouver), ` +
+    `(Mississauga/Toronto), ` +
     `${jobAssignmentCount} job roster rows, ${employeeAssignmentCount} employee assignments (active + ended + pending)`,
   );
   console.log(

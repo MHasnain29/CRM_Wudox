@@ -1,4 +1,4 @@
-import type { ApprovalWorkflowType, PrismaClient, User } from '@prisma/client';
+import type { ApprovalWorkflowType, Country, PrismaClient, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalChain, initialStepIndexForSubmitter } from '../src/services/approvalChain';
 import { GLOBAL_APPROVAL_SCOPE } from '../src/types/approval';
@@ -12,18 +12,12 @@ export type SeedUserKey =
   | 'superAdmin'
   | 'director'
   | 'companyDirector'
-  | 'companyDirectorVancouver'
   | 'salesManager1'
-  | 'salesManager2'
   | 'salesAssociate1'
   | 'salesAssociate2'
-  | 'vancouverAssociate'
-  | 'vancouverAssociate2'
   | 'recruiter1'
-  | 'vancouverRecruiter'
   | 'pakistanUser'
   | 'recruitmentManager'
-  | 'recruitmentManagerVancouver'
   | 'salesExecutive'
   | 'srRecruiter'
   | 'dataEntrySpecialist'
@@ -32,8 +26,8 @@ export type SeedUserKey =
   | 'itUser'
   | 'devTeamUser';
 
-type AgencyKey = 'toronto' | 'vancouver';
-type LocationKey = 'toronto' | 'vancouver' | 'pakistan';
+type AgencyKey = 'mississauga';
+type LocationKey = 'toronto' | 'pakistan';
 
 interface SeedUserDef {
   key: SeedUserKey;
@@ -41,7 +35,7 @@ interface SeedUserDef {
   firstName: string;
   lastName: string;
   phone: string;
-  country: string;
+  country: Country;
   role: string;
   userType: string;
   agency?: AgencyKey | null;
@@ -66,7 +60,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'director',
-    email: 'director@nastaffing.com',
+    email: 'director@wudox.ca',
     firstName: 'John',
     lastName: 'Director',
     phone: '+1-416-555-0100',
@@ -78,70 +72,42 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'companyDirector',
-    email: 'company.director@nastaffing.com',
+    email: 'company.director@wudox.ca',
     firstName: 'Robert',
     lastName: 'Hayes',
     phone: '+1-416-555-0107',
     country: 'Canada',
     role: 'company_director',
     userType: 'Company Director',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['director'],
   },
   {
     key: 'salesManager1',
-    email: 'manager1@nastaffing.com',
+    email: 'manager1@wudox.ca',
     firstName: 'Sarah',
     lastName: 'Manager',
     phone: '+1-416-555-0101',
     country: 'Canada',
     role: 'sales_manager',
     userType: 'Sales Manager',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['companyDirector'],
     dailyCallsTarget: 50,
     dailyEmailsTarget: 30,
   },
   {
-    key: 'companyDirectorVancouver',
-    email: 'company.director.vancouver@nastaffing.com',
-    firstName: 'Emily',
-    lastName: 'Nguyen',
-    phone: '+1-604-555-0108',
-    country: 'Canada',
-    role: 'company_director',
-    userType: 'Company Director',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['director'],
-  },
-  {
-    key: 'salesManager2',
-    email: 'manager2@nastaffing.com',
-    firstName: 'Michael',
-    lastName: 'Chen',
-    phone: '+1-604-555-0102',
-    country: 'Canada',
-    role: 'sales_manager',
-    userType: 'Sales Manager',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['companyDirectorVancouver'],
-    dailyCallsTarget: 50,
-    dailyEmailsTarget: 30,
-  },
-  {
     key: 'salesAssociate1',
-    email: 'associate1@nastaffing.com',
+    email: 'associate1@wudox.ca',
     firstName: 'Emily',
     lastName: 'Johnson',
     phone: '+1-416-555-0103',
     country: 'Canada',
     role: 'sales_associate',
     userType: 'Sales Associate',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['salesManager1'],
     dailyCallsTarget: 100,
@@ -149,124 +115,68 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'salesAssociate2',
-    email: 'associate2@hrglobal.ca',
+    email: 'associate2@wudox.ca',
     firstName: 'David',
     lastName: 'Williams',
     phone: '+1-416-555-0104',
     country: 'Canada',
     role: 'sales_associate',
     userType: 'Sales Associate',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['salesManager1'],
     dailyCallsTarget: 100,
     dailyEmailsTarget: 50,
   },
   {
-    key: 'vancouverAssociate',
-    email: 'associate.vancouver@nastaffing.com',
-    firstName: 'Maya',
-    lastName: 'Patel',
-    phone: '+1-604-555-0103',
-    country: 'Canada',
-    role: 'sales_associate',
-    userType: 'Sales Associate',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['salesManager2'],
-    dailyCallsTarget: 90,
-    dailyEmailsTarget: 45,
-  },
-  {
-    key: 'vancouverAssociate2',
-    email: 'associate2.vancouver@nastaffing.com',
-    firstName: 'Noah',
-    lastName: 'Wilson',
-    phone: '+1-604-555-0104',
-    country: 'Canada',
-    role: 'sales_associate',
-    userType: 'Sales Associate',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['salesManager2'],
-    dailyCallsTarget: 90,
-    dailyEmailsTarget: 45,
-  },
-  {
     key: 'recruiter1',
-    email: 'recruiter1@nastaffing.com',
+    email: 'recruiter1@wudox.ca',
     firstName: 'Lisa',
     lastName: 'Anderson',
     phone: '+1-416-555-0105',
     country: 'Canada',
     role: 'recruiter',
     userType: 'Recruiter',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['recruitmentManager'],
   },
   {
-    key: 'vancouverRecruiter',
-    email: 'recruiter.vancouver@nastaffing.com',
-    firstName: 'Olivia',
-    lastName: 'Martin',
-    phone: '+1-604-555-0105',
-    country: 'Canada',
-    role: 'recruiter',
-    userType: 'Recruiter',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['recruitmentManagerVancouver'],
-  },
-  {
     key: 'pakistanUser',
-    email: 'pakistan@nastaffing.com',
+    email: 'pakistan@wudox.ca',
     firstName: 'Ahmed',
     lastName: 'Khan',
     phone: '+92-300-1234567',
     country: 'Pakistan',
     role: 'recruiter',
     userType: 'Recruiter',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'pakistan',
     reportingTo: ['director'],
   },
   {
     key: 'recruitmentManager',
-    email: 'recruitment.manager@nastaffing.com',
+    email: 'recruitment.manager@wudox.ca',
     firstName: 'Zara',
     lastName: 'Sheikh',
     phone: '+1-416-555-0106',
     country: 'Canada',
     role: 'recruitment_manager',
     userType: 'Recruitment Manager',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['director'],
   },
   {
-    key: 'recruitmentManagerVancouver',
-    email: 'recruitment.manager.vancouver@nastaffing.com',
-    firstName: 'Zara',
-    lastName: 'Sheikh',
-    phone: '+1-604-555-0106',
-    country: 'Canada',
-    role: 'recruitment_manager',
-    userType: 'Recruitment Manager',
-    agency: 'vancouver',
-    location: 'vancouver',
-    reportingTo: ['director'],
-  },
-  {
     key: 'salesExecutive',
-    email: 'executive@nastaffing.com',
+    email: 'executive@wudox.ca',
     firstName: 'Ryan',
     lastName: 'Thompson',
     phone: '+1-416-555-0107',
     country: 'Canada',
     role: 'sales_executive',
     userType: 'Sales Executive',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['salesManager1'],
     dailyCallsTarget: 80,
@@ -274,20 +184,20 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'srRecruiter',
-    email: 'sr.recruiter@nastaffing.com',
+    email: 'sr.recruiter@wudox.ca',
     firstName: 'Nadia',
     lastName: 'Ali',
     phone: '+1-416-555-0108',
     country: 'Canada',
     role: 'sr_recruiter',
     userType: 'Senior Recruiter',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['recruitmentManager'],
   },
   {
     key: 'dataEntrySpecialist',
-    email: 'dataentry@nastaffing.com',
+    email: 'dataentry@wudox.ca',
     firstName: 'Omar',
     lastName: 'Farooq',
     phone: '+92-321-5556789',
@@ -300,7 +210,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'databaseManager',
-    email: 'db.manager@nastaffing.com',
+    email: 'db.manager@wudox.ca',
     firstName: 'Sara',
     lastName: 'Malik',
     phone: '+92-333-1112233',
@@ -313,7 +223,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'operationsManager',
-    email: 'operations@nastaffing.com',
+    email: 'operations@wudox.ca',
     firstName: 'Kevin',
     lastName: 'Murphy',
     phone: '+1-604-555-0109',
@@ -326,14 +236,14 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'itUser',
-    email: 'it@nastaffing.com',
+    email: 'it@wudox.ca',
     firstName: 'Alex',
     lastName: 'Dev',
     phone: '+1-416-555-0110',
     country: 'Canada',
     role: 'it',
     userType: 'IT',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['director'],
   },
@@ -346,7 +256,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
     country: 'Canada',
     role: 'dev_team',
     userType: 'Dev Team',
-    agency: 'toronto',
+    agency: 'mississauga',
     location: 'toronto',
   },
 ];
@@ -354,10 +264,8 @@ const SEED_USER_DEFS: SeedUserDef[] = [
 export type SeedUsersResult = Record<SeedUserKey, User> & { allSeedUsers: User[] };
 
 export interface SeedUsersContext {
-  subCompanyTorontoId: string;
-  subCompanyVancouverId: string;
+  subCompanyId: string;
   locationTorontoId: string;
-  locationVancouverId: string;
   locationPakistanId: string;
 }
 
@@ -381,13 +289,12 @@ export async function seedUsers(
 
   const agencyId = (key?: AgencyKey | null): string | null => {
     if (!key) return null;
-    return key === 'toronto' ? ctx.subCompanyTorontoId : ctx.subCompanyVancouverId;
+    return ctx.subCompanyId;
   };
 
   const locationId = (key?: LocationKey | null): string | null => {
     if (!key) return null;
     if (key === 'toronto') return ctx.locationTorontoId;
-    if (key === 'vancouver') return ctx.locationVancouverId;
     return ctx.locationPakistanId;
   };
 
@@ -432,13 +339,8 @@ export async function seedUsers(
 
   const operationsManager = usersByKey.get('operationsManager')!;
   await prisma.operationsManagerSubCompany.createMany({
-    data: [
-      { userId: operationsManager.id, subCompanyId: ctx.subCompanyTorontoId },
-      { userId: operationsManager.id, subCompanyId: ctx.subCompanyVancouverId },
-    ],
+    data: [{ userId: operationsManager.id, subCompanyId: ctx.subCompanyId }],
   });
-
-  // Recruitment managers stay single-agency (Toronto RM / Vancouver RM are separate users, not linked).
 
   const allSeedUsers = SEED_USER_DEFS.map((d) => usersByKey.get(d.key)!);
 
@@ -452,18 +354,12 @@ export async function seedUsers(
     superAdmin: usersByKey.get('superAdmin')!,
     director: usersByKey.get('director')!,
     companyDirector: usersByKey.get('companyDirector')!,
-    companyDirectorVancouver: usersByKey.get('companyDirectorVancouver')!,
     salesManager1: usersByKey.get('salesManager1')!,
-    salesManager2: usersByKey.get('salesManager2')!,
     salesAssociate1: usersByKey.get('salesAssociate1')!,
     salesAssociate2: usersByKey.get('salesAssociate2')!,
-    vancouverAssociate: usersByKey.get('vancouverAssociate')!,
-    vancouverAssociate2: usersByKey.get('vancouverAssociate2')!,
     recruiter1: usersByKey.get('recruiter1')!,
-    vancouverRecruiter: usersByKey.get('vancouverRecruiter')!,
     pakistanUser: usersByKey.get('pakistanUser')!,
     recruitmentManager: usersByKey.get('recruitmentManager')!,
-    recruitmentManagerVancouver: usersByKey.get('recruitmentManagerVancouver')!,
     salesExecutive: usersByKey.get('salesExecutive')!,
     srRecruiter: usersByKey.get('srRecruiter')!,
     dataEntrySpecialist: usersByKey.get('dataEntrySpecialist')!,
@@ -490,18 +386,12 @@ type SeedLead = { id: string; clientId: string; ownerId: string; status: string 
 type SeedAgency = { id: string; name: string };
 
 export interface SeedWorkflowDemosContext {
-  subCompany1: SeedAgency;
-  subCompany2: SeedAgency;
+  subCompany: SeedAgency;
   salesAssociate1: User;
   salesAssociate2: User;
-  vancouverAssociate: User;
-  vancouverAssociate2: User;
   salesManager1: User;
-  salesManager2: User;
   databaseManager: User;
-  sharedClients: SeedClient[];
-  torontoClients: SeedClient[];
-  vancouverClients: SeedClient[];
+  clients: SeedClient[];
   leadsByAgency: Map<string, SeedLead[]>;
   daysFromSeed: (days: number, hour?: number) => Date;
 }
@@ -554,177 +444,165 @@ export async function seedWorkflowDemos(
     offboardingTaskCount: 0,
   };
 
-  const agencyConfigs = [
-    {
-      subCompany: ctx.subCompany1,
-      associate: ctx.salesAssociate1,
-      associates: [ctx.salesAssociate1, ctx.salesAssociate2],
-      manager: ctx.salesManager1,
-      clients: [...ctx.sharedClients.slice(0, 3), ...ctx.torontoClients.slice(0, 3)],
-      label: 'Toronto',
-    },
-    {
-      subCompany: ctx.subCompany2,
-      associate: ctx.vancouverAssociate,
-      associates: [ctx.vancouverAssociate, ctx.vancouverAssociate2],
-      manager: ctx.salesManager2,
-      clients: [...ctx.sharedClients.slice(0, 3), ...ctx.vancouverClients.slice(0, 3)],
-      label: 'Vancouver',
-    },
-  ];
+  const agency = {
+    subCompany: ctx.subCompany,
+    associate: ctx.salesAssociate1,
+    associates: [ctx.salesAssociate1, ctx.salesAssociate2],
+    manager: ctx.salesManager1,
+    clients: ctx.clients.slice(0, 6),
+    label: 'Mississauga',
+  };
 
-  for (const agency of agencyConfigs) {
-    const subCompanyId = agency.subCompany.id;
-    const submitterRole = 'sales_associate';
+  const subCompanyId = agency.subCompany.id;
+  const submitterRole = 'sales_associate';
 
-    const addChain = await approvalFields(submitterRole, 'client_manual_add', subCompanyId);
-    await prisma.pendingClientSubmission.create({
+  const addChain = await approvalFields(submitterRole, 'client_manual_add', subCompanyId);
+  await prisma.pendingClientSubmission.create({
+    data: {
+      subCompanyId,
+      submissionSource: 'agency',
+      submittedById: agency.associate.id,
+      name: `${agency.label} Pending Client Add (Seed)`,
+      industry: 'Technology',
+      location: agency.label,
+      submitterRole,
+      approvalChain: addChain.approvalChain,
+      currentStepIndex: addChain.currentStepIndex,
+    },
+  });
+  result.pendingClientAddCount++;
+
+  const editClient = agency.clients[0];
+  if (editClient) {
+    const editChain = await approvalFields(submitterRole, 'client_manual_edit', subCompanyId);
+    await prisma.pendingClientEdit.create({
       data: {
         subCompanyId,
-        submissionSource: 'agency',
+        clientId: editClient.id,
         submittedById: agency.associate.id,
-        name: `${agency.label} Pending Client Add (Seed)`,
-        industry: 'Technology',
+        name: `${editClient.name} (edited)`,
+        industry: editClient.name,
         location: agency.label,
         submitterRole,
-        approvalChain: addChain.approvalChain,
-        currentStepIndex: addChain.currentStepIndex,
+        approvalChain: editChain.approvalChain,
+        currentStepIndex: editChain.currentStepIndex,
       },
     });
-    result.pendingClientAddCount++;
+    result.pendingClientEditCount++;
+  }
 
-    const editClient = agency.clients[0];
-    if (editClient) {
-      const editChain = await approvalFields(submitterRole, 'client_manual_edit', subCompanyId);
-      await prisma.pendingClientEdit.create({
-        data: {
-          subCompanyId,
-          clientId: editClient.id,
-          submittedById: agency.associate.id,
-          name: `${editClient.name} (edited)`,
-          industry: editClient.name,
-          location: agency.label,
-          submitterRole,
-          approvalChain: editChain.approvalChain,
-          currentStepIndex: editChain.currentStepIndex,
-        },
-      });
-      result.pendingClientEditCount++;
-    }
+  const importChain = await approvalFields(submitterRole, 'client_import', subCompanyId);
+  await prisma.pendingImportedClient.create({
+    data: {
+      subCompanyId,
+      submissionSource: 'agency',
+      importedById: agency.associate.id,
+      name: `${agency.label} Imported Client (Seed)`,
+      industry: 'Manufacturing',
+      location: agency.label,
+      tags: ['import-seed'],
+      approvalChain: importChain.approvalChain,
+      currentStepIndex: importChain.currentStepIndex,
+    },
+  });
+  result.pendingClientImportCount++;
 
-    const importChain = await approvalFields(submitterRole, 'client_import', subCompanyId);
-    await prisma.pendingImportedClient.create({
+  const agencyLeads = ctx.leadsByAgency.get(subCompanyId) ?? [];
+  const leadClientIds = new Set(agencyLeads.map((l) => l.clientId));
+  const requestClient =
+    agency.clients.find((c) => !leadClientIds.has(c.id)) ?? agency.clients[0];
+  if (requestClient) {
+    const leadReqChain = await approvalFields(submitterRole, 'lead_request', subCompanyId);
+    await prisma.leadRequest.create({
       data: {
+        clientId: requestClient.id,
+        requestedById: agency.associate.id,
+        managerId: agency.manager.id,
+        note: `${agency.label} pending lead request (seed demo)`,
+        status: 'pending',
         subCompanyId,
-        submissionSource: 'agency',
-        importedById: agency.associate.id,
-        name: `${agency.label} Imported Client (Seed)`,
-        industry: 'Manufacturing',
-        location: agency.label,
-        tags: ['import-seed'],
-        approvalChain: importChain.approvalChain,
-        currentStepIndex: importChain.currentStepIndex,
+        requestedAt: ctx.daysFromSeed(-1, 10),
+        approvalChain: leadReqChain.approvalChain,
+        currentStepIndex: leadReqChain.currentStepIndex,
       },
     });
-    result.pendingClientImportCount++;
+    result.leadRequestCount++;
+  }
 
-    const agencyLeads = ctx.leadsByAgency.get(subCompanyId) ?? [];
-    const leadClientIds = new Set(agencyLeads.map((l) => l.clientId));
-    const requestClient =
-      agency.clients.find((c) => !leadClientIds.has(c.id)) ?? agency.clients[0];
-    if (requestClient) {
-      const leadReqChain = await approvalFields(submitterRole, 'lead_request', subCompanyId);
-      await prisma.leadRequest.create({
-        data: {
-          clientId: requestClient.id,
-          requestedById: agency.associate.id,
-          managerId: agency.manager.id,
-          note: `${agency.label} pending lead request (seed demo)`,
-          status: 'pending',
-          subCompanyId,
-          requestedAt: ctx.daysFromSeed(-1, 10),
-          approvalChain: leadReqChain.approvalChain,
-          currentStepIndex: leadReqChain.currentStepIndex,
-        },
-      });
-      result.leadRequestCount++;
-    }
+  const reassignmentLead = agencyLeads.find((l) => l.status === 'open');
+  const proposedOwner =
+    agency.associates.find((u) => u.id !== reassignmentLead?.ownerId) ?? agency.manager;
+  if (reassignmentLead && proposedOwner.id !== reassignmentLead.ownerId) {
+    const reassignChain = await approvalFields('sales_manager', 'lead_reassignment', subCompanyId);
+    await prisma.leadReassignmentRequest.create({
+      data: {
+        leadId: reassignmentLead.id,
+        requestedById: agency.manager.id,
+        currentOwnerId: reassignmentLead.ownerId,
+        proposedOwnerId: proposedOwner.id,
+        note: `${agency.label} test reassignment request (seed demo)`,
+        status: 'pending',
+        subCompanyId,
+        requestedAt: ctx.daysFromSeed(-2, 11),
+        approvalChain: reassignChain.approvalChain,
+        currentStepIndex: reassignChain.currentStepIndex,
+      },
+    });
+    result.leadReassignmentCount++;
+  }
 
-    const reassignmentLead = agencyLeads.find((l) => l.status === 'open');
-    const proposedOwner =
-      agency.associates.find((u) => u.id !== reassignmentLead?.ownerId) ?? agency.manager;
-    if (reassignmentLead && proposedOwner.id !== reassignmentLead.ownerId) {
-      const reassignChain = await approvalFields('sales_manager', 'lead_reassignment', subCompanyId);
-      await prisma.leadReassignmentRequest.create({
-        data: {
-          leadId: reassignmentLead.id,
-          requestedById: agency.manager.id,
-          currentOwnerId: reassignmentLead.ownerId,
-          proposedOwnerId: proposedOwner.id,
-          note: `${agency.label} test reassignment request (seed demo)`,
-          status: 'pending',
-          subCompanyId,
-          requestedAt: ctx.daysFromSeed(-2, 11),
-          approvalChain: reassignChain.approvalChain,
-          currentStepIndex: reassignChain.currentStepIndex,
-        },
-      });
-      result.leadReassignmentCount++;
-    }
+  const extensionLead = agencyLeads.find((l) => l.status === 'open');
+  if (extensionLead) {
+    const extChain = await approvalFields(submitterRole, 'lead_extension', subCompanyId);
+    await prisma.leadExtensionRequest.create({
+      data: {
+        leadId: extensionLead.id,
+        requestedById: extensionLead.ownerId,
+        reason: `${agency.label} seed lead extension request`,
+        requestedDays: 14,
+        status: 'pending',
+        approvalChain: extChain.approvalChain,
+        currentStepIndex: extChain.currentStepIndex,
+        requestedAt: ctx.daysFromSeed(-1, 9),
+      },
+    });
+    result.leadExtensionCount++;
+  }
 
-    const extensionLead = agencyLeads.find((l) => l.status === 'open');
-    if (extensionLead) {
-      const extChain = await approvalFields(submitterRole, 'lead_extension', subCompanyId);
-      await prisma.leadExtensionRequest.create({
-        data: {
-          leadId: extensionLead.id,
-          requestedById: extensionLead.ownerId,
-          reason: `${agency.label} seed lead extension request`,
-          requestedDays: 14,
-          status: 'pending',
-          approvalChain: extChain.approvalChain,
-          currentStepIndex: extChain.currentStepIndex,
-          requestedAt: ctx.daysFromSeed(-1, 9),
-        },
-      });
-      result.leadExtensionCount++;
-    }
+  const proposalLead = agencyLeads.find((l) => l.status === 'open' && l.id !== extensionLead?.id) ?? extensionLead;
+  if (proposalLead) {
+    const reviewChain = await approvalFields(submitterRole, 'proposal_review', subCompanyId);
+    const proposal = await prisma.proposal.create({
+      data: {
+        leadId: proposalLead.id,
+        createdById: agency.associate.id,
+        locationType: 'onsite',
+        agreementTypes: ['temp'],
+        tempPricingType: 'hourly',
+        tempPricingValue: 45,
+        paymentTerms: 'net_30',
+        comment: `${agency.label} seed proposal pending review`,
+        status: 'pending',
+        isForReview: true,
+        approvalChain: reviewChain.approvalChain,
+        currentStepIndex: reviewChain.currentStepIndex,
+      },
+    });
+    result.proposalReviewCount++;
 
-    const proposalLead = agencyLeads.find((l) => l.status === 'open' && l.id !== extensionLead?.id) ?? extensionLead;
-    if (proposalLead) {
-      const reviewChain = await approvalFields(submitterRole, 'proposal_review', subCompanyId);
-      const proposal = await prisma.proposal.create({
-        data: {
-          leadId: proposalLead.id,
-          createdById: agency.associate.id,
-          locationType: 'onsite',
-          agreementTypes: ['temp'],
-          tempPricingType: 'hourly',
-          tempPricingValue: 45,
-          paymentTerms: 'net_30',
-          comment: `${agency.label} seed proposal pending review`,
-          status: 'pending',
-          isForReview: true,
-          approvalChain: reviewChain.approvalChain,
-          currentStepIndex: reviewChain.currentStepIndex,
-        },
-      });
-      result.proposalReviewCount++;
-
-      const propExtChain = await approvalFields(submitterRole, 'proposal_extension', subCompanyId);
-      await prisma.proposalExtensionRequest.create({
-        data: {
-          proposalId: proposal.id,
-          requestedById: agency.associate.id,
-          reason: `${agency.label} seed proposal extension`,
-          requestedDays: 7,
-          status: 'pending',
-          approvalChain: propExtChain.approvalChain,
-          currentStepIndex: propExtChain.currentStepIndex,
-        },
-      });
-      result.proposalExtensionCount++;
-    }
+    const propExtChain = await approvalFields(submitterRole, 'proposal_extension', subCompanyId);
+    await prisma.proposalExtensionRequest.create({
+      data: {
+        proposalId: proposal.id,
+        requestedById: agency.associate.id,
+        reason: `${agency.label} seed proposal extension`,
+        requestedDays: 7,
+        status: 'pending',
+        approvalChain: propExtChain.approvalChain,
+        currentStepIndex: propExtChain.currentStepIndex,
+      },
+    });
+    result.proposalExtensionCount++;
   }
 
   const dbSubmitterRole = 'database_manager';
@@ -761,7 +639,7 @@ export async function seedWorkflowDemos(
   result.pendingDatabaseClientImportCount++;
 
   const offboardingUser = ctx.salesAssociate1;
-  const offboardingAgencyId = ctx.subCompany1.id;
+  const offboardingAgencyId = ctx.subCompany.id;
   const offboardingClients = [
     { name: 'Maple Tech Solutions', industry: 'Technology', location: 'Toronto, ON', corporateCode: 'MTS-OFFBOARD-001' },
     { name: 'Northern Builders Inc', industry: 'Construction', location: 'Toronto, ON', corporateCode: 'NBI-OFFBOARD-002' },

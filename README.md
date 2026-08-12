@@ -1,6 +1,6 @@
-# NA Staffing CRM
+# Wudox CRM
 
-Staffing agency CRM: **backend** (Node/Express/Prisma/PostgreSQL) in `backend/`, **frontend** (React/Vite) in `frontend/`. Spec: **docs/SYSTEM_UNDERSTANDING.md**. Standards: **docs/STANDARDS.md**.
+CRM for [Wudox](https://wudox.ca/): **backend** (Node/Express/Prisma/PostgreSQL) in `backend/`, **frontend** (React/Vite) in `frontend/`. Spec: **docs/SYSTEM_UNDERSTANDING.md**. Standards: **docs/STANDARDS.md**.
 
 ## Repository structure
 
@@ -10,9 +10,12 @@ Staffing agency CRM: **backend** (Node/Express/Prisma/PostgreSQL) in `backend/`,
 
 ## Run locally
 
-**Prerequisites:** Node.js & npm (e.g. [nvm](https://github.com/nvm-sh/nvm)).
+**Prerequisites:** Node.js & npm (e.g. [nvm](https://github.com/nvm-sh/nvm)), Docker (Postgres/Redis).
 
 ```sh
+# Start isolated Docker DB + Redis (host ports 5433 / 6380 — does not clash with NA Staffing on 5432 / 6379)
+cd backend && docker compose up -d && cd ..
+
 # Install dependencies (root + frontend + backend)
 npm run install:all
 
@@ -29,7 +32,7 @@ cd backend && npm install && npm run dev
 
 From repo root you can also run `npm run dev` to start the frontend only.
 
-**Login:** `hassan@wudox.com` / `NA-Staffing-SuperAdmin-2025!` or any demo user / `password123` (see `backend/SETUP.md`).
+**Login:** `hassan@wudox.com` / `NA-Staffing-SuperAdmin-2025!` or any demo user (`*@wudox.ca`) / `password123` (see `backend/SETUP.md`).
 
 **Reset all DB data:** `npm run db:reset` (from repo root).
 
