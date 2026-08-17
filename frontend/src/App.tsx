@@ -94,7 +94,7 @@ const App = () => (
                   </PermissionRoute>
                 }
               />
-              <Route path="/lists" element={<PermissionRoute permission="leads:read"><Lists /></PermissionRoute>} />
+              <Route path="/lists" element={<PermissionRoute permission="calls:read"><Lists /></PermissionRoute>} />
               <Route path="/calls" element={<PermissionRoute permission="calls:read"><Calls /></PermissionRoute>} />
               <Route path="/emails" element={<PermissionRoute permission="calls:read"><Emails /></PermissionRoute>} />
               <Route path="/bulk-emails" element={<PermissionRoute permission="calls:read"><BulkEmails /></PermissionRoute>} />

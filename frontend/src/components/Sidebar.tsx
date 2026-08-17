@@ -83,7 +83,6 @@ const navItems: {
   { to: '/leads',      icon: UserCircle,   label: 'My Leads', managerLabel: 'Leads', permissions: ['leads:read'], showCount: true },
   { to: '/proposals',  icon: FileCheck,    label: 'Proposals',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'], showCount: true },
   { to: '/pipeline',   icon: GitBranch,    label: 'Pipeline',    permissions: ['pipeline:read'] },
-  { to: '/lists',      icon: List,         label: 'Lists',       permissions: ['leads:read'] },
   { to: '/follow-ups', icon: CalendarClock,label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true, excludeRoles: SOFTWARE_HOUSE_ROLES },
 
   // ── Recruitment ──
@@ -95,7 +94,8 @@ const navItems: {
   // ── Communication ──
   { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication' },
   { to: '/emails',      icon: Mail,          label: 'Emails',      permissions: ['calls:read'],  showCount: true },
-  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
+  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'] },
+  { to: '/lists',       icon: List,          label: 'Lists' },
   { to: '/calls',       icon: Phone,         label: 'Calls',       permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
   { to: '/meetings',    icon: Calendar,      label: 'Meetings',    permissions: ['meetings:read'] },
   { to: '/documents',   icon: FileText,      label: 'Documents',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'] },
@@ -258,7 +258,7 @@ export function Sidebar() {
   const showCompanyLogo = companyChrome && Boolean(currentSubCompany?.logoUrl?.trim());
   const showBrandBlock = showAgencyLogo || showCompanyLogo || Boolean(brandTitle);
 
-  const renderNavGroup = (items: (typeof navItems)[number][]) => {
+  const renderNavGroup = (items: (typeof navItems)[number][], parentLabel?: string | null) => {
     const groups: { label?: string; items: (typeof navItems)[number][] }[] = [];
     let currentLabel: string | undefined;
     let currentGroup: (typeof navItems)[number][] = [];
@@ -274,16 +274,19 @@ export function Sidebar() {
     }
     if (currentGroup.length > 0) groups.push({ label: currentLabel, items: currentGroup });
 
-    return groups.map((group, i) => (
-      <div key={group.label ?? `s${i}`} className="space-y-1">
-        {group.label && (
-          <p className="px-3 pt-3 pb-0.5 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/35">
-            {group.label}
-          </p>
-        )}
-        {group.items.map(renderNavItem)}
-      </div>
-    ));
+    return groups.map((group, i) => {
+      const showLabel = group.label && group.label !== parentLabel;
+      return (
+        <div key={group.label ?? `s${i}`} className={cn('space-y-0.5', showLabel && 'pt-3')}>
+          {showLabel && (
+            <p className="px-3 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 select-none">
+              {group.label}
+            </p>
+          )}
+          {group.items.map(renderNavItem)}
+        </div>
+      );
+    });
   };
 
   const renderNavItem = (item: (typeof navItems)[number]) => {
@@ -306,17 +309,17 @@ export function Sidebar() {
         end={item.to === '/'}
         className={({ isActive }) =>
           cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] leading-none transition-all duration-150 select-none',
             isActive
-              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+              ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.07),0_2px_8px_-2px_rgba(0,0,0,0.06)]'
+              : 'font-medium text-sidebar-foreground/55 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
           )
         }
       >
-        <item.icon className="h-5 w-5" />
-        <span className="flex-1">{(isManager && item.managerLabel) ? item.managerLabel : item.label}</span>
+        <item.icon className="h-[15px] w-[15px] shrink-0 opacity-80" />
+        <span className="flex-1 truncate">{(isManager && item.managerLabel) ? item.managerLabel : item.label}</span>
         {item.showCount && badgeCount > 0 && (
-          <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+          <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px] font-bold">
             {badgeCount}
           </Badge>
         )}
@@ -325,68 +328,100 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
-      <div className="p-6 border-b border-sidebar-border">
-        <div className={cn('flex items-center gap-2', !showBrandBlock && 'min-h-[2.5rem]')}>
+    <aside className="w-64 bg-sidebar flex flex-col border-r border-sidebar-border/60 shadow-[2px_0_12px_-4px_rgba(0,0,0,0.08)]">
+      {/* Brand header */}
+      <div className="px-5 py-4 border-b border-sidebar-border/60 bg-gradient-to-b from-sidebar-accent/10 to-transparent">
+        <div className={cn('flex items-center gap-2.5', !showBrandBlock && 'min-h-[2.25rem]')}>
           {showAgencyLogo && agencyImg ? (
             <img
               src={agencyImg}
               alt=""
-              className="h-9 w-auto max-w-[120px] object-contain shrink-0"
+              className="h-8 w-auto max-w-[110px] object-contain shrink-0 drop-shadow-sm"
             />
           ) : null}
           {showCompanyLogo && currentSubCompany?.logoUrl ? (
             <img
               src={currentSubCompany.logoUrl}
               alt=""
-              className="h-9 w-auto max-w-[120px] object-contain shrink-0"
+              className="h-8 w-auto max-w-[110px] object-contain shrink-0 drop-shadow-sm"
             />
           ) : null}
           <div className="min-w-0 flex-1">
             {brandTitle ? (
-              <h1 className="text-sm font-bold text-sidebar-foreground leading-tight tracking-tight break-words uppercase">
+              <h1 className="text-[11px] font-bold text-sidebar-foreground leading-tight tracking-[0.08em] break-words uppercase">
                 {brandTitle}
               </h1>
             ) : null}
           </div>
         </div>
       </div>
-      
-      <nav className="px-3 py-4 flex-1 overflow-y-auto">
+
+      {/* Navigation */}
+      <nav className="px-2 py-4 flex-1 overflow-y-auto">
         <WorkspaceSwitcher />
-        <div className="space-y-3">
-          {navSections.map((section) =>
-            section.secondary ? (
-              <Collapsible key={section.key}>
-                <CollapsibleTrigger className="flex w-full items-center gap-1 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40 hover:text-sidebar-foreground/70 [&[data-state=open]>svg]:rotate-180">
-                  {section.label}
-                  <ChevronDown className="h-3 w-3 transition-transform" />
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-1">
+        <div className="space-y-1">
+          {navSections.map((section) => {
+            // Collapsed group for the non-active workspace (non-switchable users)
+            if (section.secondary) {
+              return (
+                <Collapsible key={section.key}>
+                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 hover:text-sidebar-foreground/60 transition-colors [&[data-state=open]>svg]:rotate-180 select-none">
+                    {section.label}
+                    <ChevronDown className="h-3 w-3 transition-transform duration-150 ml-auto" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-0.5">
+                    {renderNavGroup(section.items)}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            }
+
+            const isWorkspace = section.key === 'marketing' || section.key === 'recruitment';
+            const isShared = section.key === 'shared';
+
+            // Active workspace section + tabs visible → flat list, no labels
+            // (the tab already makes the context clear)
+            if (isWorkspace && canSwitchSides) {
+              return (
+                <div key={section.key} className="space-y-0.5">
+                  {section.items.map(renderNavItem)}
+                </div>
+              );
+            }
+
+            // Shared section → thin divider instead of "SHARED" text
+            if (isShared) {
+              return (
+                <div key={section.key}>
+                  <div className="mx-2 my-4 h-px bg-sidebar-border/50" />
                   {renderNavGroup(section.items)}
-                </CollapsibleContent>
-              </Collapsible>
-            ) : (
-              <div key={section.key} className="space-y-1">
+                </div>
+              );
+            }
+
+            // Default (single-workspace, no tabs) → show label + sub-groups
+            return (
+              <div key={section.key}>
                 {section.label && (
-                  <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                  <p className="px-3 pt-5 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 select-none">
                     {section.label}
                   </p>
                 )}
-                {renderNavGroup(section.items)}
+                {renderNavGroup(section.items, section.label)}
               </div>
-            ),
-          )}
+            );
+          })}
         </div>
       </nav>
 
-      <div className="px-3 pb-2 border-t border-sidebar-border pt-2">
+      {/* Footer */}
+      <div className="px-2 pt-2 pb-1 border-t border-sidebar-border/60">
         <SwitchAgencyDropdown />
       </div>
 
-      <div className="px-3 py-2.5 border-t border-sidebar-border flex items-center gap-2">
+      <div className="px-3 py-2 border-t border-sidebar-border/60 flex items-center gap-2">
         <AgentAvailabilityControl compact />
-        <p className="text-[10px] text-sidebar-foreground/30 shrink-0 tabular-nums">v{__APP_VERSION__}</p>
+        <p className="text-[9.5px] text-sidebar-foreground/30 shrink-0 tabular-nums ml-auto">v{__APP_VERSION__}</p>
       </div>
     </aside>
   );

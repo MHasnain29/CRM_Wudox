@@ -328,6 +328,9 @@ leaveRouter.patch('/requests/:id/approve', requirePermission('leave:approve'), a
   if (leaveRequest.status !== LeaveStatus.pending) {
     return res.status(400).json({ error: 'Only pending requests can be approved' });
   }
+  if (leaveRequest.userId === req.user.sub) {
+    return res.status(403).json({ error: 'You cannot approve your own leave request' });
+  }
 
   // Approve + deduct balance in a single transaction
   const [updated] = await prisma.$transaction([
@@ -384,6 +387,9 @@ leaveRouter.patch('/requests/:id/reject', requirePermission('leave:approve'), as
   if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
   if (leaveRequest.status !== LeaveStatus.pending) {
     return res.status(400).json({ error: 'Only pending requests can be rejected' });
+  }
+  if (leaveRequest.userId === req.user.sub) {
+    return res.status(403).json({ error: 'You cannot reject your own leave request' });
   }
 
   const updated = await prisma.leaveRequest.update({

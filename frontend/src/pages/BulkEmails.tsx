@@ -81,7 +81,7 @@ function AgencyCampaignsSection({
 }) {
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
-  const canManageCampaigns = useHasPermission('clients:write');
+  const canManageCampaigns = useHasPermission('calls:read');
   const { data, isLoading } = useQuery({
     queryKey: ['campaigns-agency', agency.id, scopeKey],
     queryFn: () => fetchCampaigns({ subCompanyId: agency.id, ownerIds, limit: 100 }),
@@ -314,7 +314,7 @@ function AgencyCampaignsSection({
 export default function BulkEmails() {
   const queryClient = useQueryClient();
   const location = useLocation();
-  const canManageCampaigns = useHasPermission('clients:write');
+  const canManageCampaigns = useHasPermission('calls:read');
   const preselectedListId = (location.state as { preselectedListId?: string } | null)?.preselectedListId;
 
   const [searchTerm, setSearchTerm] = useState('');

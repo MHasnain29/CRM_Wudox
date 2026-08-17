@@ -184,7 +184,7 @@ export default function DirectorDashboard() {
     : 'This Month';
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col min-h-full gap-6">
 
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -478,7 +478,7 @@ export default function DirectorDashboard() {
       </div>
 
       {/* ── Charts Row 2: Activity + Lead Distribution + Team Performance ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 auto-rows-fr gap-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
