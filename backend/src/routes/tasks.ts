@@ -44,7 +44,7 @@ const createBodySchema = z.object({
   ownerId: z.string().uuid(),
   linkType: z.nativeEnum(TaskLinkType).optional().nullable(),
   linkId: z.string().uuid().optional().nullable(),
-  projectId: z.string().cuid().optional().nullable(),
+  projectId: z.string().uuid().optional().nullable(),
 });
 
 const updateBodySchema = z.object({
@@ -296,7 +296,7 @@ tasksRouter.post('/', requirePermission('tasks:write'), async (req: Request, res
       subCompanyId,
       linkType: data.linkType ?? null,
       linkId: data.linkId ?? null,
-      ...(data.projectId ? { project: { connect: { id: data.projectId } } } : {}),
+      projectId: data.projectId ?? null,
     },
     include: {
       owner: { select: { id: true, firstName: true, lastName: true, email: true } },

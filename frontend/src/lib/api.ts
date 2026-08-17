@@ -4577,6 +4577,7 @@ export async function fetchTasks(params?: {
   ownerIds?: string[]; ownerExact?: boolean;
   scope?: 'mine' | 'team' | 'all';
   projectId?: string;
+  includeProjectTasks?: boolean;
 }): Promise<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
   const searchParams = new URLSearchParams();
   if (params?.page != null) searchParams.set('page', String(params.page));
@@ -4588,6 +4589,7 @@ export async function fetchTasks(params?: {
   appendOwnerIds(searchParams, params?.ownerIds, params?.ownerExact);
   if (params?.scope) searchParams.set('scope', params.scope);
   if (params?.projectId) searchParams.set('projectId', params.projectId);
+  if (params?.includeProjectTasks) searchParams.set('includeProjectTasks', 'true');
   const res = await apiFetch<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
     `/tasks?${searchParams.toString()}`
   );

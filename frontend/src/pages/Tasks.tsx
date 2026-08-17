@@ -100,7 +100,7 @@ function UserTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['user-tasks-section', user.id],
-    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     retry: false,
   });
@@ -194,7 +194,7 @@ function AgencyTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['agency-tasks-section', agency.id, scopeKey],
-    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
   });
 
@@ -415,7 +415,7 @@ function TeamTasksSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['team-tasks-section', ownerIds.join(',')],
-    queryFn: () => fetchTasks({ ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     enabled: ownerIds.length > 0,
   });
@@ -777,6 +777,7 @@ export default function Tasks() {
             : (isElevated ? undefined : agencyId),
         ownerIds,
         limit: 500,
+        includeProjectTasks: true,
         ...(projectFilter !== 'all' ? { projectId: projectFilter } : {}),
       });
       if (counter !== loadCounterRef.current) return; // stale response — a newer call is in-flight

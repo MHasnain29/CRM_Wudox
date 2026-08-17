@@ -379,9 +379,8 @@ export function Sidebar() {
             const isWorkspace = section.key === 'marketing' || section.key === 'recruitment';
             const isShared = section.key === 'shared';
 
-            // Active workspace section + tabs visible → flat list, no labels
-            // (the tab already makes the context clear)
-            if (isWorkspace && canSwitchSides) {
+            // Workspace section → always flat list, no labels regardless of tab visibility
+            if (isWorkspace) {
               return (
                 <div key={section.key} className="space-y-0.5">
                   {section.items.map(renderNavItem)}
