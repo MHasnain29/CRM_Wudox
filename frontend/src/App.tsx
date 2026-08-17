@@ -43,6 +43,10 @@ import EmployeeForm from "./pages/EmployeeForm";
 import EmployeeJobMatches from "./pages/EmployeeJobMatches";
 import Jobs from "./pages/Jobs";
 import ActiveClients from "./pages/ActiveClients";
+import Projects from "./pages/Projects";
+import ProjectDetail from "./pages/ProjectDetail";
+import Leave from "./pages/Leave";
+import LeaveAdmin from "./pages/LeaveAdmin";
 import NotFound from "./pages/NotFound";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -141,6 +145,10 @@ const App = () => (
               <Route path="/employee-job-matches" element={<PermissionRoute permission="employees:read"><EmployeeJobMatches /></PermissionRoute>} />
               <Route path="/active-clients" element={<PermissionRoute permission="jobs:read"><ActiveClients /></PermissionRoute>} />
               <Route path="/jobs" element={<PermissionRoute permission="jobs:read"><Jobs /></PermissionRoute>} />
+              <Route path="/projects" element={<PermissionRoute permission="projects:read"><Projects /></PermissionRoute>} />
+              <Route path="/projects/:id" element={<PermissionRoute permission="projects:read"><ProjectDetail /></PermissionRoute>} />
+              <Route path="/leave" element={<PermissionRoute permission="leave:read"><Leave /></PermissionRoute>} />
+              <Route path="/leave/admin" element={<PermissionRoute permission="leave:approve"><LeaveAdmin /></PermissionRoute>} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Route>

@@ -25,14 +25,6 @@ export const ROLE_HIERARCHY: RoleSeed[] = [
     scopeLevel: 'global',
   },
   {
-    key: 'dev_team',
-    name: 'Dev Team',
-    description: 'Support and debugging; read-most with settings',
-    parentKey: 'super_admin',
-    sortOrder: 1,
-    scopeLevel: 'agency',
-  },
-  {
     key: 'director',
     name: 'Director',
     description: 'Full access within assigned agency',
@@ -127,6 +119,88 @@ export const ROLE_HIERARCHY: RoleSeed[] = [
     parentKey: 'director',
     sortOrder: 50,
     scopeLevel: 'global',
+  },
+
+  // ── Software House Roles ──────────────────────────────────────────────────
+  {
+    key: 'cto',
+    name: 'CTO',
+    description: 'Chief Technical Officer — full visibility over all projects and dev team',
+    parentKey: 'director',
+    sortOrder: 60,
+    scopeLevel: 'agency',
+  },
+  {
+    key: 'project_manager',
+    name: 'Project Manager',
+    description: 'Manages projects, team leads, and IC roles within their scope',
+    parentKey: 'cto',
+    sortOrder: 61,
+    scopeLevel: 'team',
+  },
+  {
+    key: 'team_lead',
+    name: 'Team Lead',
+    description: 'Leads a development team; can approve leave for direct reports',
+    parentKey: 'project_manager',
+    sortOrder: 63,
+    scopeLevel: 'team',
+  },
+  {
+    key: 'developer',
+    name: 'Developer',
+    description: 'Software developer — sees own projects and tasks',
+    parentKey: 'team_lead',
+    sortOrder: 64,
+    scopeLevel: 'own',
+  },
+  {
+    key: 'qa_engineer',
+    name: 'QA Engineer',
+    description: 'Quality assurance — sees assigned projects and tasks',
+    parentKey: 'team_lead',
+    sortOrder: 65,
+    scopeLevel: 'own',
+  },
+  {
+    key: 'ui_ux_designer',
+    name: 'UI/UX Designer',
+    description: 'Designs screens and flows — sees assigned projects and tasks',
+    parentKey: 'team_lead',
+    sortOrder: 66,
+    scopeLevel: 'own',
+  },
+  {
+    key: 'business_analyst',
+    name: 'Business Analyst',
+    description: 'Gathers requirements — sees assigned projects and tasks',
+    parentKey: 'team_lead',
+    sortOrder: 67,
+    scopeLevel: 'own',
+  },
+  {
+    key: 'devops_engineer',
+    name: 'DevOps Engineer',
+    description: 'Handles deployments and infrastructure — sees assigned projects and tasks',
+    parentKey: 'team_lead',
+    sortOrder: 68,
+    scopeLevel: 'own',
+  },
+  {
+    key: 'hr',
+    name: 'HR',
+    description: 'Human resources — manages leave types, balances, and approvals for all staff',
+    parentKey: 'director',
+    sortOrder: 70,
+    scopeLevel: 'agency',
+  },
+  {
+    key: 'finance',
+    name: 'Finance',
+    description: 'Finance/Accounts — views leave calendar for payroll purposes',
+    parentKey: 'director',
+    sortOrder: 71,
+    scopeLevel: 'agency',
   },
 ];
 
@@ -377,6 +451,17 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'roles:write', name: 'Edit role permissions', module: 'roles', parentKey: 'module.roles', sortOrder: 1202, isGroup: false, actionType: 'write' },
   { key: 'roles:create', name: 'Create roles', module: 'roles', parentKey: 'module.roles', sortOrder: 1203, isGroup: false, actionType: 'write' },
   { key: 'roles:delete', name: 'Delete roles', module: 'roles', parentKey: 'module.roles', sortOrder: 1204, isGroup: false, actionType: 'delete' },
+
+  // ── Software House: Projects ──────────────────────────────────────────────
+  { key: 'module.projects', name: 'Projects', module: 'projects', parentKey: null, sortOrder: 1300, isGroup: true },
+  { key: 'projects:read', name: 'View projects', module: 'projects', parentKey: 'module.projects', sortOrder: 1301, isGroup: false, actionType: 'read' },
+  { key: 'projects:write', name: 'Create & edit projects', module: 'projects', parentKey: 'module.projects', sortOrder: 1302, isGroup: false, actionType: 'write' },
+
+  // ── Software House: Leave ─────────────────────────────────────────────────
+  { key: 'module.leave', name: 'Leave management', module: 'leave', parentKey: null, sortOrder: 1400, isGroup: true },
+  { key: 'leave:read', name: 'View leave (own)', module: 'leave', parentKey: 'module.leave', sortOrder: 1401, isGroup: false, actionType: 'read' },
+  { key: 'leave:write', name: 'Request leave', module: 'leave', parentKey: 'module.leave', sortOrder: 1402, isGroup: false, actionType: 'write' },
+  { key: 'leave:approve', name: 'Approve & reject leave requests', module: 'leave', parentKey: 'module.leave', sortOrder: 1403, isGroup: false, actionType: 'custom' },
 ];
 
 export { PERMISSIONS_BY_ROLE_KEY } from '../src/config/systemRolePermissions';

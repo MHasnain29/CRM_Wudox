@@ -68,6 +68,8 @@ import { employeesRouter } from './routes/employees';
 import { activeClientTrainingRouter } from './routes/activeClientTraining';
 import { activeClientsRouter } from './routes/activeClients';
 import { jobsRouter } from './routes/jobs';
+import { projectsRouter } from './routes/projects';
+import { leaveRouter } from './routes/leave';
 
 const app = express();
 
@@ -277,6 +279,8 @@ app.use(`${prefix}/employees`, employeesRouter);
 app.use(`${prefix}/employees`, activeClientTrainingRouter);
 app.use(`${prefix}/active-clients`, activeClientsRouter);
 app.use(`${prefix}/jobs`, jobsRouter);
+app.use(`${prefix}/projects`, projectsRouter);
+app.use(`${prefix}/leave`, leaveRouter);
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');

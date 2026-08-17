@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useCallStore } from '@/lib/callStore';
 import { useAuthStore } from '@/lib/authStore';
 import { useStore } from '@/lib/store';
+import { useHasPermission } from '@/lib/access';
 import { getVoiceConfig } from '@/lib/api';
 import { resolveAgencyIdForApi } from '@/lib/resolveAgencyId';
 import { onVoiceCallEnded } from '@/lib/socket';
@@ -14,6 +15,7 @@ import { AgentPhonePanel } from './AgentPhonePanel';
  */
 export function InboundCallRoot() {
   const user = useAuthStore((s) => s.user);
+  const hasVoice = useHasPermission('voice:use');
   const subCompanies = useStore((s) => s.subCompanies);
   const currentSubCompanyId = useStore((s) => s.currentSubCompany?.id);
   const viewedSubCompanyId = useStore((s) => s.viewedSubCompanyId);
@@ -40,7 +42,7 @@ export function InboundCallRoot() {
   );
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !hasVoice) return;
     getVoiceConfig(agencyId)
       .then((c) => {
         if (c.voiceEnabled) {
@@ -48,7 +50,7 @@ export function InboundCallRoot() {
         }
       })
       .catch(() => undefined);
-  }, [user?.id, agencyId, initDevice]);
+  }, [user?.id, hasVoice, agencyId, initDevice]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -57,7 +59,7 @@ export function InboundCallRoot() {
     });
   }, [user?.id, handleRemotePartyHangup]);
 
-  if (!user) return null;
+  if (!user || !hasVoice) return null;
 
   return (
     <>

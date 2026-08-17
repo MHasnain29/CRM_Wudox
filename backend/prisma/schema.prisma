@@ -100,6 +100,7 @@ model SubCompany {
   signingAuthorities            SigningAuthority[]
   activeClients                 ActiveClient[]
   jobs                          Job[]
+  projects                      Project[]
 
   @@index([mainOrgId])
   @@map("sub_companies")
@@ -340,6 +341,11 @@ model User {
   emailForwardingToUser                   User?                         @relation("EmailForwardingTo", fields: [emailForwardingToUserId], references: [id], onDelete: SetNull)
   emailForwardingUsers                    User[]                        @relation("EmailForwardingTo")
   agencyLinks                             UserAgencyLink[]
+  ownedProjects                           Project[]                     @relation("ProjectOwner")
+  projectMemberships                      ProjectMember[]
+  leaveBalances                           LeaveBalance[]
+  leaveRequests                           LeaveRequest[]
+  leaveRequestsApproved                   LeaveRequest[]                @relation("LeaveApprover")
 
   @@index([email])
   @@index([subCompanyId])
@@ -1250,6 +1256,7 @@ model Task {
   reminderDate    DateTime?        @map("reminder_date")
   linkType        TaskLinkType?    @map("link_type")
   linkId          String?          @map("link_id")
+  projectId       String?          @map("project_id")
   completedAt     DateTime?        @map("completed_at")
   /// Set during offboarding — previous owner's userId (drives "Forwarded from" chip).
   forwardedFromUserId String?      @map("forwarded_from_user_id")
@@ -1261,12 +1268,14 @@ model Task {
   owner               User             @relation("TaskOwner", fields: [ownerId], references: [id])
   forwardedFromUser   User?            @relation("TaskForwardedFrom", fields: [forwardedFromUserId], references: [id], onDelete: SetNull)
   subCompany          SubCompany       @relation(fields: [subCompanyId], references: [id])
+  project             Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
   @@index([status])
   @@index([dueDate])
   @@index([linkType, linkId])
   @@index([subCompanyId])
+  @@index([projectId])
   @@map("tasks")
 }
 
@@ -3142,4 +3151,143 @@ model SigningAuthority {
 
   @@index([subCompanyId])
   @@map("signing_authorities")
+}
+
+// ── Software House: Projects ──────────────────────────────────────────────────
+
+model Project {
+  id           String          @id @default(uuid())
+  name         String
+  description  String?         @db.Text
+  status       ProjectStatus   @default(active)
+  ownerId      String          @map("owner_id")
+  subCompanyId String?         @map("sub_company_id")
+  startDate    DateTime?       @map("start_date")
+  endDate      DateTime?       @map("end_date")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  owner      User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  subCompany SubCompany?     @relation(fields: [subCompanyId], references: [id])
+  members    ProjectMember[]
+  milestones Milestone[]
+  tasks      Task[]
+
+  @@index([subCompanyId])
+  @@index([ownerId])
+  @@index([status])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  active
+  on_hold
+  done
+}
+
+model ProjectMember {
+  id        String            @id @default(uuid())
+  projectId String            @map("project_id")
+  userId    String            @map("user_id")
+  role      ProjectMemberRole @default(member)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+enum ProjectMemberRole {
+  member
+  lead
+}
+
+model Milestone {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  title     String
+  dueDate   DateTime @map("due_date")
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([dueDate])
+  @@map("milestones")
+}
+
+// ── Software House: Leave ─────────────────────────────────────────────────────
+
+model LeaveType {
+  id           String         @id @default(uuid())
+  name         String
+  daysPerYear  Int            @map("days_per_year")
+  paid         Boolean        @default(true)
+  maxCarryOver Int            @default(0) @map("max_carry_over")
+  subCompanyId String?        @map("sub_company_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@index([subCompanyId])
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  leaveTypeId String    @map("leave_type_id")
+  year        Int
+  entitled    Int
+  used        Int       @default(0)
+  carriedOver Int       @default(0) @map("carried_over")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, leaveTypeId, year])
+  @@index([userId])
+  @@index([leaveTypeId])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id          String      @id @default(uuid())
+  userId      String      @map("user_id")
+  leaveTypeId String      @map("leave_type_id")
+  startDate   DateTime    @map("start_date")
+  endDate     DateTime    @map("end_date")
+  days        Int
+  reason      String?     @db.Text
+  status      LeaveStatus @default(pending)
+  approverId  String?     @map("approver_id")
+  approvedAt  DateTime?   @map("approved_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  approver  User?     @relation("LeaveApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([leaveTypeId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("leave_requests")
+}
+
+enum LeaveStatus {
+  pending
+  approved
+  rejected
+  cancelled
 }

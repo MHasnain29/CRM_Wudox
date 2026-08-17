@@ -9,7 +9,6 @@
  */
 export const SYSTEM_ROLE_KEYS = [
   'super_admin',
-  'dev_team',
   'director',
   'company_director',
   'it',
@@ -22,6 +21,17 @@ export const SYSTEM_ROLE_KEYS = [
   'operations_manager',
   'data_entry_specialist',
   'database_manager',
+  // Software house roles
+  'cto',
+  'project_manager',
+  'team_lead',
+  'developer',
+  'qa_engineer',
+  'ui_ux_designer',
+  'business_analyst',
+  'devops_engineer',
+  'hr',
+  'finance',
 ] as const;
 
 export type SystemRoleKey = (typeof SYSTEM_ROLE_KEYS)[number];
@@ -58,11 +68,8 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'emails:delete',
     'email:configure_signature',
     'users:link_agency',
-  ]),
-  dev_team: withSharedDefaults([
-    'users:read', 'users:directory', 'clients:read', 'leads:read', 'pipeline:read', 'tasks:read',
-    'meetings:read', 'meetings:add_participants', 'jobs:read', 'employees:read', 'analytics:read',
-    'settings:read', 'settings:write', 'roles:read', 'phone_system:read', 'phone_system:write', 'bug_reports:submit', 'bug_reports:read',
+    'projects:read', 'projects:write',
+    'leave:read', 'leave:write', 'leave:approve',
   ]),
   director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -81,6 +88,8 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'email:configure_signature',
     'users:link_agency',
     'lists:assign',
+    'projects:read', 'projects:write',
+    'leave:read', 'leave:write', 'leave:approve',
   ]),
   company_director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -98,6 +107,8 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'emails:delete',
     'email:configure_signature',
     'lists:assign',
+    'projects:read', 'projects:write',
+    'leave:read', 'leave:write', 'leave:approve',
   ]),
   sales_manager: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -111,6 +122,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'client_notes:fields:write', 'client_notes:fields:read',
     'emails:delete',
     'lists:assign',
+    'leave:read', 'leave:write',
   ]),
   /** Recruitment side only — Jobs/Employees (+ shared users/tasks/meetings/emails). No Marketing modules. */
   recruitment_manager: withSharedDefaults([
@@ -123,6 +135,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'analytics:read', 'settings:read', 'voice:use', 'bug_reports:submit',
     'remarks:write', 'remarks:public',
     'emails:delete',
+    'leave:read', 'leave:write',
   ]),
   sales_associate: withSharedDefaults([
     'users:read',
@@ -132,6 +145,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants', 'analytics:read', 'voice:use', 'bug_reports:submit',
     'remarks:write',
     'client_notes:fields:write', 'client_notes:fields:read',
+    'leave:read', 'leave:write',
   ]),
   sales_executive: withSharedDefaults([
     'users:read', 'users:directory',
@@ -141,6 +155,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants', 'voice:use', 'bug_reports:submit',
     'remarks:write',
     'client_notes:fields:write', 'client_notes:fields:read',
+    'leave:read', 'leave:write',
   ]),
   /** Recruitment side only — Jobs/Employees (+ shared). */
   recruiter: withSharedDefaults([
@@ -151,6 +166,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'tasks:read', 'tasks:write',
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'voice:use', 'bug_reports:submit',
+    'leave:read', 'leave:write',
   ]),
   /** Same as recruiter + analytics and employee approve (senior desk). */
   sr_recruiter: withSharedDefaults([
@@ -161,15 +177,18 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'tasks:read', 'tasks:write',
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'analytics:read', 'voice:use', 'bug_reports:submit',
+    'leave:read', 'leave:write',
   ]),
   data_entry_specialist: withSharedDefaults([
     'users:read', 'users:directory',
     'clients:read', 'clients:write', 'clients:contacts:add', 'leads:read', 'leads:write', 'pipeline:read', 'pipeline:write',
     'calls:write', 'tasks:read', 'tasks:write', 'meetings:add_participants', 'bug_reports:submit',
     'remarks:write',
+    'leave:read', 'leave:write',
   ]),
   database_manager: withSharedDefaults([
     'clients:read', 'clients:write', 'clients:contacts:add', 'meetings:add_participants', 'analytics:read', 'bug_reports:submit',
+    'leave:read', 'leave:write',
   ]),
   operations_manager: withSharedDefaults([
     'users:read', 'users:directory', 'clients:read', 'clients:write', 'clients:contacts:add', 'clients:contacts:edit', 'clients:manager_recommend', 'clients:ownership',
@@ -184,10 +203,102 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'emails:delete',
     'email:configure_signature',
     'lists:assign',
+    'projects:read',
+    'leave:read', 'leave:write',
   ]),
   it: withSharedDefaults([
     'users:read', 'users:directory', 'clients:read', 'leads:read', 'pipeline:read', 'tasks:read',
     'meetings:read', 'meetings:add_participants', 'jobs:read', 'employees:read', 'analytics:read', 'settings:read', 'settings:write',
     'roles:read', 'bug_reports:submit',
+    'leave:read', 'leave:write',
+  ]),
+
+  // ── Software House Roles ──────────────────────────────────────────────────
+
+  cto: withSharedDefaults([
+    'users:read', 'users:directory',
+    'projects:read', 'projects:write',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read',
+    'analytics:read', 'settings:read', 'bug_reports:submit',
+  ]),
+
+  project_manager: withSharedDefaults([
+    'users:read', 'users:directory',
+    'projects:read', 'projects:write',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read',
+    'bug_reports:submit',
+  ]),
+
+  team_lead: withSharedDefaults([
+    'users:read', 'users:directory',
+    'projects:read', 'projects:write',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:approve',
+    'bug_reports:submit',
+  ]),
+
+  developer: withSharedDefaults([
+    'users:read',
+    'projects:read',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:write',
+    'bug_reports:submit',
+  ]),
+
+  qa_engineer: withSharedDefaults([
+    'users:read',
+    'projects:read',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:write',
+    'bug_reports:submit',
+  ]),
+
+  ui_ux_designer: withSharedDefaults([
+    'users:read',
+    'projects:read',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:write',
+    'bug_reports:submit',
+  ]),
+
+  business_analyst: withSharedDefaults([
+    'users:read',
+    'projects:read',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:write',
+    'bug_reports:submit',
+  ]),
+
+  devops_engineer: withSharedDefaults([
+    'users:read',
+    'projects:read',
+    'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants',
+    'leave:read', 'leave:write',
+    'bug_reports:submit',
+  ]),
+
+  hr: withSharedDefaults([
+    'users:read', 'users:directory',
+    'projects:read',
+    'tasks:read',
+    'meetings:read', 'meetings:add_participants',
+    'leave:read', 'leave:write', 'leave:approve',
+    'settings:read', 'bug_reports:submit',
+  ]),
+
+  finance: withSharedDefaults([
+    'users:read', 'users:directory',
+    'leave:read',
+    'bug_reports:submit',
   ]),
 };
