@@ -424,6 +424,9 @@ export interface Task {
   /** Set when this task was transferred via employee offboarding. */
   forwardedFromName?: string | null;
   forwardedFromSubCompanyId?: string | null;
+  /** Set when this task belongs to a project. */
+  projectId?: string | null;
+  projectName?: string | null;
 }
 
 export interface LeadRequest {

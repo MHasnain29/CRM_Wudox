@@ -66,7 +66,12 @@ export type Permission =
   | 'phone_system:write'
   | 'inbound_calls:read'
   | 'users:link_agency'
-  | 'lists:assign';
+  | 'lists:assign'
+  | 'projects:read'
+  | 'projects:write'
+  | 'leave:read'
+  | 'leave:write'
+  | 'leave:approve';
 
 /** Role as stored in DB and JWT (UserRole enum values) */
 export type Role = string;
@@ -96,6 +101,11 @@ const ALL_PERMISSIONS: Permission[] = [
   'phone_system:read', 'phone_system:write', 'inbound_calls:read',
   'users:link_agency',
   'lists:assign',
+  'projects:read',
+  'projects:write',
+  'leave:read',
+  'leave:write',
+  'leave:approve',
 ];
 
 /** Static fallback when role has no rows in role_permissions (see getEffectivePermissionKeysForRoleKey). */
@@ -134,6 +144,16 @@ export const ROLE_LABELS: Record<string, string> = {
   database_manager: 'Database Manager',
   operations_manager: 'Operations Manager',
   it: 'IT',
+  cto: 'CTO',
+  project_manager: 'Project Manager',
+  team_lead: 'Team Lead',
+  developer: 'Developer',
+  qa_engineer: 'QA Engineer',
+  ui_ux_designer: 'UI/UX Designer',
+  business_analyst: 'Business Analyst',
+  devops_engineer: 'DevOps Engineer',
+  hr: 'HR',
+  finance: 'Finance',
 };
 
 export function getRoleLabel(role: Role): string {

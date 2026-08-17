@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { getMyPresence, setMyPresence, type AgentPresenceStatus } from '@/lib/api';
 import { toast } from 'sonner';
+import { useHasPermission } from '@/lib/access';
 
 const STATUS_META: Record<AgentPresenceStatus, { label: string; color: string }> = {
   available: { label: 'Available', color: 'text-green-500' },
@@ -27,11 +28,13 @@ type Props = {
 };
 
 export function AgentAvailabilityControl({ compact = false, className }: Props) {
+  const hasVoice = useHasPermission('voice:use');
   const [manualStatus, setManualStatus] = useState<AgentPresenceStatus | null>(null);
   const [effective, setEffective] = useState<AgentPresenceStatus>('available');
   const mounted = useRef(true);
 
   const refreshPresence = useCallback(() => {
+    if (!hasVoice) return;
     getMyPresence()
       .then((p) => {
         if (!mounted.current) return;
@@ -39,7 +42,7 @@ export function AgentAvailabilityControl({ compact = false, className }: Props) 
         setEffective(p.effective);
       })
       .catch(() => undefined);
-  }, []);
+  }, [hasVoice]);
 
   useEffect(() => {
     mounted.current = true;
@@ -48,6 +51,8 @@ export function AgentAvailabilityControl({ compact = false, className }: Props) 
       mounted.current = false;
     };
   }, [refreshPresence]);
+
+  if (!hasVoice) return null;
 
   const handleStatusChange = async (value: string) => {
     const next = value === AUTO ? null : (value as AgentPresenceStatus);

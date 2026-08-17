@@ -891,8 +891,6 @@ function UserPipelineSection({
         open={isCreateTaskDialogOpen}
         onOpenChange={setIsCreateTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="lead"
-        defaultLinkId={selectedLead?.id}
       />
     </>
   );
@@ -1248,8 +1246,6 @@ function AgencyPipelineSection({
         open={isCreateTaskDialogOpen}
         onOpenChange={setIsCreateTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="lead"
-        defaultLinkId={selectedLead?.id}
       />
     </>
   );
@@ -2385,8 +2381,6 @@ export default function Pipeline() {
         open={isCreateTaskDialogOpen}
         onOpenChange={setIsCreateTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="lead"
-        defaultLinkId={selectedLead?.id}
       />
 
       <ProposalDialog

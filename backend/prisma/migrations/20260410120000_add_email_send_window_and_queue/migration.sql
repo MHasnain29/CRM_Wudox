@@ -47,8 +47,7 @@ CREATE TABLE IF NOT EXISTS "outbound_email_queue" (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "outbound_email_queue_dedupe_key_key"
-  ON "outbound_email_queue" ("dedupe_key")
-  WHERE "dedupe_key" IS NOT NULL;
+  ON "outbound_email_queue" ("dedupe_key");
 
 CREATE INDEX IF NOT EXISTS "outbound_email_queue_status_next_eligible_idx"
   ON "outbound_email_queue" ("status", "next_eligible_at");

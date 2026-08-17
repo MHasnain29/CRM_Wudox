@@ -4576,6 +4576,7 @@ export async function fetchTasks(params?: {
   agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
   scope?: 'mine' | 'team' | 'all';
+  projectId?: string;
 }): Promise<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
   const searchParams = new URLSearchParams();
   if (params?.page != null) searchParams.set('page', String(params.page));
@@ -4586,6 +4587,7 @@ export async function fetchTasks(params?: {
   if (params?.agencyIds?.length) searchParams.set('agencyIds', params.agencyIds.join(','));
   appendOwnerIds(searchParams, params?.ownerIds, params?.ownerExact);
   if (params?.scope) searchParams.set('scope', params.scope);
+  if (params?.projectId) searchParams.set('projectId', params.projectId);
   const res = await apiFetch<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
     `/tasks?${searchParams.toString()}`
   );
@@ -4602,6 +4604,7 @@ export async function createTask(payload: {
   linkType?: string | null;
   linkId?: string | null;
   subCompanyId?: string;
+  projectId?: string | null;
 }): Promise<ApiTask> {
   const path = payload.subCompanyId ? `/tasks?subCompanyId=${encodeURIComponent(payload.subCompanyId)}` : '/tasks';
   const res = await apiFetch<ApiTask>(path, {
@@ -4614,6 +4617,7 @@ export async function createTask(payload: {
       ownerId: payload.ownerId,
       linkType: payload.linkType ?? null,
       linkId: payload.linkId ?? null,
+      projectId: payload.projectId ?? null,
     }),
   });
   if (!res.ok) throw new Error(res.error || 'Failed to create task');
@@ -4764,6 +4768,8 @@ export function mapApiTaskToTask(
     attachments,
     forwardedFromName: api.forwardedFromName ?? null,
     forwardedFromSubCompanyId: api.forwardedFromSubCompanyId ?? null,
+    projectId: (api as any).projectId ?? null,
+    projectName: (api as any).projectName ?? null,
   };
 }
 

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { TaskPriority, TaskStatus, TaskLinkType } from '@/lib/types';
+import { TaskPriority, TaskStatus } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -40,8 +40,6 @@ import { useStore } from '@/lib/store';
 import { toast } from 'sonner';
 import {
   fetchUsers,
-  fetchClients,
-  fetchLeads,
   createTask,
   mapApiTaskToTask,
   uploadTaskAttachment,
@@ -52,14 +50,12 @@ import { useActAs } from '@/hooks/useActAs';
 import { useEffectiveUser } from '@/lib/effectiveUser';
 
 type UserOption = { id: string; name: string; email: string; designation: string; reportingManagerIds?: string[] };
-type LinkOption = { id: string; name: string; location?: string | null; industry?: string | null; corporateCode?: string | null };
-
 interface CreateTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subCompanyId?: string;
-  defaultLinkType?: TaskLinkType;
-  defaultLinkId?: string;
+  defaultProjectId?: string;
+  projects?: { id: string; name: string }[];
   onTaskCreated?: () => void;
 }
 
@@ -78,8 +74,8 @@ export function CreateTaskDialog({
   open,
   onOpenChange,
   subCompanyId,
-  defaultLinkType,
-  defaultLinkId,
+  defaultProjectId,
+  projects,
   onTaskCreated,
 }: CreateTaskDialogProps) {
   const { currentUser, currentSubCompany, addTask } = useStore();
@@ -96,16 +92,11 @@ export function CreateTaskDialog({
   });
   const [dueTime, setDueTime] = useState(() => toTimeString(new Date()));
   const [assigneeId, setAssigneeId] = useState(effectiveSelfId);
-  const [linkType, setLinkType] = useState<TaskLinkType | 'none' | ''>(defaultLinkType || '');
-  const [linkId, setLinkId] = useState(defaultLinkId || '');
+  const [selectedProjectId, setSelectedProjectId] = useState(defaultProjectId || '');
 
   const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [linkOpen, setLinkOpen] = useState(false);
   const [agencyUsers, setAgencyUsers] = useState<UserOption[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
-  const [clientOptions, setClientOptions] = useState<LinkOption[]>([]);
-  const [leadOptions, setLeadOptions] = useState<LinkOption[]>([]);
-  const [linkLoading, setLinkLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
@@ -185,41 +176,6 @@ export function CreateTaskDialog({
     }
   }, [open, usersLoading, agencyUsers, assigneeId, effectiveSelfId]);
 
-  const loadClientOptions = useCallback(async () => {
-    setLinkLoading(true);
-    try {
-      const { data } = await fetchClients({
-        ...(agencyId ? { subCompanyId: agencyId } : {}),
-        limit: 500,
-      });
-      setClientOptions((data ?? []).map((c) => ({ id: c.id, name: c.name, location: c.location ?? null, industry: c.industry ?? null, corporateCode: (c as any).corporateCode ?? null })));
-    } catch {
-      setClientOptions([]);
-    } finally {
-      setLinkLoading(false);
-    }
-  }, [agencyId]);
-
-  const loadLeadOptions = useCallback(async () => {
-    setLinkLoading(true);
-    try {
-      const { data } = await fetchLeads({
-        ...(agencyId ? { subCompanyId: agencyId } : {}),
-        limit: 500,
-      });
-      setLeadOptions(
-        (data ?? []).map((l) => ({
-          id: l.id,
-          name: l.client?.name ? `${l.client.name} (Lead)` : l.id,
-        }))
-      );
-    } catch {
-      setLeadOptions([]);
-    } finally {
-      setLinkLoading(false);
-    }
-  }, [agencyId]);
-
   useEffect(() => {
     if (open && agencyId) {
       loadUsers();
@@ -227,24 +183,11 @@ export function CreateTaskDialog({
   }, [open, agencyId, loadUsers]);
 
   useEffect(() => {
-    if (!open) return;
-    if (linkType === 'client') {
-      loadClientOptions();
-    } else if (linkType === 'lead') {
-      loadLeadOptions();
-    } else {
-      setClientOptions([]);
-      setLeadOptions([]);
-    }
-  }, [open, linkType, agencyId, loadClientOptions, loadLeadOptions]);
-
-  useEffect(() => {
     if (open) {
-      if (defaultLinkType) setLinkType(defaultLinkType);
-      if (defaultLinkId) setLinkId(defaultLinkId);
+      setSelectedProjectId(defaultProjectId || '');
       setAssigneeId(effectiveSelfId);
     }
-  }, [open, defaultLinkType, defaultLinkId, effectiveSelfId]);
+  }, [open, defaultProjectId, effectiveSelfId]);
 
   // Always include self (e.g. super_admin isn't returned by GET /users); default to self
   const isManagerScoped = canViewTeamScope && !canViewAgencyScope;
@@ -281,9 +224,8 @@ export function CreateTaskDialog({
         dueDate: dueDateIso,
         priority,
         ownerId: effectiveOwnerId,
-        linkType: linkType && linkType !== 'none' ? linkType : null,
-        linkId: linkId || null,
         subCompanyId: agencyId,
+        projectId: selectedProjectId || null,
       });
 
       if (pendingFiles.length > 0) {
@@ -306,8 +248,7 @@ export function CreateTaskDialog({
       setDueDate(next);
       setDueTime(toTimeString(next));
       setAssigneeId(effectiveSelfId);
-      setLinkType('');
-      setLinkId('');
+      setSelectedProjectId('');
       setPendingFiles([]);
       onTaskCreated?.();
       onOpenChange(false);
@@ -317,9 +258,6 @@ export function CreateTaskDialog({
       setSubmitting(false);
     }
   };
-
-  const linkOptions = linkType === 'client' ? clientOptions : linkType === 'lead' ? leadOptions : [];
-  const selectedLink = linkOptions.find((o) => o.id === linkId);
 
   if (!canWriteTasks) return null;
 
@@ -505,102 +443,23 @@ export function CreateTaskDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Link To (Optional)</Label>
-            <Select
-              value={linkType || 'none'}
-              onValueChange={(v) => {
-                setLinkType(v === 'none' ? '' : (v as TaskLinkType));
-                setLinkId('');
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="client">Client</SelectItem>
-                <SelectItem value="lead">Lead</SelectItem>
-              </SelectContent>
-            </Select>
-            {linkType && linkType !== 'none' && (
-              <Popover open={linkOpen} onOpenChange={setLinkOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    className={cn('w-full justify-between', !selectedLink && 'text-muted-foreground')}
-                    disabled={linkLoading}
-                  >
-                    {linkLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : selectedLink ? (
-                      <span className="truncate">{selectedLink.name}</span>
-                    ) : (
-                      `Select ${linkType}`
-                    )}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                  <PopoverContent className="w-[380px] p-0" align="start" onWheel={(e) => e.stopPropagation()}>
-                    {linkType === 'client' && (
-                      <Command>
-                        <CommandInput placeholder="Search clients..." />
-                        <CommandList className="max-h-[200px]">
-                          <CommandEmpty>No client found.</CommandEmpty>
-                          <CommandGroup>
-                            {clientOptions.map((opt) => {
-                              const details = [opt.location, opt.industry, opt.corporateCode].filter(Boolean).join(' · ');
-                              return (
-                                <CommandItem
-                                  key={opt.id}
-                                  value={`${opt.name} ${opt.location ?? ''} ${opt.industry ?? ''} ${opt.corporateCode ?? ''}`.trim()}
-                                  onSelect={() => {
-                                    setLinkId(opt.id);
-                                    setLinkOpen(false);
-                                  }}
-                                >
-                                  <Check className={cn('mr-2 h-4 w-4 shrink-0', opt.id === linkId ? 'opacity-100' : 'opacity-0')} />
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="truncate font-medium">{opt.name}</span>
-                                    {details && (
-                                      <span className="text-xs text-muted-foreground group-data-[selected=true]:text-accent-foreground truncate">{details}</span>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    )}
-                    {linkType === 'lead' && (
-                      <Command>
-                        <CommandInput placeholder="Search leads..." />
-                        <CommandList className="max-h-[200px]">
-                          <CommandEmpty>No lead found.</CommandEmpty>
-                          <CommandGroup>
-                            {leadOptions.map((opt) => (
-                              <CommandItem
-                                key={opt.id}
-                                value={opt.name}
-                                onSelect={() => {
-                                  setLinkId(opt.id);
-                                  setLinkOpen(false);
-                                }}
-                              >
-                                <Check className={cn('mr-2 h-4 w-4', opt.id === linkId ? 'opacity-100' : 'opacity-0')} />
-                                {opt.name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              )}
-          </div>
+          {projects && projects.length > 0 && (
+            <div className="space-y-2">
+              <Label>Project (Optional)</Label>
+              <Select value={selectedProjectId || 'none'} onValueChange={v => setSelectedProjectId(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Link to a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No project</SelectItem>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
         </div>
 
         <DialogFooter>

@@ -26,6 +26,8 @@ import {
   Shield,
   Bug,
   Link2,
+  FolderKanban,
+  CalendarOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -34,7 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown } from 'lucide-react';
 import { WorkspaceSwitcher, useActiveSide, groupNavItemsBySide } from '@/workspaces';
-import { fetchProposals, fetchTasks, fetchFollowUps, fetchLeadRequests, getPendingLeadReassignmentRequests, mapApiTaskToTask, mapApiFollowUpToFollowUp } from '@/lib/api';
+import { apiFetch, fetchProposals, fetchTasks, fetchFollowUps, fetchLeadRequests, getPendingLeadReassignmentRequests, mapApiTaskToTask, mapApiFollowUpToFollowUp } from '@/lib/api';
 import { getSocket, onProposalRefresh, onTaskRefresh, onFollowUpRefresh, onLeadRefresh, onReassignmentRefresh } from '@/lib/socket';
 import {
   agencyRecordName,
@@ -50,38 +52,69 @@ const DASHBOARD_PERMISSIONS = [
   'proposals:read', 'proposals:write', 'proposals:review',
 ] as const;
 
+const SOFTWARE_HOUSE_ROLES = new Set([
+  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'developer', 'qa_engineer', 'ui_ux_designer',
+  'business_analyst', 'devops_engineer',
+  'hr', 'finance',
+]);
+
 /** Nav items: hidden entirely when user lacks required permission(s). */
-const navItems: { to: string; icon: typeof LayoutDashboard; label: string; managerLabel?: string; permissions?: string[]; showCount?: boolean }[] = [
+const navItems: {
+  to: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  managerLabel?: string;
+  permissions?: string[];
+  showCount?: boolean;
+  excludeRoles?: Set<string>;
+  section?: string;
+}[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', permissions: [...DASHBOARD_PERMISSIONS] },
-  { to: '/clients', icon: Building2, label: 'Clients', permissions: ['clients:read'] },
-  { to: '/leads', icon: UserCircle, label: 'My Leads', managerLabel: 'Leads', permissions: ['leads:read'], showCount: true },
-  { to: '/proposals', icon: FileCheck, label: 'Proposals', permissions: ['proposals:read', 'proposals:write', 'proposals:review'], showCount: true },
-  { to: '/pipeline', icon: GitBranch, label: 'Pipeline', permissions: ['pipeline:read'] },
-  { to: '/lists', icon: List, label: 'Lists', permissions: ['leads:read'] },
-  { to: '/tasks', icon: CheckSquare, label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true },
-  { to: '/follow-ups', icon: CalendarClock, label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true },
-  { to: '/messages', icon: MessageSquare, label: 'Messages', permissions: ['users:read'], showCount: true },
-  { to: '/emails', icon: Mail, label: 'Emails', permissions: ['calls:read'], showCount: true },
-  { to: '/bulk-emails', icon: Mail, label: 'Bulk Emails', permissions: ['calls:read'] },
-  { to: '/calls', icon: Phone, label: 'Calls', permissions: ['calls:read'] },
-  { to: '/meetings', icon: Calendar, label: 'Meetings', permissions: ['meetings:read'] },
-  { to: '/documents', icon: FileText, label: 'Documents', permissions: ['proposals:read', 'proposals:write', 'proposals:review'] },
-  { to: '/active-clients', icon: Building2, label: 'Active Clients', permissions: ['jobs:read'] },
-  { to: '/jobs', icon: Briefcase, label: 'Jobs', permissions: ['jobs:read'] },
-  { to: '/employees', icon: UserCircle2, label: 'Employees', permissions: ['employees:read'] },
-  { to: '/employee-job-matches', icon: Link2, label: 'Job Matches', permissions: ['employees:read'] },
-  { to: '/calculators', icon: Calculator, label: 'Calculators', permissions: ['leads:read'] },
-  { to: '/users', icon: Users, label: 'Users', permissions: ['users:directory'] },
-  { to: '/super-users', icon: Shield, label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'] },
-  { to: '/bug-reports', icon: Bug, label: 'Bug Reports', permissions: ['bug_reports:read'] },
-  { to: '/reports', icon: BarChart3, label: 'Reports', permissions: ['analytics:read'] },
-  { to: '/settings', icon: Settings, label: 'Settings', permissions: ['settings:read'] },
+
+  // ── Software Team ──
+  { to: '/projects',   icon: FolderKanban, label: 'Projects',    permissions: ['projects:read'], section: 'Software Team' },
+  { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true },
+  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'] },
+  { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true },
+
+  // ── Sales & Marketing ──
+  { to: '/clients',    icon: Building2,    label: 'Clients',     permissions: ['clients:read'],  section: 'Sales & Marketing' },
+  { to: '/leads',      icon: UserCircle,   label: 'My Leads', managerLabel: 'Leads', permissions: ['leads:read'], showCount: true },
+  { to: '/proposals',  icon: FileCheck,    label: 'Proposals',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'], showCount: true },
+  { to: '/pipeline',   icon: GitBranch,    label: 'Pipeline',    permissions: ['pipeline:read'] },
+  { to: '/lists',      icon: List,         label: 'Lists',       permissions: ['leads:read'] },
+  { to: '/follow-ups', icon: CalendarClock,label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true, excludeRoles: SOFTWARE_HOUSE_ROLES },
+
+  // ── Recruitment ──
+  { to: '/active-clients',      icon: Building2,  label: 'Active Clients', permissions: ['jobs:read'],       section: 'Recruitment' },
+  { to: '/jobs',                icon: Briefcase,  label: 'Jobs',           permissions: ['jobs:read'] },
+  { to: '/employees',           icon: UserCircle2,label: 'Employees',      permissions: ['employees:read'] },
+  { to: '/employee-job-matches',icon: Link2,      label: 'Job Matches',    permissions: ['employees:read'] },
+
+  // ── Communication ──
+  { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication' },
+  { to: '/emails',      icon: Mail,          label: 'Emails',      permissions: ['calls:read'],  showCount: true },
+  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
+  { to: '/calls',       icon: Phone,         label: 'Calls',       permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
+  { to: '/meetings',    icon: Calendar,      label: 'Meetings',    permissions: ['meetings:read'] },
+  { to: '/documents',   icon: FileText,      label: 'Documents',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'] },
+
+  // ── Admin ──
+  { to: '/users',       icon: Users,     label: 'Users',       permissions: ['users:directory'],                      section: 'Settings' },
+  { to: '/super-users', icon: Shield,    label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'] },
+  { to: '/calculators', icon: Calculator,label: 'Calculators', permissions: ['leads:read'] },
+  { to: '/bug-reports', icon: Bug,       label: 'Bug Reports', permissions: ['bug_reports:read'] },
+  { to: '/reports',     icon: BarChart3, label: 'Reports',     permissions: ['analytics:read'] },
+  { to: '/settings',    icon: Settings,  label: 'Settings',    permissions: ['settings:read'] },
 ];
 
 export function Sidebar() {
   const { currentUser, currentSubCompany, tasks, setTasks, followUps, setFollowUps, unreadMessagesCount, unreadEmailsCount, pendingProposalsCount, setPendingProposalsCount, cwpProposalsCount, setCwpProposalsCount, pendingReassignmentsCount, setPendingReassignmentsCount } = useStore();
   const permissions = useAuthStore((s) => s.permissions);
+  const userRole = useAuthStore((s) => s.user?.role ?? '');
   const [pendingLeadRequestsCount, setPendingLeadRequestsCount] = useState(0);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   const isManager = useCanViewTeamScope();
   const canReviewProposals = useCanReviewProposals();
@@ -92,16 +125,20 @@ export function Sidebar() {
   const myTasksCount = tasks.filter(t => t.ownerId === currentUser.id && t.status !== 'done').length;
   const myFollowUpsCount = followUps.filter(f => f.ownerId === currentUser.id && !f.completed).length;
 
+  const hasLeadsRead = permissions.includes('leads:read');
+
   // Fetch tasks and follow-ups on mount so sidebar counts are populated before visiting those pages
   useEffect(() => {
     if (!agencyId) return;
     fetchTasks({ subCompanyId: agencyId, limit: 500 })
       .then(({ data }) => setTasks(data.map(mapApiTaskToTask)))
       .catch(() => {/* silently ignore */});
-    fetchFollowUps({ subCompanyId: agencyId, limit: 500 })
-      .then(({ data }) => setFollowUps(data.map(mapApiFollowUpToFollowUp)))
-      .catch(() => {/* silently ignore */});
-  }, [agencyId, setTasks, setFollowUps]);
+    if (hasLeadsRead) {
+      fetchFollowUps({ subCompanyId: agencyId, limit: 500 })
+        .then(({ data }) => setFollowUps(data.map(mapApiFollowUpToFollowUp)))
+        .catch(() => {/* silently ignore */});
+    }
+  }, [agencyId, hasLeadsRead, setTasks, setFollowUps]);
 
   // Auto-update counts via socket when tasks or follow-ups change
   useEffect(() => {
@@ -111,21 +148,21 @@ export function Sidebar() {
         .then(({ data }) => setTasks(data.map(mapApiTaskToTask)))
         .catch(() => {/* silently ignore */});
     });
-    const unsubFollowUp = onFollowUpRefresh(() => {
+    const unsubFollowUp = hasLeadsRead ? onFollowUpRefresh(() => {
       fetchFollowUps({ subCompanyId: agencyId, limit: 500 })
         .then(({ data }) => setFollowUps(data.map(mapApiFollowUpToFollowUp)))
         .catch(() => {/* silently ignore */});
-    });
+    }) : () => {};
     return () => { unsubTask(); unsubFollowUp(); };
-  }, [agencyId, setTasks, setFollowUps]);
+  }, [agencyId, hasLeadsRead, setTasks, setFollowUps]);
 
   // Fetch pending lead requests count for current user
   const fetchPendingLeadRequests = useCallback(() => {
-    if (!agencyId || !currentUser?.id) return;
+    if (!agencyId || !currentUser?.id || !hasLeadsRead) return;
     fetchLeadRequests({ status: 'pending', subCompanyId: agencyId })
       .then((requests) => setPendingLeadRequestsCount(requests.filter(r => r.requestedBy === currentUser.id).length))
       .catch(() => {/* silently ignore */});
-  }, [agencyId, currentUser?.id]);
+  }, [agencyId, currentUser?.id, hasLeadsRead]);
 
   useEffect(() => { fetchPendingLeadRequests(); }, [fetchPendingLeadRequests]);
 
@@ -172,6 +209,18 @@ export function Sidebar() {
     return () => { unsub(); };
   }, [canReviewProposals, setPendingProposalsCount]);
 
+  // Fetch pending leave requests count for approvers
+  const canApproveLeave = permissions.includes('leave:approve');
+  useEffect(() => {
+    if (!canApproveLeave) return;
+    apiFetch<{ data: { id: string }[] }>('/leave/requests?status=pending')
+      .then((res) => {
+        const list = (res.data as any).data ?? res.data ?? [];
+        setPendingLeaveCount(Array.isArray(list) ? list.length : 0);
+      })
+      .catch(() => {/* silently ignore */});
+  }, [canApproveLeave]);
+
   // Fetch closed-won-pending (activation pending) proposals count (proposal module access)
   const canAccessProposalsNav = permissions.some((p) =>
     p === 'proposals:read' || p === 'proposals:write' || p === 'proposals:review',
@@ -195,7 +244,9 @@ export function Sidebar() {
   }, [setCwpProposalsCount]);
 
   const { side: activeSide, canSwitch: canSwitchSides } = useActiveSide();
-  const visibleNavItems = navItems.filter((item) => hasAny(item.permissions));
+  const visibleNavItems = navItems.filter(
+    (item) => hasAny(item.permissions) && !item.excludeRoles?.has(userRole)
+  );
   const navSections = groupNavItemsBySide(visibleNavItems, activeSide, canSwitchSides);
   
   const companyChrome = showCompanyLogoInAppChrome();
@@ -207,6 +258,34 @@ export function Sidebar() {
   const showCompanyLogo = companyChrome && Boolean(currentSubCompany?.logoUrl?.trim());
   const showBrandBlock = showAgencyLogo || showCompanyLogo || Boolean(brandTitle);
 
+  const renderNavGroup = (items: (typeof navItems)[number][]) => {
+    const groups: { label?: string; items: (typeof navItems)[number][] }[] = [];
+    let currentLabel: string | undefined;
+    let currentGroup: (typeof navItems)[number][] = [];
+
+    for (const item of items) {
+      if (item.section !== undefined && item.section !== currentLabel) {
+        if (currentGroup.length > 0) groups.push({ label: currentLabel, items: currentGroup });
+        currentLabel = item.section;
+        currentGroup = [item];
+      } else {
+        currentGroup.push(item);
+      }
+    }
+    if (currentGroup.length > 0) groups.push({ label: currentLabel, items: currentGroup });
+
+    return groups.map((group, i) => (
+      <div key={group.label ?? `s${i}`} className="space-y-1">
+        {group.label && (
+          <p className="px-3 pt-3 pb-0.5 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/35">
+            {group.label}
+          </p>
+        )}
+        {group.items.map(renderNavItem)}
+      </div>
+    ));
+  };
+
   const renderNavItem = (item: (typeof navItems)[number]) => {
     let badgeCount = 0;
 
@@ -217,6 +296,7 @@ export function Sidebar() {
       if (item.to === '/messages') badgeCount = unreadMessagesCount;
       if (item.to === '/emails') badgeCount = unreadEmailsCount;
       if (item.to === '/proposals') badgeCount = (isManager ? pendingProposalsCount : 0) + cwpProposalsCount;
+      if (item.to === '/leave/admin') badgeCount = pendingLeaveCount;
     }
 
     return (
@@ -283,7 +363,7 @@ export function Sidebar() {
                   <ChevronDown className="h-3 w-3 transition-transform" />
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-1">
-                  {section.items.map(renderNavItem)}
+                  {renderNavGroup(section.items)}
                 </CollapsibleContent>
               </Collapsible>
             ) : (
@@ -293,7 +373,7 @@ export function Sidebar() {
                     {section.label}
                   </p>
                 )}
-                {section.items.map(renderNavItem)}
+                {renderNavGroup(section.items)}
               </div>
             ),
           )}

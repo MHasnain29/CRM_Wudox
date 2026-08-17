@@ -300,20 +300,30 @@ export async function getAgencyVoiceConfig(
 }
 
 export async function ensureConfigRow(subCompanyId: string) {
-  const row = await prisma.phoneAgencyConfig.upsert({
-    where: { subCompanyId },
-    create: {
-      subCompanyId,
-      syncStatus: 'not_connected',
-      autoAttendantExtension: '112',
-      allowExtensionDialing: true,
-      gatherTimeoutSec: 5,
-      greetingClipName: 'Greeting Options',
-      timeoutRouteLabel: 'Menu timeout — please try again',
-      invalidRouteLabel: 'Play Locations clip',
-    },
-    update: {},
-  });
+  let row: Awaited<ReturnType<typeof prisma.phoneAgencyConfig.findUniqueOrThrow>>;
+  try {
+    row = await prisma.phoneAgencyConfig.upsert({
+      where: { subCompanyId },
+      create: {
+        subCompanyId,
+        syncStatus: 'not_connected',
+        autoAttendantExtension: '112',
+        allowExtensionDialing: true,
+        gatherTimeoutSec: 5,
+        greetingClipName: 'Greeting Options',
+        timeoutRouteLabel: 'Menu timeout — please try again',
+        invalidRouteLabel: 'Play Locations clip',
+      },
+      update: {},
+    });
+  } catch (e: any) {
+    // Race condition: two concurrent calls both attempted INSERT — row now exists, just fetch it
+    if (e?.code === 'P2002') {
+      row = await prisma.phoneAgencyConfig.findUniqueOrThrow({ where: { subCompanyId } });
+    } else {
+      throw e;
+    }
+  }
   await seedReferenceDefaultsIfEmpty(subCompanyId, row);
   await seedAgencyTwilioDefaultsIfEmpty(subCompanyId);
   const agencyCount = await prisma.subCompany.count();
