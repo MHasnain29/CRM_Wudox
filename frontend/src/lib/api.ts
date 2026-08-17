@@ -8335,3 +8335,48 @@ export async function syncEmployeeOnboarding(employeeId: string): Promise<Employ
   return res.data.data;
 }
 
+
+// ── Notices ────────────────────────────────────────────────────────────────
+
+export async function fetchNotices() {
+  const res = await apiFetch<{ data: any[] }>('/notices');
+  if (!res.ok) throw new Error('Failed to fetch notices');
+  return res.data.data;
+}
+
+export async function createNotice(payload: {
+  title: string;
+  message: string;
+  type: string;
+  pinned: boolean;
+  expiresAt: string;
+}) {
+  const res = await apiFetch<{ data: any }>('/notices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((res as any).data?.error ?? (res as any).error ?? 'Failed to create notice');
+  return res.data.data;
+}
+
+export async function updateNotice(id: string, payload: Partial<{
+  title: string;
+  message: string;
+  type: string;
+  pinned: boolean;
+  expiresAt: string;
+}>) {
+  const res = await apiFetch<{ data: any }>(`/notices/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((res as any).data?.error ?? (res as any).error ?? 'Failed to update notice');
+  return res.data.data;
+}
+
+export async function deleteNotice(id: string) {
+  const res = await apiFetch<{ success: boolean }>(`/notices/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete notice');
+}

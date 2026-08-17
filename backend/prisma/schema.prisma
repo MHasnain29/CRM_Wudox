@@ -101,6 +101,7 @@ model SubCompany {
   activeClients                 ActiveClient[]
   jobs                          Job[]
   projects                      Project[]
+  notices                       Notice[]
 
   @@index([mainOrgId])
   @@map("sub_companies")
@@ -346,6 +347,7 @@ model User {
   leaveBalances                           LeaveBalance[]
   leaveRequests                           LeaveRequest[]
   leaveRequestsApproved                   LeaveRequest[]                @relation("LeaveApprover")
+  notices                                 Notice[]
 
   @@index([email])
   @@index([subCompanyId])
@@ -3290,4 +3292,31 @@ enum LeaveStatus {
   approved
   rejected
   cancelled
+}
+
+enum NoticeType {
+  info
+  warning
+  holiday
+  urgent
+}
+
+model Notice {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  createdById  String     @map("created_by_id")
+  type         NoticeType @default(info)
+  title        String
+  message      String     @db.Text
+  pinned       Boolean    @default(false)
+  expiresAt    DateTime   @map("expires_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy  User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([expiresAt])
+  @@map("notices")
 }

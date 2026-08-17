@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { NoticeBar } from './NoticeBar';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -323,6 +324,8 @@ export default function DirectorDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <NoticeBar />
 
       {/* ── Division Performance Cards ── */}
       {allDivisions.length > 0 && (

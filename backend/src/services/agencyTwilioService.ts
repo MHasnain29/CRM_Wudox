@@ -112,6 +112,11 @@ export function isAgencyTwilioConfigured(creds: AgencyTwilioCredentials | null):
   );
 }
 
+// Tracks subCompanies where a one-time force-repair of corrupt DB secrets has already been
+// attempted this process. Prevents a per-request DB write storm when secrets fail the
+// plausibility check (e.g. wrong encryption key or truncated value).
+const _secretRepairAttempted = new Set<string>();
+
 export async function getAgencyTwilioCredentials(
   subCompanyId: string,
 ): Promise<AgencyTwilioCredentials | null> {
@@ -131,9 +136,13 @@ export async function getAgencyTwilioCredentials(
     const creds = rowToCredentials(row);
     if (creds) {
       if (hasPlausibleTwilioSecrets(creds)) return creds;
-      // Corrupt/truncated DB secrets (e.g. partial save) — prefer .env for same subaccount.
+      // Corrupt/truncated DB secrets — prefer .env for same subaccount.
+      // Attempt DB repair at most once per process to avoid a write on every poll request.
       if (envCreds && creds.accountSid === envCreds.accountSid) {
-        void seedAgencyTwilioFromEnv(subCompanyId, { force: true }).catch(() => {});
+        if (!_secretRepairAttempted.has(subCompanyId)) {
+          _secretRepairAttempted.add(subCompanyId);
+          void seedAgencyTwilioFromEnv(subCompanyId, { force: true }).catch(() => {});
+        }
         return envCreds;
       }
       return creds;

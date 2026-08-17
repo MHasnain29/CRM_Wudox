@@ -23,6 +23,7 @@ import { TemperatureBadge } from '@/components/TemperatureBadge';
 import { StageBadge } from '@/components/StageBadge';
 import ManagerDashboard from '@/components/dashboard/ManagerDashboard';
 import DirectorDashboard from '@/components/dashboard/DirectorDashboard';
+import { NoticeBar } from '@/components/dashboard/NoticeBar';
 import SoftwareDashboard from '@/components/dashboard/SoftwareDashboard';
 import DatabaseManagerDashboard from '@/components/dashboard/DatabaseManagerDashboard';
 import RecruitmentManagerDashboard from '@/components/dashboard/RecruitmentManagerDashboard';
@@ -440,6 +441,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+
+      <NoticeBar />
 
       {/* ── Today's Progress (associates only) ── */}
       {isAssociate && (() => {
