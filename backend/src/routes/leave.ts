@@ -13,6 +13,7 @@ import { actAsMiddleware } from '../middleware/actAs';
 import { requirePermission } from '../middleware/requirePermission';
 import { resolveAgencyScope, resolveListAgencyScope } from '../config/agencyScope';
 import { createNotification } from '../services/notifications';
+import { emitToUsers } from '../socket';
 
 export const leaveRouter = Router();
 leaveRouter.use(authenticate);
@@ -21,7 +22,7 @@ leaveRouter.use(requirePermission('leave:read'));
 
 // Roles that can see all leave data in the subCompany
 const APPROVER_ROLES = new Set([
-  'super_admin', 'director', 'company_director', 'hr', 'team_lead', 'operations_manager',
+  'super_admin', 'director', 'company_director', 'hr', 'operations_manager',
 ]);
 
 function isApprover(role: string): boolean {
@@ -138,6 +139,15 @@ leaveRouter.patch('/types/:id', requirePermission('leave:approve'), async (req: 
 leaveRouter.delete('/types/:id', requirePermission('leave:approve'), async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
+  const pendingCount = await prisma.leaveRequest.count({
+    where: { leaveTypeId: req.params.id, status: LeaveStatus.pending },
+  });
+  if (pendingCount > 0) {
+    return res.status(409).json({ error: `Cannot delete — ${pendingCount} pending request(s) are using this leave type. Approve or reject them first.` });
+  }
+
+  // Cascade-delete balances before removing the type
+  await prisma.leaveBalance.deleteMany({ where: { leaveTypeId: req.params.id } });
   await prisma.leaveType.delete({ where: { id: req.params.id } });
   return res.json({ success: true });
 });
@@ -222,7 +232,9 @@ leaveRouter.get('/requests', async (req: Request, res: Response) => {
     userFilter = { user: { subCompanyId: agencyScope.primarySubCompanyId } };
   }
 
-  const status = req.query.status as LeaveStatus | undefined;
+  const rawStatus = req.query.status as string | undefined;
+  const status = rawStatus && (Object.values(LeaveStatus) as string[]).includes(rawStatus)
+    ? (rawStatus as LeaveStatus) : undefined;
 
   const requests = await prisma.leaveRequest.findMany({
     where: {
@@ -274,8 +286,11 @@ leaveRouter.post('/requests', requirePermission('leave:write'), async (req: Requ
   const { leaveTypeId, startDate, endDate, days, reason } = parsed.data;
   const currentYear = new Date(startDate).getFullYear();
 
-  // Check balance
-  const balance = await prisma.leaveBalance.findUnique({
+  // Find or auto-create a balance record (handles users added after a leave type was seeded)
+  const leaveType = await prisma.leaveType.findUnique({ where: { id: leaveTypeId } });
+  if (!leaveType) return res.status(400).json({ error: 'Leave type not found.' });
+
+  const balance = await prisma.leaveBalance.upsert({
     where: {
       userId_leaveTypeId_year: {
         userId: req.user.sub,
@@ -283,11 +298,16 @@ leaveRouter.post('/requests', requirePermission('leave:write'), async (req: Requ
         year: currentYear,
       },
     },
+    update: {},
+    create: {
+      userId: req.user.sub,
+      leaveTypeId,
+      year: currentYear,
+      entitled: leaveType.daysPerYear,
+      used: 0,
+      carriedOver: 0,
+    },
   });
-
-  if (!balance) {
-    return res.status(400).json({ error: 'No leave balance found for this leave type. Contact HR.' });
-  }
 
   const available = balance.entitled + balance.carriedOver - balance.used;
   if (days > available) {
@@ -312,6 +332,40 @@ leaveRouter.post('/requests', requirePermission('leave:write'), async (req: Requ
     },
   });
 
+  // Normal user → notify HR only; HR → notify super_admin, director, operations_manager
+  try {
+    const subCompanyId = leaveType.subCompanyId;
+    const requesterRole = req.user.role;
+    const notifyRoles = requesterRole === 'hr'
+      ? ['super_admin', 'director', 'operations_manager']
+      : ['hr'];
+
+    const approvers = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        role: { in: notifyRoles },
+        ...(subCompanyId ? { OR: [{ subCompanyId }, { subCompanyId: null }] } : {}),
+      },
+      select: { id: true },
+    });
+    const approverIds = approvers.map((a) => a.id).filter((id) => id !== req.user!.sub);
+    const dateRange = `${new Date(request.startDate).toLocaleDateString()} – ${new Date(request.endDate).toLocaleDateString()}`;
+    await Promise.all(
+      approverIds.map((uid) =>
+        createNotification({
+          userId: uid,
+          subCompanyId: subCompanyId ?? undefined,
+          type: 'leave_request',
+          title: 'New Leave Request',
+          body: `${request.user.firstName} ${request.user.lastName} requested ${request.leaveType.name} (${dateRange}).`,
+          link: '/leave/admin',
+          relatedId: request.id,
+        }).catch(() => {}),
+      ),
+    );
+    if (subCompanyId) emitToUsers(approverIds, 'leave:refresh', { subCompanyId });
+  } catch (_) {/* never block the response */}
+
   return res.status(201).json({ data: request });
 });
 
@@ -325,48 +379,66 @@ leaveRouter.patch('/requests/:id/approve', requirePermission('leave:approve'), a
   });
 
   if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
-  if (leaveRequest.status !== LeaveStatus.pending) {
-    return res.status(400).json({ error: 'Only pending requests can be approved' });
+  if (leaveRequest.userId === req.user.sub) {
+    return res.status(403).json({ error: 'You cannot approve your own leave request' });
   }
 
-  // Approve + deduct balance in a single transaction
-  const [updated] = await prisma.$transaction([
-    prisma.leaveRequest.update({
-      where: { id: req.params.id },
-      data: {
-        status: LeaveStatus.approved,
-        approverId: req.user.sub,
-        approvedAt: new Date(),
-      },
-      include: {
-        user: { select: { id: true, firstName: true, lastName: true, subCompanyId: true } },
-        leaveType: { select: { id: true, name: true } },
-        approver: { select: { id: true, firstName: true, lastName: true } },
-      },
-    }),
-    prisma.leaveBalance.updateMany({
-      where: {
-        userId: leaveRequest.userId,
-        leaveTypeId: leaveRequest.leaveTypeId,
-        year: new Date(leaveRequest.startDate).getFullYear(),
-      },
-      data: { used: { increment: leaveRequest.days } },
-    }),
-  ]);
+  // Approve + deduct balance atomically; status re-checked inside transaction to prevent double-approve
+  let updated: any;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      // Atomic: only succeeds if request is still 'pending' — prevents race condition
+      const result = await tx.leaveRequest.updateMany({
+        where: { id: req.params.id, status: LeaveStatus.pending },
+        data: { status: LeaveStatus.approved, approverId: req.user!.sub, approvedAt: new Date() },
+      });
+      if (result.count === 0) throw new Error('already_processed');
 
-  // Fire notification — never block the response
+      const balResult = await tx.leaveBalance.updateMany({
+        where: {
+          userId: leaveRequest.userId,
+          leaveTypeId: leaveRequest.leaveTypeId,
+          year: new Date(leaveRequest.startDate).getFullYear(),
+        },
+        data: { used: { increment: leaveRequest.days } },
+      });
+      if (balResult.count === 0) throw new Error('balance_not_found');
+
+      return tx.leaveRequest.findUnique({
+        where: { id: req.params.id },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, subCompanyId: true } },
+          leaveType: { select: { id: true, name: true } },
+          approver: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+    });
+  } catch (err: any) {
+    if (err.message === 'already_processed') {
+      return res.status(409).json({ error: 'This request has already been processed' });
+    }
+    if (err.message === 'balance_not_found') {
+      return res.status(400).json({ error: 'Leave balance record not found. Contact HR.' });
+    }
+    throw err;
+  }
+
+  // Fire notification + socket refresh to employee — never block the response
   try {
     const u = updated as any;
     const dateRange = `${new Date(u.startDate).toLocaleDateString()} – ${new Date(u.endDate).toLocaleDateString()}`;
+    const employeeId = u.user?.id ?? u.userId;
+    const subCompanyId = u.user?.subCompanyId;
     await createNotification({
-      userId: u.user?.id ?? u.userId,
-      subCompanyId: u.user?.subCompanyId,
+      userId: employeeId,
+      subCompanyId,
       type: 'leave_approved',
       title: 'Leave Approved',
       body: `Your ${u.leaveType?.name ?? 'leave'} request for ${dateRange} has been approved.`,
       link: '/leave',
       relatedId: u.id,
     });
+    if (subCompanyId) emitToUsers([employeeId], 'leave:refresh', { subCompanyId });
   } catch (_) {/* notification failure never blocks approval */}
 
   return res.json({ data: updated });
@@ -385,6 +457,9 @@ leaveRouter.patch('/requests/:id/reject', requirePermission('leave:approve'), as
   if (leaveRequest.status !== LeaveStatus.pending) {
     return res.status(400).json({ error: 'Only pending requests can be rejected' });
   }
+  if (leaveRequest.userId === req.user.sub) {
+    return res.status(403).json({ error: 'You cannot reject your own leave request' });
+  }
 
   const updated = await prisma.leaveRequest.update({
     where: { id: req.params.id },
@@ -400,19 +475,22 @@ leaveRouter.patch('/requests/:id/reject', requirePermission('leave:approve'), as
     },
   });
 
-  // Fire notification — never block the response
+  // Fire notification + socket refresh to employee — never block the response
   try {
     const u = updated as any;
     const dateRange = `${new Date(u.startDate).toLocaleDateString()} – ${new Date(u.endDate).toLocaleDateString()}`;
+    const employeeId = u.user?.id ?? u.userId;
+    const subCompanyId = u.user?.subCompanyId;
     await createNotification({
-      userId: u.user?.id ?? u.userId,
-      subCompanyId: u.user?.subCompanyId,
+      userId: employeeId,
+      subCompanyId,
       type: 'leave_rejected',
       title: 'Leave Rejected',
       body: `Your ${u.leaveType?.name ?? 'leave'} request for ${dateRange} has been rejected.`,
       link: '/leave',
       relatedId: u.id,
     });
+    if (subCompanyId) emitToUsers([employeeId], 'leave:refresh', { subCompanyId });
   } catch (_) {/* notification failure never blocks rejection */}
 
   return res.json({ data: updated });
@@ -425,6 +503,10 @@ leaveRouter.patch('/requests/:id/cancel', requirePermission('leave:write'), asyn
 
   const leaveRequest = await prisma.leaveRequest.findUnique({
     where: { id: req.params.id },
+    include: {
+      leaveType: { select: { name: true } },
+      user: { select: { id: true, firstName: true, lastName: true, subCompanyId: true } },
+    },
   });
 
   if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
@@ -439,6 +521,42 @@ leaveRouter.patch('/requests/:id/cancel', requirePermission('leave:write'), asyn
     where: { id: req.params.id },
     data: { status: LeaveStatus.cancelled },
   });
+
+  // Same routing as request submission: normal user cancels → HR; HR cancels → senior mgmt
+  try {
+    const subCompanyId = leaveRequest.user?.subCompanyId;
+    const name = `${leaveRequest.user?.firstName ?? ''} ${leaveRequest.user?.lastName ?? ''}`.trim();
+    const dateRange = `${new Date(leaveRequest.startDate).toLocaleDateString()} – ${new Date(leaveRequest.endDate).toLocaleDateString()}`;
+    const cancellerRole = req.user.role;
+    const cancelNotifyRoles = cancellerRole === 'hr'
+      ? ['super_admin', 'director', 'operations_manager']
+      : ['hr'];
+
+    const approvers = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        role: { in: cancelNotifyRoles },
+        ...(subCompanyId ? { OR: [{ subCompanyId }, { subCompanyId: null }] } : {}),
+      },
+      select: { id: true },
+    });
+
+    await Promise.all(approvers.map((a) =>
+      createNotification({
+        userId: a.id,
+        subCompanyId: subCompanyId ?? undefined,
+        type: 'leave_cancelled',
+        title: 'Leave Request Cancelled',
+        body: `${name} cancelled their ${leaveRequest.leaveType?.name ?? 'leave'} request for ${dateRange}.`,
+        link: '/leave/admin',
+        relatedId: leaveRequest.id,
+      })
+    ));
+
+    if (approvers.length > 0) {
+      emitToUsers(approvers.map((a) => a.id), 'leave:refresh', { subCompanyId });
+    }
+  } catch (_) {/* notification failure never blocks cancellation */}
 
   return res.json({ data: updated });
 });

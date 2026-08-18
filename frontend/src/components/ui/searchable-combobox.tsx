@@ -53,7 +53,7 @@ function OptionItem({
     <CommandItem
       // cmdk keys items by `value` — append stable id so duplicates in searchValue cannot collide
       value={`${option.searchValue} ${option.value}`}
-      className="cursor-pointer hover:bg-blue-50 hover:text-blue-900 data-[selected=true]:bg-blue-50 data-[selected=true]:text-blue-900"
+      className="cursor-pointer"
       onSelect={onSelect}
     >
       <Check
@@ -108,7 +108,7 @@ export function SearchableCombobox({
           aria-expanded={open}
           disabled={inactive}
           className={cn(
-            'h-10 w-full justify-between font-normal',
+            'h-9 w-full justify-between font-normal',
             !value && !loading && 'text-muted-foreground',
             className,
           )}

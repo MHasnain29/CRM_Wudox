@@ -3,6 +3,7 @@
  * GET /dashboard/recruitment?mine=1 plus the jobs list for "My Jobs".
  */
 import { useMemo } from 'react';
+import { NoticeBar } from './NoticeBar';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow, parseISO } from 'date-fns';
@@ -108,6 +109,8 @@ export default function RecruiterDashboard() {
           View Reports
         </Button>
       </div>
+
+      <NoticeBar />
 
       {isError && (
         <Card className="border-none shadow-sm">

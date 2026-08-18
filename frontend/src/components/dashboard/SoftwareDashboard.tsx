@@ -8,16 +8,18 @@ import { useStore } from '@/lib/store';
 import { format, isToday, isPast } from 'date-fns';
 import {
   FolderKanban, CheckSquare, CalendarOff, Clock, Users,
-  AlertTriangle, CheckCircle2, Circle, TrendingUp, Inbox
+  AlertTriangle, CheckCircle2, Circle, TrendingUp, Inbox,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { NoticeBar } from './NoticeBar';
+import { CheckInWidget } from './CheckInWidget';
 
 const IC_ROLES = new Set([
   'developer', 'qa_engineer', 'ui_ux_designer',
   'business_analyst', 'devops_engineer',
 ]);
 
-const APPROVER_ROLES = new Set(['hr', 'team_lead', 'scrum_master', 'project_manager', 'cto']);
+const APPROVER_ROLES = new Set(['hr', 'team_lead', 'project_manager', 'cto']);
 
 interface Project {
   id: string;
@@ -174,8 +176,10 @@ export default function SoftwareDashboard() {
     });
 
     return (
-      <div className="space-y-6 p-6">
+      <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">HR Dashboard</h1>
+        <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<Inbox className="text-orange-500" />} label="Pending Approvals" value={pendingLeave.length} />
@@ -184,7 +188,7 @@ export default function SoftwareDashboard() {
           <StatCard icon={<CheckCircle2 className="text-green-500" />} label="Leave Types" value={balanceByType.size} />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="flex-1 grid md:grid-cols-2 auto-rows-fr gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Pending Leave Requests</CardTitle>
@@ -271,8 +275,10 @@ export default function SoftwareDashboard() {
     });
 
     return (
-      <div className="space-y-6 p-6">
+      <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">Finance Dashboard</h1>
+        <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={onLeaveToday.length} />
@@ -280,7 +286,7 @@ export default function SoftwareDashboard() {
           <StatCard icon={<TrendingUp className="text-green-500" />} label="Leaves Next 30 Days" value={upcomingLeaves.length} />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="flex-1 grid md:grid-cols-2 auto-rows-fr gap-6">
           <Card>
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><CalendarOff size={16} /> Upcoming Approved Leaves</CardTitle></CardHeader>
             <CardContent>
@@ -336,8 +342,10 @@ export default function SoftwareDashboard() {
   // ── IC Dashboard (developer, qa, designer, ba, devops) ────────────────────
   if (IC_ROLES.has(role)) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">My Dashboard</h1>
+        <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<FolderKanban className="text-blue-500" />} label="Active Projects" value={activeProjects.length} onClick={() => navigate('/projects')} />
@@ -346,7 +354,7 @@ export default function SoftwareDashboard() {
           <StatCard icon={<Clock className="text-orange-500" />} label="Due Today" value={dueTodayTasks.length} />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="flex-1 grid md:grid-cols-2 auto-rows-fr gap-4">
           <Card>
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><FolderKanban size={16} /> My Projects</CardTitle></CardHeader>
             <CardContent className="space-y-2">
@@ -410,10 +418,12 @@ export default function SoftwareDashboard() {
 
   // ── Management Dashboard (cto, project_manager, team_lead) ─────────────────
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex flex-col min-h-full p-6 gap-6">
       <h1 className="text-2xl font-semibold">
         {role === 'cto' ? 'CTO Dashboard' : role === 'project_manager' ? 'Project Manager Dashboard' : 'Team Lead Dashboard'}
       </h1>
+      <NoticeBar />
+      <CheckInWidget />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon={<FolderKanban className="text-blue-500" />} label="Active Projects" value={activeProjects.length} onClick={() => navigate('/projects')} />
@@ -422,7 +432,7 @@ export default function SoftwareDashboard() {
         <StatCard icon={<Inbox className="text-orange-500" />} label="Pending Leave" value={pendingLeave.length} />
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="flex-1 grid md:grid-cols-2 auto-rows-fr gap-4">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">

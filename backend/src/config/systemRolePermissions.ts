@@ -70,6 +70,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'users:link_agency',
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
+    'attendance:view_all',
   ]),
   director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -90,6 +91,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'lists:assign',
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
+    'attendance:view_all',
   ]),
   company_director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -109,6 +111,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'lists:assign',
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
+    'attendance:view_all',
   ]),
   sales_manager: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -204,7 +207,8 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'email:configure_signature',
     'lists:assign',
     'projects:read',
-    'leave:read', 'leave:write',
+    'leave:read', 'leave:write', 'leave:approve',
+    'attendance:view_all',
   ]),
   it: withSharedDefaults([
     'users:read', 'users:directory', 'clients:read', 'leads:read', 'pipeline:read', 'tasks:read',
@@ -220,8 +224,10 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'tasks:read', 'tasks:write',
     'meetings:read', 'meetings:write', 'meetings:add_participants',
-    'leave:read',
+    'leave:read', 'leave:write',
     'analytics:read', 'settings:read', 'bug_reports:submit',
+    'notices:read', 'notices:write',
+    'attendance:view_all',
   ]),
 
   project_manager: withSharedDefaults([
@@ -229,8 +235,9 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'tasks:read', 'tasks:write',
     'meetings:read', 'meetings:write', 'meetings:add_participants',
-    'leave:read',
+    'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read', 'notices:write',
   ]),
 
   team_lead: withSharedDefaults([
@@ -238,8 +245,9 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'tasks:read', 'tasks:write',
     'meetings:read', 'meetings:write', 'meetings:add_participants',
-    'leave:read', 'leave:approve',
+    'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   developer: withSharedDefaults([
@@ -249,6 +257,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   qa_engineer: withSharedDefaults([
@@ -258,6 +267,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   ui_ux_designer: withSharedDefaults([
@@ -267,6 +277,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   business_analyst: withSharedDefaults([
@@ -276,6 +287,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   devops_engineer: withSharedDefaults([
@@ -285,6 +297,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:write', 'meetings:add_participants',
     'leave:read', 'leave:write',
     'bug_reports:submit',
+    'notices:read',
   ]),
 
   hr: withSharedDefaults([
@@ -294,11 +307,14 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'meetings:read', 'meetings:add_participants',
     'leave:read', 'leave:write', 'leave:approve',
     'settings:read', 'bug_reports:submit',
+    'notices:read', 'notices:write',
+    'attendance:view_all',
   ]),
 
   finance: withSharedDefaults([
     'users:read', 'users:directory',
     'leave:read',
     'bug_reports:submit',
+    'notices:read',
   ]),
 };

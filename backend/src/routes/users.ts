@@ -1797,6 +1797,8 @@ userRouter.patch('/:id', requirePermission('users:write', 'users:delete'), async
       );
       if (smReportingErr) return res.status(400).json({ error: smReportingErr });
     }
+  } else if (data.reportingManagerIds !== undefined) {
+    resolvedReportingManagerIds = data.reportingManagerIds;
   }
 
   const updatePayload: Record<string, unknown> = {

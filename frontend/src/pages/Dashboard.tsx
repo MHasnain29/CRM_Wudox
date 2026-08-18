@@ -24,6 +24,8 @@ import { StageBadge } from '@/components/StageBadge';
 import ManagerDashboard from '@/components/dashboard/ManagerDashboard';
 import DirectorDashboard from '@/components/dashboard/DirectorDashboard';
 import SoftwareDashboard from '@/components/dashboard/SoftwareDashboard';
+import { NoticeBar } from '@/components/dashboard/NoticeBar';
+import { CheckInWidget } from '@/components/dashboard/CheckInWidget';
 import DatabaseManagerDashboard from '@/components/dashboard/DatabaseManagerDashboard';
 import RecruitmentManagerDashboard from '@/components/dashboard/RecruitmentManagerDashboard';
 import RecruiterDashboard from '@/components/dashboard/RecruiterDashboard';
@@ -48,7 +50,7 @@ const priorityColors = {
 };
 
 const SOFTWARE_ROLES = new Set([
-  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'cto', 'project_manager', 'team_lead',
   'developer', 'qa_engineer', 'ui_ux_designer',
   'business_analyst', 'devops_engineer',
   'hr', 'finance',
@@ -440,6 +442,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+
+      <NoticeBar />
+      <CheckInWidget />
 
       {/* ── Today's Progress (associates only) ── */}
       {isAssociate && (() => {

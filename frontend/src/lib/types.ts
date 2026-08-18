@@ -674,3 +674,22 @@ export interface BookedMeeting {
   status: 'scheduled' | 'completed' | 'cancelled';
   createdAt: Date;
 }
+
+export type NoticeType = 'info' | 'warning' | 'holiday' | 'urgent';
+
+export interface Notice {
+  id: string;
+  subCompanyId: string;
+  createdById: string;
+  type: NoticeType;
+  title: string;
+  message: string;
+  pinned: boolean;
+  expiresAt: string;
+  createdAt: string;
+  createdBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+}

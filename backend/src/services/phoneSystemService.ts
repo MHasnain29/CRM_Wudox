@@ -299,7 +299,17 @@ export async function getAgencyVoiceConfig(
   };
 }
 
+// In-process cache: seeding is one-time-per-startup work, not per-request work.
+// After the first ensureConfigRow call for a subCompany, subsequent calls skip all
+// seeding and just fetch the row — preventing a DB storm from frequent polls.
+const _seededSubCompanies = new Set<string>();
+
 export async function ensureConfigRow(subCompanyId: string) {
+  // Fast path: row already exists and seeding completed this process — one SELECT only.
+  if (_seededSubCompanies.has(subCompanyId)) {
+    return prisma.phoneAgencyConfig.findUniqueOrThrow({ where: { subCompanyId } });
+  }
+
   let row: Awaited<ReturnType<typeof prisma.phoneAgencyConfig.findUniqueOrThrow>>;
   try {
     row = await prisma.phoneAgencyConfig.upsert({
@@ -330,6 +340,7 @@ export async function ensureConfigRow(subCompanyId: string) {
   if (agencyCount === 1) {
     await backfillPhoneNumbersFromEnv(subCompanyId);
   }
+  _seededSubCompanies.add(subCompanyId);
   return row;
 }
 

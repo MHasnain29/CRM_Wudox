@@ -47,9 +47,13 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import Leave from "./pages/Leave";
 import LeaveAdmin from "./pages/LeaveAdmin";
+import Attendance from "./pages/Attendance";
 import NotFound from "./pages/NotFound";
 import { useEffect } from "react";
 import { toast } from "sonner";
+
+// Routes that are sales/recruitment-only — software house roles are excluded even if they have the permission
+const SOFTWARE_HOUSE_ROLES = new Set(['cto','project_manager','team_lead','developer','qa_engineer','ui_ux_designer','business_analyst','devops_engineer','hr','finance']);
 
 function AgencySwitchedToast() {
   useEffect(() => {
@@ -94,12 +98,12 @@ const App = () => (
                   </PermissionRoute>
                 }
               />
-              <Route path="/lists" element={<PermissionRoute permission="leads:read"><Lists /></PermissionRoute>} />
-              <Route path="/calls" element={<PermissionRoute permission="calls:read"><Calls /></PermissionRoute>} />
+              <Route path="/lists" element={<PermissionRoute permission="calls:read" excludeRoles={SOFTWARE_HOUSE_ROLES}><Lists /></PermissionRoute>} />
+              <Route path="/calls" element={<PermissionRoute permission="calls:read" excludeRoles={SOFTWARE_HOUSE_ROLES}><Calls /></PermissionRoute>} />
               <Route path="/emails" element={<PermissionRoute permission="calls:read"><Emails /></PermissionRoute>} />
-              <Route path="/bulk-emails" element={<PermissionRoute permission="calls:read"><BulkEmails /></PermissionRoute>} />
+              <Route path="/bulk-emails" element={<PermissionRoute permission="calls:read" excludeRoles={SOFTWARE_HOUSE_ROLES}><BulkEmails /></PermissionRoute>} />
               <Route path="/tasks" element={<PermissionRoute permission="tasks:read"><Tasks /></PermissionRoute>} />
-              <Route path="/follow-ups" element={<PermissionRoute permission="tasks:read"><FollowUps /></PermissionRoute>} />
+              <Route path="/follow-ups" element={<PermissionRoute permission="tasks:read" excludeRoles={SOFTWARE_HOUSE_ROLES}><FollowUps /></PermissionRoute>} />
               <Route path="/meetings" element={<PermissionRoute permission="meetings:read"><Meetings /></PermissionRoute>} />
               <Route path="/messages" element={<PermissionRoute permission="users:read"><Messages /></PermissionRoute>} />
               <Route path="/reports" element={<PermissionRoute permission={['analytics:read', 'jobs:read']}><Reports /></PermissionRoute>} />
@@ -149,6 +153,7 @@ const App = () => (
               <Route path="/projects/:id" element={<PermissionRoute permission="projects:read"><ProjectDetail /></PermissionRoute>} />
               <Route path="/leave" element={<PermissionRoute permission="leave:read"><Leave /></PermissionRoute>} />
               <Route path="/leave/admin" element={<PermissionRoute permission="leave:approve"><LeaveAdmin /></PermissionRoute>} />
+              <Route path="/attendance" element={<Attendance />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Route>

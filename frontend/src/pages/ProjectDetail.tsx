@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchTaskById, mapApiTaskToTask } from '@/lib/api';
+import { TaskDetailDialog } from '@/components/TaskDetailDialog';
+import type { Task as FullTask } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -125,6 +127,10 @@ export default function ProjectDetail() {
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [addingMember, setAddingMember] = useState(false);
+
+  // Task detail modal
+  const [selectedTask, setSelectedTask] = useState<FullTask | null>(null);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
 
   // Edit project status
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -257,6 +263,13 @@ export default function ProjectDetail() {
     }
   }
 
+  async function handleTaskClick(taskId: string) {
+    const api = await fetchTaskById(taskId);
+    if (!api) return;
+    setSelectedTask(mapApiTaskToTask(api) as FullTask);
+    setTaskDialogOpen(true);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -348,7 +361,7 @@ export default function ProjectDetail() {
                     const Icon = TASK_STATUS_ICON[t.status] ?? Circle;
                     const overdue = t.dueDate && isPast(new Date(t.dueDate)) && !isToday(new Date(t.dueDate)) && t.status !== 'done';
                     return (
-                      <div key={t.id} className="flex items-center gap-3 border rounded p-2.5 text-sm">
+                      <div key={t.id} className="flex items-center gap-3 border rounded p-2.5 text-sm cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleTaskClick(t.id)}>
                         <Icon
                           size={14}
                           className={
@@ -553,6 +566,16 @@ export default function ProjectDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Task Detail Dialog */}
+      <TaskDetailDialog
+        task={selectedTask}
+        open={taskDialogOpen}
+        onOpenChange={(open) => {
+          setTaskDialogOpen(open);
+          if (!open) setSelectedTask(null);
+        }}
+      />
 
       {/* Add Member Dialog */}
       <Dialog open={showMemberDialog} onOpenChange={setShowMemberDialog}>

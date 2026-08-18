@@ -50,7 +50,7 @@ import {
 import { useAuthStore } from '@/lib/authStore';
 
 const SOFTWARE_ROLES = new Set([
-  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'cto', 'project_manager', 'team_lead',
   'developer', 'qa_engineer', 'ui_ux_designer',
   'business_analyst', 'devops_engineer', 'hr', 'finance',
 ]);
@@ -100,7 +100,7 @@ function UserTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['user-tasks-section', user.id],
-    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     retry: false,
   });
@@ -194,7 +194,7 @@ function AgencyTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['agency-tasks-section', agency.id, scopeKey],
-    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
   });
 
@@ -415,7 +415,7 @@ function TeamTasksSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['team-tasks-section', ownerIds.join(',')],
-    queryFn: () => fetchTasks({ ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     enabled: ownerIds.length > 0,
   });
@@ -777,6 +777,7 @@ export default function Tasks() {
             : (isElevated ? undefined : agencyId),
         ownerIds,
         limit: 500,
+        includeProjectTasks: true,
         ...(projectFilter !== 'all' ? { projectId: projectFilter } : {}),
       });
       if (counter !== loadCounterRef.current) return; // stale response — a newer call is in-flight
@@ -906,27 +907,21 @@ export default function Tasks() {
 
   const getLinkedItemName = (task: typeof tasks[0]) => {
     if (!task.linkType || !task.linkId) return null;
-    
+
     switch (task.linkType) {
-      case 'lead': {
-        const lead = leads.find(l => l.id === task.linkId);
-        if (lead) {
-          const client = clients.find(c => c.id === lead.clientId);
-          return client?.name;
-        }
-        break;
-      }
       case 'client':
-        return clients.find(c => c.id === task.linkId)?.name;
+        return task.linkedClient?.name ?? clients.find(c => c.id === task.linkId)?.name ?? null;
+      case 'lead':
+        return task.linkedLead?.clientName ?? (() => {
+          const lead = leads.find(l => l.id === task.linkId);
+          if (lead) return clients.find(c => c.id === lead.clientId)?.name ?? null;
+          return null;
+        })();
       case 'meeting':
-        return meetings.find(m => m.id === task.linkId)?.title;
+        return meetings.find(m => m.id === task.linkId)?.title ?? null;
       case 'follow_up': {
         const followUp = followUps.find(f => f.id === task.linkId);
-        if (followUp) {
-          const client = clients.find(c => c.id === followUp.clientId);
-          return client?.name;
-        }
-        break;
+        return followUp ? (clients.find(c => c.id === followUp.clientId)?.name ?? null) : null;
       }
     }
     return null;
@@ -1206,7 +1201,19 @@ export default function Tasks() {
                           <span className="text-muted-foreground text-sm">-</span>
                         )
                       ) : linkedItem ? (
-                        <div className="text-sm font-medium">{linkedItem}</div>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline truncate max-w-[140px]"
+                          onClick={e => {
+                            e.stopPropagation();
+                            const clientId = task.linkType === 'client'
+                              ? task.linkId
+                              : task.linkedLead?.clientId ?? leads.find(l => l.id === task.linkId)?.clientId;
+                            if (clientId) navigate(`/clients/${clientId}`);
+                          }}
+                        >
+                          {linkedItem}
+                        </button>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
@@ -1256,7 +1263,6 @@ export default function Tasks() {
         subCompanyId={writeAgencyId}
         onTaskCreated={loadTasks}
         defaultProjectId={projectFilter !== 'all' ? projectFilter : undefined}
-        projects={isSoftwareRole ? projects : undefined}
       />
     </div>
   );

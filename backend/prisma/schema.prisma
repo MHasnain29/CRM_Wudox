@@ -101,6 +101,8 @@ model SubCompany {
   activeClients                 ActiveClient[]
   jobs                          Job[]
   projects                      Project[]
+  notices                       Notice[]
+  attendance                    Attendance[]
 
   @@index([mainOrgId])
   @@map("sub_companies")
@@ -346,6 +348,8 @@ model User {
   leaveBalances                           LeaveBalance[]
   leaveRequests                           LeaveRequest[]
   leaveRequestsApproved                   LeaveRequest[]                @relation("LeaveApprover")
+  notices                                 Notice[]
+  attendance                              Attendance[]
 
   @@index([email])
   @@index([subCompanyId])
@@ -3290,4 +3294,52 @@ enum LeaveStatus {
   approved
   rejected
   cancelled
+}
+
+enum NoticeType {
+  info
+  warning
+  holiday
+  urgent
+}
+
+model Notice {
+  id           String     @id @default(uuid())
+  subCompanyId String     @map("sub_company_id")
+  createdById  String     @map("created_by_id")
+  type         NoticeType @default(info)
+  title        String
+  message      String     @db.Text
+  pinned       Boolean    @default(false)
+  expiresAt    DateTime   @map("expires_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  createdBy  User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([subCompanyId])
+  @@index([expiresAt])
+  @@map("notices")
+}
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+
+model Attendance {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  subCompanyId String    @map("sub_company_id")
+  date         DateTime  @map("date") @db.Date
+  checkInAt    DateTime  @map("check_in_at")
+  checkOutAt   DateTime? @map("check_out_at")
+  totalMinutes Int?      @map("total_minutes")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([subCompanyId, date])
+  @@map("attendance")
 }

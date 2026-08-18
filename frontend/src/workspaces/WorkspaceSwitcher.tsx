@@ -13,20 +13,20 @@ export function WorkspaceSwitcher() {
   const { side, canSwitch, setSide } = useActiveSide();
   if (!canSwitch) return null;
   return (
-    <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-sidebar-accent/40 p-1">
+    <div className="mb-4 flex gap-1 rounded-xl bg-sidebar-accent/30 p-1">
       {TABS.map((tab) => (
         <button
           key={tab.side}
           type="button"
           onClick={() => setSide(tab.side)}
           className={cn(
-            'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+            'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-all duration-150',
             side === tab.side
-              ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
-              : 'text-sidebar-foreground/60 hover:text-sidebar-foreground',
+              ? 'bg-white text-sidebar-foreground shadow-[0_1px_3px_rgba(0,0,0,0.10),0_0_0_1px_rgba(0,0,0,0.04)] dark:bg-sidebar-accent dark:text-sidebar-accent-foreground'
+              : 'text-sidebar-foreground/45 hover:text-sidebar-foreground/75',
           )}
         >
-          <tab.icon className="h-3.5 w-3.5" />
+          <tab.icon className="h-3 w-3" />
           {SIDE_LABELS[tab.side]}
         </button>
       ))}
