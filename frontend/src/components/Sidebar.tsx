@@ -75,7 +75,7 @@ const navItems: {
   // ── Software Team ──
   { to: '/projects',   icon: FolderKanban, label: 'Projects',    permissions: ['projects:read'], section: 'Software Team' },
   { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true },
-  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'] },
+  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']) },
   { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true },
 
   // ── Sales & Marketing ──
@@ -306,7 +306,7 @@ export function Sidebar() {
       <NavLink
         key={item.to}
         to={item.to}
-        end={item.to === '/'}
+        end={item.to === '/' || item.to === '/leave'}
         className={({ isActive }) =>
           cn(
             'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] leading-none transition-all duration-150 select-none',

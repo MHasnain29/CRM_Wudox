@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
+import { onLeaveRefresh } from '@/lib/socket';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Check, X, Loader2, Plus, Trash2, CalendarOff, Settings2, Users, AlertTriangle,
+  Check, X, Loader2, Plus, Trash2, CalendarOff, Settings2, Users, AlertTriangle, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -58,6 +59,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function LeaveAdmin() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [history, setHistory] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,17 +80,30 @@ export default function LeaveAdmin() {
     maxCarryOver: 0,
   });
 
-  useEffect(() => {
+  const fetchData = useCallback((showLoader = false) => {
+    if (showLoader) setLoading(true);
     Promise.all([
       apiFetch<any>('/leave/requests?status=pending'),
       apiFetch<any>('/leave/types'),
       apiFetch<any>('/leave/balances'),
-    ]).then(([reqRes, typRes, balRes]) => {
+      apiFetch<any>('/leave/requests'),
+    ]).then(([reqRes, typRes, balRes, histRes]) => {
       if (reqRes.ok) setRequests(reqRes.data?.data ?? []);
       if (typRes.ok) setLeaveTypes(typRes.data?.data ?? []);
       if (balRes.ok) setBalances(balRes.data?.data ?? []);
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (histRes.ok) {
+        const all: LeaveRequest[] = histRes.data?.data ?? [];
+        setHistory(all.filter((r) => r.status !== 'pending'));
+      }
+    }).catch(() => toast.error('Failed to load leave data')).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchData(true); }, [fetchData]);
+
+  useEffect(() => {
+    const unsub = onLeaveRefresh(() => fetchData());
+    return () => { unsub(); };
+  }, [fetchData]);
 
   async function handleApprove(reqId: string) {
     setActionLoading(reqId + '_approve');
@@ -120,7 +135,7 @@ export default function LeaveAdmin() {
       setLeaveTypes((prev) => prev.filter((t) => t.id !== typeId));
       toast.success('Leave type deleted');
     } else {
-      toast.error('Failed to delete');
+      toast.error((res as any).error ?? 'Failed to delete');
     }
   }
 
@@ -179,6 +194,9 @@ export default function LeaveAdmin() {
                 {requests.length}
               </Badge>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            <History size={14} className="mr-1" /> History
           </TabsTrigger>
           <TabsTrigger value="types">
             <Settings2 size={14} className="mr-1" /> Leave Types
@@ -249,6 +267,44 @@ export default function LeaveAdmin() {
                             : <X size={14} />
                           }
                         </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* History */}
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardContent className="pt-4">
+              {history.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No leave history yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {history.map((req) => (
+                    <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
+                          <Badge className={`text-xs border-0 ${STATUS_COLOR[req.status]}`}>
+                            {req.status}
+                          </Badge>
+                          <span className="text-muted-foreground">{req.leaveType.name}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {format(new Date(req.startDate), 'dd MMM yyyy')} –{' '}
+                          {format(new Date(req.endDate), 'dd MMM yyyy')} · {req.days} day(s)
+                          {req.reason && ` · ${req.reason}`}
+                        </div>
+                        {req.approver && (
+                          <div className="text-xs text-muted-foreground">
+                            {req.status === 'approved' ? 'Approved' : 'Reviewed'} by{' '}
+                            {req.approver.firstName} {req.approver.lastName}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

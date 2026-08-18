@@ -129,6 +129,11 @@ export interface ReassignmentRefreshPayload {
   subCompanyId: string;
 }
 
+export interface LeaveRefreshPayload {
+  subCompanyId: string;
+}
+export type LeaveRefreshHandler = (payload: LeaveRefreshPayload) => void;
+
 export type InternalCallMedia = 'audio' | 'video';
 
 export interface InternalCallIncomingPayload {
@@ -209,6 +214,7 @@ const clientRefreshListeners = new Set<ClientRefreshHandler>();
 const targetsRefreshListeners = new Set<TargetsRefreshHandler>();
 const emailRefreshListeners = new Set<EmailRefreshHandler>();
 const reassignmentRefreshListeners = new Set<ReassignmentRefreshHandler>();
+const leaveRefreshListeners = new Set<LeaveRefreshHandler>();
 const agencyLinkChangedListeners = new Set<AgencyLinkChangedHandler>();
 const internalCallIncomingListeners = new Set<InternalCallIncomingHandler>();
 const internalCallAcceptedListeners = new Set<InternalCallAcceptedHandler>();
@@ -304,6 +310,10 @@ function connect(): Socket | null {
 
   socket.on('reassignment:refresh', (payload: ReassignmentRefreshPayload) => {
     reassignmentRefreshListeners.forEach((fn) => fn(payload));
+  });
+
+  socket.on('leave:refresh', (payload: LeaveRefreshPayload) => {
+    leaveRefreshListeners.forEach((fn) => fn(payload));
   });
 
   socket.on('agency:link_changed', () => {
@@ -495,6 +505,13 @@ export function onReassignmentRefresh(handler: ReassignmentRefreshHandler): () =
   reassignmentRefreshListeners.add(handler);
   getSocket();
   return () => reassignmentRefreshListeners.delete(handler);
+}
+
+/** Subscribe to leave request refresh events (new request submitted / approved / rejected). Returns unsubscribe. */
+export function onLeaveRefresh(handler: LeaveRefreshHandler): () => void {
+  leaveRefreshListeners.add(handler);
+  getSocket();
+  return () => leaveRefreshListeners.delete(handler);
 }
 
 /** Subscribe to email refresh events. Returns unsubscribe. */

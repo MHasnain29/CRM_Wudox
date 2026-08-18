@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
+import { onLeaveRefresh } from '@/lib/socket';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -75,7 +76,8 @@ export default function Leave() {
     reason: '',
   });
 
-  useEffect(() => {
+  const fetchData = useCallback((showLoader = false) => {
+    if (showLoader) setLoading(true);
     Promise.all([
       apiFetch<any>('/leave/balances/me'),
       apiFetch<any>('/leave/requests'),
@@ -84,8 +86,15 @@ export default function Leave() {
       if (balRes.ok) setBalances(balRes.data?.data ?? []);
       if (reqRes.ok) setRequests(reqRes.data?.data ?? []);
       if (typRes.ok) setLeaveTypes(typRes.data?.data ?? []);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => toast.error('Failed to load leave data')).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchData(true); }, [fetchData]);
+
+  useEffect(() => {
+    const unsub = onLeaveRefresh(() => fetchData());
+    return () => { unsub(); };
+  }, [fetchData]);
 
   function calcDays(): number {
     if (!form.startDate || !form.endDate) return 0;

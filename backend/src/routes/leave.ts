@@ -22,8 +22,7 @@ leaveRouter.use(requirePermission('leave:read'));
 
 // Roles that can see all leave data in the subCompany
 const APPROVER_ROLES = new Set([
-  'super_admin', 'director', 'company_director', 'hr', 'team_lead', 'operations_manager',
-  'cto', 'project_manager',
+  'super_admin', 'director', 'company_director', 'hr', 'operations_manager',
 ]);
 
 function isApprover(role: string): boolean {
