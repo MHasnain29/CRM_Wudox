@@ -186,6 +186,8 @@ export default function DirectorDashboard() {
   return (
     <div className="flex flex-col min-h-full gap-6">
 
+      <NoticeBar />
+
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -324,8 +326,6 @@ export default function DirectorDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      <NoticeBar />
 
       {/* ── Division Performance Cards ── */}
       {allDivisions.length > 0 && (

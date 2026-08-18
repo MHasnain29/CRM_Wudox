@@ -7,8 +7,8 @@ import prisma from '../config/database';
 const router = Router();
 router.use(authenticate);
 
-// GET /notices — list active (non-expired) notices for the user's sub-company
-router.get('/', requirePermission('notices:read'), async (req: Request, res: Response) => {
+// GET /notices — list active (non-expired) notices for the user's sub-company (all authenticated users)
+router.get('/', async (req: Request, res: Response) => {
   const subCompanyId = await resolveAgencyScope(req);
   if (!subCompanyId) return res.status(400).json({ error: 'No sub-company context' });
 

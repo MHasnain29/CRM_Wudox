@@ -37,6 +37,7 @@ const TYPE_CONFIG: Record<NoticeType, {
   urgent:  { icon: Zap,           label: 'Urgent',  dot: '#fb7185', bg: '#fff1f2', border: '#fecdd3', text: '#9f1239', badge: '#9f1239', badgeBg: '#ffe4e6' },
 };
 
+
 const emptyForm = () => ({ title: '', message: '', type: 'info' as NoticeType, pinned: false, expiresAt: '' });
 
 export function NoticeBar() {
@@ -44,7 +45,7 @@ export function NoticeBar() {
   const [notices, setNotices]       = useState<Notice[]>([]);
   const [loading, setLoading]       = useState(true);
   const [idx, setIdx]               = useState(0);
-  const [paused, setPaused]         = useState(false);
+  const [viewOpen, setViewOpen]     = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing]       = useState<Notice | null>(null);
   const [form, setForm]             = useState(emptyForm());
@@ -59,11 +60,6 @@ export function NoticeBar() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (notices.length <= 1 || paused || dialogOpen) return;
-    const t = setInterval(() => setIdx((i) => (i + 1) % notices.length), 5000);
-    return () => clearInterval(t);
-  }, [notices.length, paused, dialogOpen]);
 
   if (loading) return null;
   if (notices.length === 0 && !canWrite) return null;
@@ -118,91 +114,214 @@ export function NoticeBar() {
 
   return (
     <>
-      {/* ── Single-line compact bar ── */}
+      {/* Per-type glow keyframes */}
+      {notice && (
+        <style>{`
+          @keyframes nbGlowHoliday {
+            0%,100% { box-shadow: 0 0 0 0 rgba(167,139,250,0.4); }
+            50%      { box-shadow: 0 0 0 7px rgba(167,139,250,0); }
+          }
+          @keyframes nbGlowUrgent {
+            0%,100% { box-shadow: 0 0 0 0 rgba(251,113,133,0.45); }
+            50%      { box-shadow: 0 0 0 8px rgba(251,113,133,0); }
+          }
+          @keyframes nbGlowWarning {
+            0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.4); }
+            50%      { box-shadow: 0 0 0 7px rgba(251,191,36,0); }
+          }
+          @keyframes nbGlowInfo {
+            0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.35); }
+            50%      { box-shadow: 0 0 0 6px rgba(56,189,248,0); }
+          }
+          .nb-bar-holiday { animation: nbGlowHoliday 2s ease-in-out infinite; }
+          .nb-bar-urgent  { animation: nbGlowUrgent  1.2s ease-in-out infinite; }
+          .nb-bar-warning { animation: nbGlowWarning 1.8s ease-in-out infinite; }
+          .nb-bar-info    { animation: nbGlowInfo    2.5s ease-in-out infinite; }
+        `}</style>
+      )}
+
       <div
-        className="flex items-center gap-2 rounded-xl px-3 py-2"
-        style={cfg ? { background: cfg.bg, border: `1px solid ${cfg.border}` } : { background: '#f8fafc', border: '1px solid #e2e8f0' }}
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
+        className={`rounded-2xl px-4 py-3 shadow-sm${notice ? ` nb-bar-${notice.type}` : ''}`}
+        style={cfg ? { background: cfg.bg, border: `1.5px solid ${cfg.border}` } : { background: '#f8fafc', border: '1.5px solid #e2e8f0' }}
       >
-        {/* Type dot + badge */}
-        {cfg && Icon ? (
-          <span
-            className="flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest"
-            style={{ background: cfg.badgeBg, color: cfg.badge }}
+        {/* Top row: label + controls */}
+        <div className="flex items-center gap-3">
+          {/* Badge */}
+          {cfg && Icon ? (
+            <span
+              className="flex items-center gap-1.5 shrink-0 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-widest"
+              style={{ background: cfg.badgeBg, color: cfg.badge }}
+            >
+              <Icon style={{ width: 12, height: 12 }} />
+              {cfg.label}
+            </span>
+          ) : (
+            <span className="text-sm text-gray-400 shrink-0">No notices</span>
+          )}
+
+          {/* Divider dot */}
+          {notice && <span className="text-gray-300 shrink-0 text-lg leading-none">·</span>}
+
+          {/* Title — clickable */}
+          {notice && (
+            <button
+              className="min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+              onClick={() => setViewOpen(true)}
+            >
+              <span className="text-sm font-semibold truncate block" style={{ color: cfg!.text }}>
+                {notice.pinned && <Pin style={{ width: 10, height: 10, display: 'inline', marginRight: 4, transform: 'rotate(45deg)', verticalAlign: 'middle' }} />}
+                {notice.title}
+              </span>
+            </button>
+          )}
+
+          {/* Spacer */}
+          {!notice && <div className="flex-1" />}
+
+          {/* Edit / Delete */}
+          {canWrite && notice && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => openEdit(notice)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-black/5 transition-colors">
+                <Pencil style={{ width: 12, height: 12 }} />
+              </button>
+              <button onClick={() => setDeleteTarget(notice)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                <Trash2 style={{ width: 12, height: 12 }} />
+              </button>
+              <div className="w-px h-5 bg-gray-200 mx-1" />
+            </div>
+          )}
+
+          {/* Counter + arrows */}
+          {notices.length > 0 && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={prev} disabled={notices.length <= 1} className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-black/5 disabled:opacity-30 transition-colors">
+                <ChevronLeft style={{ width: 15, height: 15 }} />
+              </button>
+              <span className="text-xs text-gray-400 font-medium tabular-nums w-8 text-center">{idx + 1}/{notices.length}</span>
+              <button onClick={next} disabled={notices.length <= 1} className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-black/5 disabled:opacity-30 transition-colors">
+                <ChevronRight style={{ width: 15, height: 15 }} />
+              </button>
+            </div>
+          )}
+
+          {/* Post button */}
+          {canWrite && (
+            <>
+              <div className="w-px h-5 bg-gray-200 shrink-0" />
+              <button onClick={openCreate} className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0 px-1">
+                <Plus style={{ width: 13, height: 13 }} />
+                Post
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Message preview row */}
+        {notice && (
+          <button
+            className="w-full text-left mt-1.5 hover:opacity-75 transition-opacity"
+            onClick={() => setViewOpen(true)}
           >
-            <Icon style={{ width: 10, height: 10 }} />
-            {cfg.label}
-          </span>
-        ) : (
-          <span className="text-xs text-gray-400 shrink-0">No notices</span>
-        )}
-
-        {/* Divider */}
-        {notice && <span className="text-gray-300 shrink-0">·</span>}
-
-        {/* Title */}
-        {notice && (
-          <span className="text-xs font-semibold truncate" style={{ color: cfg!.text, minWidth: 0 }}>
-            {notice.pinned && <Pin style={{ width: 9, height: 9, display: 'inline', marginRight: 3, transform: 'rotate(45deg)', verticalAlign: 'middle' }} />}
-            {notice.title}
-          </span>
-        )}
-
-        {/* Message preview */}
-        {notice && (
-          <span className="text-xs text-gray-400 truncate hidden md:block" style={{ minWidth: 0 }}>
-            — {notice.message}
-          </span>
-        )}
-
-        {/* Expiry */}
-        {notice && (
-          <span className="text-[10px] text-gray-400 shrink-0 hidden lg:block">
-            expires {format(parseISO(notice.expiresAt), 'MMM d')}
-          </span>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Edit / Delete (write only) */}
-        {canWrite && notice && (
-          <>
-            <button onClick={() => openEdit(notice)} className="p-1 rounded text-gray-400 hover:text-gray-700 transition-colors shrink-0">
-              <Pencil style={{ width: 11, height: 11 }} />
-            </button>
-            <button onClick={() => setDeleteTarget(notice)} className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors shrink-0">
-              <Trash2 style={{ width: 11, height: 11 }} />
-            </button>
-            <div className="w-px h-4 bg-gray-200 shrink-0" />
-          </>
-        )}
-
-        {/* Counter + arrows */}
-        {notices.length > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button onClick={prev} disabled={notices.length <= 1} className="p-0.5 rounded text-gray-400 hover:text-gray-700 disabled:opacity-30 transition-colors">
-              <ChevronLeft style={{ width: 13, height: 13 }} />
-            </button>
-            <span className="text-[10px] text-gray-400 font-medium tabular-nums">{idx + 1}/{notices.length}</span>
-            <button onClick={next} disabled={notices.length <= 1} className="p-0.5 rounded text-gray-400 hover:text-gray-700 disabled:opacity-30 transition-colors">
-              <ChevronRight style={{ width: 13, height: 13 }} />
-            </button>
-          </div>
-        )}
-
-        {/* Post button */}
-        {canWrite && (
-          <>
-            <div className="w-px h-4 bg-gray-200 shrink-0" />
-            <button onClick={openCreate} className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0">
-              <Plus style={{ width: 11, height: 11 }} />
-              Post
-            </button>
-          </>
+            <p className="text-xs text-gray-500 line-clamp-1 leading-relaxed">
+              {notice.message}
+              <span className="ml-2 text-[10px] font-medium" style={{ color: cfg!.badge }}>
+                expires {format(parseISO(notice.expiresAt), 'MMM d')}
+              </span>
+            </p>
+          </button>
         )}
       </div>
+
+      {/* Notice detail view popup */}
+      {viewOpen && notice && cfg && (() => {
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setViewOpen(false)}
+          >
+            <style>{`
+              @keyframes noticePopIn {
+                0%   { opacity: 0; transform: scale(0.85) translateY(20px); }
+                60%  { transform: scale(1.03) translateY(-4px); }
+                100% { opacity: 1; transform: scale(1) translateY(0); }
+              }
+              @keyframes shimmer {
+                0%, 100% { opacity: 0.7; }
+                50%       { opacity: 1; }
+              }
+              .notice-pop-in { animation: noticePopIn 0.38s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+              .shimmer-badge { animation: shimmer 2s ease-in-out infinite; }
+            `}</style>
+
+            <div
+              className="notice-pop-in relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
+              style={{ background: cfg.bg, border: `2px solid ${cfg.border}` }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="relative px-6 pt-6 pb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span
+                    className="shimmer-badge flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest"
+                    style={{ background: cfg.badgeBg, color: cfg.badge }}
+                  >
+                    {cfg.icon && <cfg.icon style={{ width: 12, height: 12 }} />}
+                    {cfg.label}
+                  </span>
+                  <button
+                    onClick={() => setViewOpen(false)}
+                    className="h-7 w-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-black/10 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <h2 className="mt-4 text-xl font-bold leading-snug" style={{ color: cfg.text }}>
+                  {notice.pinned && (
+                    <Pin style={{ width: 14, height: 14, display: 'inline', marginRight: 6, transform: 'rotate(45deg)', verticalAlign: 'middle' }} />
+                  )}
+                  {notice.title}
+                </h2>
+              </div>
+
+              {/* Divider */}
+              <div style={{ height: 1, background: cfg.border, margin: '0 24px' }} />
+
+              {/* Body */}
+              <div className="px-6 py-5">
+                <p className="text-sm leading-relaxed" style={{ color: cfg.text, opacity: 0.85 }}>
+                  {notice.message}
+                </p>
+              </div>
+
+              {/* Footer */}
+              <div
+                className="flex items-center justify-between px-6 py-3 text-xs"
+                style={{ background: cfg.badgeBg, color: cfg.badge }}
+              >
+                <span>Expires {format(parseISO(notice.expiresAt), 'dd MMM yyyy')}</span>
+                {canWrite && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => { setViewOpen(false); openEdit(notice); }}
+                      className="font-semibold hover:opacity-70 transition-opacity"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => { setViewOpen(false); setDeleteTarget(notice); }}
+                      className="font-semibold text-red-500 hover:opacity-70 transition-opacity"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Create / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

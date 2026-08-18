@@ -18,7 +18,7 @@ const IC_ROLES = new Set([
   'business_analyst', 'devops_engineer',
 ]);
 
-const APPROVER_ROLES = new Set(['hr', 'team_lead', 'scrum_master', 'project_manager', 'cto']);
+const APPROVER_ROLES = new Set(['hr', 'team_lead', 'project_manager', 'cto']);
 
 interface Project {
   id: string;
@@ -419,6 +419,7 @@ export default function SoftwareDashboard() {
         {role === 'cto' ? 'CTO Dashboard' : role === 'project_manager' ? 'Project Manager Dashboard' : 'Team Lead Dashboard'}
       </h1>
       <NoticeBar />
+
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon={<FolderKanban className="text-blue-500" />} label="Active Projects" value={activeProjects.length} onClick={() => navigate('/projects')} />

@@ -4565,6 +4565,8 @@ export interface ApiTask {
   attachments?: ApiTaskAttachment[];
   forwardedFromName?: string | null;
   forwardedFromSubCompanyId?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
 }
 
 export async function fetchTasks(params?: {
@@ -4770,8 +4772,8 @@ export function mapApiTaskToTask(
     attachments,
     forwardedFromName: api.forwardedFromName ?? null,
     forwardedFromSubCompanyId: api.forwardedFromSubCompanyId ?? null,
-    projectId: (api as any).projectId ?? null,
-    projectName: (api as any).projectName ?? null,
+    projectId: api.projectId ?? null,
+    projectName: api.projectName ?? null,
   };
 }
 

@@ -53,7 +53,7 @@ import { useActAs } from '@/hooks/useActAs';
 import { useEffectiveUser } from '@/lib/effectiveUser';
 
 const SOFTWARE_ROLES = new Set([
-  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'cto', 'project_manager', 'team_lead',
   'developer', 'qa_engineer', 'ui_ux_designer',
   'business_analyst', 'devops_engineer', 'hr', 'finance',
 ]);

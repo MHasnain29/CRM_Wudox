@@ -53,7 +53,7 @@ const DASHBOARD_PERMISSIONS = [
 ] as const;
 
 const SOFTWARE_HOUSE_ROLES = new Set([
-  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'cto', 'project_manager', 'team_lead',
   'developer', 'qa_engineer', 'ui_ux_designer',
   'business_analyst', 'devops_engineer',
   'hr', 'finance',
@@ -94,8 +94,8 @@ const navItems: {
   // ── Communication ──
   { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication' },
   { to: '/emails',      icon: Mail,          label: 'Emails',      permissions: ['calls:read'],  showCount: true },
-  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'] },
-  { to: '/lists',       icon: List,          label: 'Lists' },
+  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'], excludeRoles: SOFTWARE_HOUSE_ROLES },
+  { to: '/lists',       icon: List,          label: 'Lists',       excludeRoles: SOFTWARE_HOUSE_ROLES },
   { to: '/calls',       icon: Phone,         label: 'Calls',       permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
   { to: '/meetings',    icon: Calendar,      label: 'Meetings',    permissions: ['meetings:read'] },
   { to: '/documents',   icon: FileText,      label: 'Documents',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'] },
