@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { TaskPriority, TaskStatus } from '@/lib/types';
+import { TaskPriority, TaskStatus, TaskLinkType } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -40,22 +40,37 @@ import { useStore } from '@/lib/store';
 import { toast } from 'sonner';
 import {
   fetchUsers,
+  fetchClients,
+  fetchLeads,
   createTask,
   mapApiTaskToTask,
   uploadTaskAttachment,
+  apiFetch,
 } from '@/lib/api';
 
 import { useCanViewAgencyScope, useCanViewTeamScope, useHasPermission } from '@/lib/access';
 import { useActAs } from '@/hooks/useActAs';
 import { useEffectiveUser } from '@/lib/effectiveUser';
 
+const SOFTWARE_ROLES = new Set([
+  'cto', 'project_manager', 'scrum_master', 'team_lead',
+  'developer', 'qa_engineer', 'ui_ux_designer',
+  'business_analyst', 'devops_engineer', 'hr', 'finance',
+]);
+
 type UserOption = { id: string; name: string; email: string; designation: string; reportingManagerIds?: string[] };
+type LinkOption = { id: string; name: string; location?: string | null; industry?: string | null; corporateCode?: string | null };
+
 interface CreateTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subCompanyId?: string;
+  // Sales / Recruitment side
+  defaultLinkType?: TaskLinkType;
+  defaultLinkId?: string;
+  // Software house side
   defaultProjectId?: string;
-  projects?: { id: string; name: string }[];
+  projects?: { id: string; name: string }[]; // kept for call-site compat; we fetch internally
   onTaskCreated?: () => void;
 }
 
@@ -74,13 +89,16 @@ export function CreateTaskDialog({
   open,
   onOpenChange,
   subCompanyId,
+  defaultLinkType,
+  defaultLinkId,
   defaultProjectId,
-  projects,
   onTaskCreated,
 }: CreateTaskDialogProps) {
   const { currentUser, currentSubCompany, addTask } = useStore();
   const actAs = useActAs();
   const { id: effectiveSelfId, isActingAs, subCompanyId: actAsAgencyId } = useEffectiveUser();
+
+  const isSoftwareRole = SOFTWARE_ROLES.has(currentUser?.role ?? '');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -92,7 +110,19 @@ export function CreateTaskDialog({
   });
   const [dueTime, setDueTime] = useState(() => toTimeString(new Date()));
   const [assigneeId, setAssigneeId] = useState(effectiveSelfId);
+
+  // Sales/Recruitment link state
+  const [linkType, setLinkType] = useState<TaskLinkType | 'none' | ''>(defaultLinkType || '');
+  const [linkId, setLinkId] = useState(defaultLinkId || '');
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [clientOptions, setClientOptions] = useState<LinkOption[]>([]);
+  const [leadOptions, setLeadOptions] = useState<LinkOption[]>([]);
+  const [linkLoading, setLinkLoading] = useState(false);
+
+  // Software house project state
   const [selectedProjectId, setSelectedProjectId] = useState(defaultProjectId || '');
+  const [projectOptions, setProjectOptions] = useState<{ id: string; name: string }[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [agencyUsers, setAgencyUsers] = useState<UserOption[]>([]);
@@ -100,10 +130,10 @@ export function CreateTaskDialog({
   const [submitting, setSubmitting] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
-  // Under act-as, always use the linked user's agency — never the login home agency.
   const agencyId = isActingAs
     ? (actAsAgencyId || subCompanyId || currentSubCompany?.id || currentUser.subCompanyId)
     : (subCompanyId ?? currentSubCompany?.id ?? currentUser.subCompanyId);
+
   const canWriteTasks = useHasPermission('tasks:write');
   const canViewTeamScope = useCanViewTeamScope();
   const canViewAgencyScope = useCanViewAgencyScope();
@@ -116,12 +146,10 @@ export function CreateTaskDialog({
     }
   }, [open, canWriteTasks, onOpenChange]);
 
-  // Reset assignee to effective self whenever dialog opens or act-as target changes.
   useEffect(() => {
     if (open) setAssigneeId(effectiveSelfId);
   }, [open, effectiveSelfId]);
 
-  // Self option so current user (or act-as user) is always assignable; backend GET /users excludes super_user roles
   const selfOption: UserOption = actAs.isActive
     ? (agencyUsers.find((u) => u.id === actAs.userId) ?? {
         id: actAs.userId!,
@@ -137,10 +165,7 @@ export function CreateTaskDialog({
       };
 
   const loadUsers = useCallback(async () => {
-    if (!agencyId) {
-      setAgencyUsers([]);
-      return;
-    }
+    if (!agencyId) { setAgencyUsers([]); return; }
     setUsersLoading(true);
     try {
       const users = await fetchUsers({ subCompanyId: agencyId });
@@ -166,8 +191,6 @@ export function CreateTaskDialog({
     }
   }, [agencyId, effectiveSelfId]);
 
-  // Always prefer effective self when the current assignee is not in the loaded agency list
-  // (e.g. login user still selected while act-as agency list loaded).
   useEffect(() => {
     if (!open || usersLoading) return;
     if (assigneeId === effectiveSelfId) return;
@@ -176,42 +199,97 @@ export function CreateTaskDialog({
     }
   }, [open, usersLoading, agencyUsers, assigneeId, effectiveSelfId]);
 
-  useEffect(() => {
-    if (open && agencyId) {
-      loadUsers();
+  // ── Sales/Recruitment: load clients or leads when link type changes ──────────
+  const loadClientOptions = useCallback(async () => {
+    setLinkLoading(true);
+    try {
+      const { data } = await fetchClients({ ...(agencyId ? { subCompanyId: agencyId } : {}), limit: 500 });
+      setClientOptions((data ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        location: c.location ?? null,
+        industry: c.industry ?? null,
+        corporateCode: (c as any).corporateCode ?? null,
+      })));
+    } catch {
+      setClientOptions([]);
+    } finally {
+      setLinkLoading(false);
     }
+  }, [agencyId]);
+
+  const loadLeadOptions = useCallback(async () => {
+    setLinkLoading(true);
+    try {
+      const { data } = await fetchLeads({ ...(agencyId ? { subCompanyId: agencyId } : {}), limit: 500 });
+      setLeadOptions(
+        (data ?? []).map((l) => ({
+          id: l.id,
+          name: l.client?.name ? `${l.client.name} (Lead)` : l.id,
+        }))
+      );
+    } catch {
+      setLeadOptions([]);
+    } finally {
+      setLinkLoading(false);
+    }
+  }, [agencyId]);
+
+  useEffect(() => {
+    if (!open || isSoftwareRole) return;
+    if (linkType === 'client') loadClientOptions();
+    else if (linkType === 'lead') loadLeadOptions();
+    else { setClientOptions([]); setLeadOptions([]); }
+  }, [open, linkType, agencyId, isSoftwareRole, loadClientOptions, loadLeadOptions]);
+
+  // ── Software house: load projects user is a member of ───────────────────────
+  const loadProjects = useCallback(async () => {
+    setProjectsLoading(true);
+    try {
+      const res = await apiFetch<{ data: { id: string; name: string }[] }>('/projects');
+      setProjectOptions(res.ok ? (res.data?.data ?? []) : []);
+    } catch {
+      setProjectOptions([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open && agencyId) loadUsers();
   }, [open, agencyId, loadUsers]);
 
   useEffect(() => {
+    if (open && isSoftwareRole) loadProjects();
+  }, [open, isSoftwareRole, loadProjects]);
+
+  // Reset state on open
+  useEffect(() => {
     if (open) {
+      if (!isSoftwareRole) {
+        if (defaultLinkType) setLinkType(defaultLinkType);
+        if (defaultLinkId) setLinkId(defaultLinkId);
+      }
       setSelectedProjectId(defaultProjectId || '');
       setAssigneeId(effectiveSelfId);
     }
-  }, [open, defaultProjectId, effectiveSelfId]);
+  }, [open, defaultLinkType, defaultLinkId, defaultProjectId, effectiveSelfId, isSoftwareRole]);
 
-  // Always include self (e.g. super_admin isn't returned by GET /users); default to self
   const isManagerScoped = canViewTeamScope && !canViewAgencyScope;
   const assignableUsers = (() => {
     if (!canAssignToAnyone) return [selfOption];
     if (isManagerScoped) {
-      // Managers see self + direct reports only
       const myDirectReports = agencyUsers.filter((u) => u.reportingManagerIds?.includes(effectiveSelfId));
       return [selfOption, ...myDirectReports.filter((u) => u.id !== effectiveSelfId)];
     }
-    // Operations manager / director / super_admin: everyone in agency
     return agencyUsers.some((u) => u.id === effectiveSelfId) ? agencyUsers : [selfOption, ...agencyUsers];
   })();
   const selectedUser = assignableUsers.find((u) => u.id === assigneeId) ?? selfOption;
 
   const handleSubmit = async () => {
-    if (!title.trim()) {
-      toast.error('Please enter a task title');
-      return;
-    }
-    if (!dueDate) {
-      toast.error('Please select a due date');
-      return;
-    }
+    if (!title.trim()) { toast.error('Please enter a task title'); return; }
+    if (!dueDate) { toast.error('Please select a due date'); return; }
+
     const effectiveOwnerId = canAssignToAnyone ? assigneeId : effectiveSelfId;
     const combinedDue = combineDateAndTime(dueDate, dueTime);
     const dueDateIso = combinedDue.toISOString();
@@ -225,7 +303,13 @@ export function CreateTaskDialog({
         priority,
         ownerId: effectiveOwnerId,
         subCompanyId: agencyId,
-        projectId: selectedProjectId || null,
+        // Software house: project link
+        ...(isSoftwareRole
+          ? { projectId: selectedProjectId || null }
+          : {
+              linkType: linkType && linkType !== 'none' ? linkType : null,
+              linkId: linkId || null,
+            }),
       });
 
       if (pendingFiles.length > 0) {
@@ -240,6 +324,8 @@ export function CreateTaskDialog({
 
       const task = mapApiTaskToTask(apiTask);
       addTask(task);
+
+      // Reset form
       setTitle('');
       setDescription('');
       setPriority('medium');
@@ -248,6 +334,8 @@ export function CreateTaskDialog({
       setDueDate(next);
       setDueTime(toTimeString(next));
       setAssigneeId(effectiveSelfId);
+      setLinkType('');
+      setLinkId('');
       setSelectedProjectId('');
       setPendingFiles([]);
       onTaskCreated?.();
@@ -258,6 +346,9 @@ export function CreateTaskDialog({
       setSubmitting(false);
     }
   };
+
+  const linkOptions = linkType === 'client' ? clientOptions : linkType === 'lead' ? leadOptions : [];
+  const selectedLink = linkOptions.find((o) => o.id === linkId);
 
   if (!canWriteTasks) return null;
 
@@ -323,10 +414,7 @@ export function CreateTaskDialog({
                     )}
                   >
                     {usersLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Loading...
-                      </>
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...</>
                     ) : selectedUser ? (
                       <>
                         <span className="truncate">
@@ -350,10 +438,7 @@ export function CreateTaskDialog({
                             <CommandItem
                               key={user.id}
                               value={`${user.name} ${user.email} ${user.designation}`.trim()}
-                              onSelect={() => {
-                                setAssigneeId(user.id);
-                                setAssigneeOpen(false);
-                              }}
+                              onSelect={() => { setAssigneeId(user.id); setAssigneeOpen(false); }}
                             >
                               <Check className={cn('mr-2 h-4 w-4 shrink-0', user.id === assigneeId ? 'opacity-100' : 'opacity-0')} />
                               <div className="flex flex-col min-w-0">
@@ -371,9 +456,7 @@ export function CreateTaskDialog({
                 )}
               </Popover>
               {!canAssignToAnyone && (
-                <p className="text-xs text-muted-foreground">
-                  Tasks are assigned to you by default.
-                </p>
+                <p className="text-xs text-muted-foreground">Tasks are assigned to you by default.</p>
               )}
             </div>
           </div>
@@ -443,23 +526,128 @@ export function CreateTaskDialog({
             )}
           </div>
 
-          {projects && projects.length > 0 && (
+          {/* ── Software house: link to project ─────────────────────────────── */}
+          {isSoftwareRole && (
             <div className="space-y-2">
               <Label>Project (Optional)</Label>
-              <Select value={selectedProjectId || 'none'} onValueChange={v => setSelectedProjectId(v === 'none' ? '' : v)}>
+              <Select
+                value={selectedProjectId || 'none'}
+                onValueChange={(v) => setSelectedProjectId(v === 'none' ? '' : v)}
+                disabled={projectsLoading}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Link to a project" />
+                  {projectsLoading
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...</>
+                    : <SelectValue placeholder="Link to a project" />
+                  }
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No project</SelectItem>
-                  {projects.map(p => (
+                  {projectOptions.map((p) => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {!projectsLoading && projectOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">You are not a member of any project yet.</p>
+              )}
             </div>
           )}
 
+          {/* ── Sales / Recruitment: link to client or lead ──────────────────── */}
+          {!isSoftwareRole && (
+            <div className="space-y-2">
+              <Label>Link To (Optional)</Label>
+              <Select
+                value={linkType || 'none'}
+                onValueChange={(v) => {
+                  setLinkType(v === 'none' ? '' : (v as TaskLinkType));
+                  setLinkId('');
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="lead">Lead</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {linkType && linkType !== 'none' && (
+                <Popover open={linkOpen} onOpenChange={setLinkOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className={cn('w-full justify-between', !selectedLink && 'text-muted-foreground')}
+                      disabled={linkLoading}
+                    >
+                      {linkLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : selectedLink ? (
+                        <span className="truncate">{selectedLink.name}</span>
+                      ) : (
+                        `Select ${linkType}`
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[380px] p-0" align="start" onWheel={(e) => e.stopPropagation()}>
+                    {linkType === 'client' && (
+                      <Command>
+                        <CommandInput placeholder="Search clients..." />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>No client found.</CommandEmpty>
+                          <CommandGroup>
+                            {clientOptions.map((opt) => {
+                              const details = [opt.location, opt.industry, opt.corporateCode].filter(Boolean).join(' · ');
+                              return (
+                                <CommandItem
+                                  key={opt.id}
+                                  value={`${opt.name} ${opt.location ?? ''} ${opt.industry ?? ''} ${opt.corporateCode ?? ''}`.trim()}
+                                  onSelect={() => { setLinkId(opt.id); setLinkOpen(false); }}
+                                >
+                                  <Check className={cn('mr-2 h-4 w-4 shrink-0', opt.id === linkId ? 'opacity-100' : 'opacity-0')} />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="truncate font-medium">{opt.name}</span>
+                                    {details && (
+                                      <span className="text-xs text-muted-foreground truncate">{details}</span>
+                                    )}
+                                  </div>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    )}
+                    {linkType === 'lead' && (
+                      <Command>
+                        <CommandInput placeholder="Search leads..." />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>No lead found.</CommandEmpty>
+                          <CommandGroup>
+                            {leadOptions.map((opt) => (
+                              <CommandItem
+                                key={opt.id}
+                                value={opt.name}
+                                onSelect={() => { setLinkId(opt.id); setLinkOpen(false); }}
+                              >
+                                <Check className={cn('mr-2 h-4 w-4', opt.id === linkId ? 'opacity-100' : 'opacity-0')} />
+                                {opt.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -468,10 +656,7 @@ export function CreateTaskDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
-              </>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</>
             ) : (
               'Create Task'
             )}

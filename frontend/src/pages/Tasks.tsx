@@ -907,27 +907,21 @@ export default function Tasks() {
 
   const getLinkedItemName = (task: typeof tasks[0]) => {
     if (!task.linkType || !task.linkId) return null;
-    
+
     switch (task.linkType) {
-      case 'lead': {
-        const lead = leads.find(l => l.id === task.linkId);
-        if (lead) {
-          const client = clients.find(c => c.id === lead.clientId);
-          return client?.name;
-        }
-        break;
-      }
       case 'client':
-        return clients.find(c => c.id === task.linkId)?.name;
+        return task.linkedClient?.name ?? clients.find(c => c.id === task.linkId)?.name ?? null;
+      case 'lead':
+        return task.linkedLead?.clientName ?? (() => {
+          const lead = leads.find(l => l.id === task.linkId);
+          if (lead) return clients.find(c => c.id === lead.clientId)?.name ?? null;
+          return null;
+        })();
       case 'meeting':
-        return meetings.find(m => m.id === task.linkId)?.title;
+        return meetings.find(m => m.id === task.linkId)?.title ?? null;
       case 'follow_up': {
         const followUp = followUps.find(f => f.id === task.linkId);
-        if (followUp) {
-          const client = clients.find(c => c.id === followUp.clientId);
-          return client?.name;
-        }
-        break;
+        return followUp ? (clients.find(c => c.id === followUp.clientId)?.name ?? null) : null;
       }
     }
     return null;
@@ -1207,7 +1201,19 @@ export default function Tasks() {
                           <span className="text-muted-foreground text-sm">-</span>
                         )
                       ) : linkedItem ? (
-                        <div className="text-sm font-medium">{linkedItem}</div>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline truncate max-w-[140px]"
+                          onClick={e => {
+                            e.stopPropagation();
+                            const clientId = task.linkType === 'client'
+                              ? task.linkId
+                              : task.linkedLead?.clientId ?? leads.find(l => l.id === task.linkId)?.clientId;
+                            if (clientId) navigate(`/clients/${clientId}`);
+                          }}
+                        >
+                          {linkedItem}
+                        </button>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
@@ -1257,7 +1263,6 @@ export default function Tasks() {
         subCompanyId={writeAgencyId}
         onTaskCreated={loadTasks}
         defaultProjectId={projectFilter !== 'all' ? projectFilter : undefined}
-        projects={isSoftwareRole ? projects : undefined}
       />
     </div>
   );
