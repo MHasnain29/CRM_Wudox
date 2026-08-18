@@ -102,6 +102,7 @@ model SubCompany {
   jobs                          Job[]
   projects                      Project[]
   notices                       Notice[]
+  attendance                    Attendance[]
 
   @@index([mainOrgId])
   @@map("sub_companies")
@@ -348,6 +349,7 @@ model User {
   leaveRequests                           LeaveRequest[]
   leaveRequestsApproved                   LeaveRequest[]                @relation("LeaveApprover")
   notices                                 Notice[]
+  attendance                              Attendance[]
 
   @@index([email])
   @@index([subCompanyId])
@@ -3319,4 +3321,25 @@ model Notice {
   @@index([subCompanyId])
   @@index([expiresAt])
   @@map("notices")
+}
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+
+model Attendance {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  subCompanyId String    @map("sub_company_id")
+  date         DateTime  @map("date") @db.Date
+  checkInAt    DateTime  @map("check_in_at")
+  checkOutAt   DateTime? @map("check_out_at")
+  totalMinutes Int?      @map("total_minutes")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subCompany SubCompany @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([subCompanyId, date])
+  @@map("attendance")
 }

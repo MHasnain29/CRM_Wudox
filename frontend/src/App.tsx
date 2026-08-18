@@ -47,6 +47,7 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import Leave from "./pages/Leave";
 import LeaveAdmin from "./pages/LeaveAdmin";
+import Attendance from "./pages/Attendance";
 import NotFound from "./pages/NotFound";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -152,6 +153,7 @@ const App = () => (
               <Route path="/projects/:id" element={<PermissionRoute permission="projects:read"><ProjectDetail /></PermissionRoute>} />
               <Route path="/leave" element={<PermissionRoute permission="leave:read"><Leave /></PermissionRoute>} />
               <Route path="/leave/admin" element={<PermissionRoute permission="leave:approve"><LeaveAdmin /></PermissionRoute>} />
+              <Route path="/attendance" element={<Attendance />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Route>

@@ -28,6 +28,7 @@ import {
   Link2,
   FolderKanban,
   CalendarOff,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -78,6 +79,7 @@ const navItems: {
   { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true, color: '#f59e0b' },
   { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']), color: '#0d9488' },
   { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true, color: '#0d9488' },
+  { to: '/attendance', icon: Clock,        label: 'Attendance',  permissions: ['calls:read'], color: '#6366f1' },
 
   // ── Sales & Marketing ──
   { to: '/clients',    icon: Building2,    label: 'Clients',     permissions: ['clients:read'],  section: 'Sales & Marketing', color: '#2563eb' },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
-  Info, AlertTriangle, CalendarOff, Zap, Pin,
+  Info, AlertTriangle, CalendarOff, Zap, Pin, Megaphone,
   Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -141,8 +141,8 @@ export function NoticeBar() {
       )}
 
       <div
-        className={`rounded-2xl px-4 py-3 shadow-sm${notice ? ` nb-bar-${notice.type}` : ''}`}
-        style={cfg ? { background: cfg.bg, border: `1.5px solid ${cfg.border}` } : { background: '#f8fafc', border: '1.5px solid #e2e8f0' }}
+        className={`mt-3 rounded-2xl px-4 py-3 shadow-sm${notice ? ` nb-bar-${notice.type}` : ''}`}
+        style={cfg ? { background: cfg.bg, border: `1.5px solid ${cfg.border}` } : { background: 'hsl(217 91% 97%)', border: '1.5px dashed hsl(217 91% 82%)' }}
       >
         {/* Top row: label + controls */}
         <div className="flex items-center gap-3">
@@ -156,7 +156,16 @@ export function NoticeBar() {
               {cfg.label}
             </span>
           ) : (
-            <span className="text-sm text-gray-400 shrink-0">No notices</span>
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <div className="relative shrink-0">
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary">
+                  <Megaphone style={{ width: 13, height: 13, color: 'white' }} />
+                </div>
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" style={{ border: '1.5px solid white' }} />
+              </div>
+              <span className="text-sm font-semibold text-primary">No notices yet</span>
+              <span className="text-xs text-muted-foreground hidden sm:inline">· Post an update to keep your team in the loop</span>
+            </div>
           )}
 
           {/* Divider dot */}
@@ -175,8 +184,7 @@ export function NoticeBar() {
             </button>
           )}
 
-          {/* Spacer */}
-          {!notice && <div className="flex-1" />}
+          {/* Spacer (only needed when notice is shown, empty state uses flex-1 internally) */}
 
           {/* Edit / Delete */}
           {canWrite && notice && (
@@ -207,11 +215,21 @@ export function NoticeBar() {
           {/* Post button */}
           {canWrite && (
             <>
-              <div className="w-px h-5 bg-gray-200 shrink-0" />
-              <button onClick={openCreate} className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0 px-1">
-                <Plus style={{ width: 13, height: 13 }} />
-                Post
-              </button>
+              {notice && <div className="w-px h-5 bg-gray-200 shrink-0" />}
+              {notice ? (
+                <button onClick={openCreate} className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors shrink-0 px-1">
+                  <Plus style={{ width: 13, height: 13 }} />
+                  Post
+                </button>
+              ) : (
+                <button
+                  onClick={openCreate}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-white rounded-full shrink-0 px-3 py-1.5 transition-all hover:bg-white/90 active:scale-95 shadow-sm"
+                >
+                  <Plus style={{ width: 12, height: 12 }} />
+                  Post Notice
+                </button>
+              )}
             </>
           )}
         </div>
@@ -327,12 +345,7 @@ export function NoticeBar() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[480px] rounded-2xl p-0 gap-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-base font-semibold">{editing ? 'Edit Notice' : 'Post a Notice'}</DialogTitle>
-              <button onClick={() => setDialogOpen(false)} className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <DialogTitle className="text-base font-semibold">{editing ? 'Edit Notice' : 'Post a Notice'}</DialogTitle>
           </DialogHeader>
           <div className="px-6 py-5 space-y-4">
             <div className="space-y-1.5">
@@ -371,7 +384,7 @@ export function NoticeBar() {
           </div>
           <DialogFooter className="px-6 py-4 border-t border-gray-100 flex gap-2">
             <Button variant="outline" className="flex-1 rounded-xl h-9 text-sm" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-            <Button className="flex-1 rounded-xl h-9 text-sm font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 border-0" onClick={handleSave} disabled={saving}>
+            <Button className="flex-1" onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />}
               {editing ? 'Save Changes' : 'Post Notice'}
             </Button>

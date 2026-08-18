@@ -71,6 +71,7 @@ import { jobsRouter } from './routes/jobs';
 import { projectsRouter } from './routes/projects';
 import { leaveRouter } from './routes/leave';
 import noticesRouter from './routes/notices';
+import { attendanceRouter } from './routes/attendance';
 
 const app = express();
 
@@ -283,6 +284,7 @@ app.use(`${prefix}/jobs`, jobsRouter);
 app.use(`${prefix}/projects`, projectsRouter);
 app.use(`${prefix}/leave`, leaveRouter);
 app.use(`${prefix}/notices`, noticesRouter);
+app.use(`${prefix}/attendance`, attendanceRouter);
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');

@@ -25,6 +25,7 @@ import ManagerDashboard from '@/components/dashboard/ManagerDashboard';
 import DirectorDashboard from '@/components/dashboard/DirectorDashboard';
 import SoftwareDashboard from '@/components/dashboard/SoftwareDashboard';
 import { NoticeBar } from '@/components/dashboard/NoticeBar';
+import { CheckInWidget } from '@/components/dashboard/CheckInWidget';
 import DatabaseManagerDashboard from '@/components/dashboard/DatabaseManagerDashboard';
 import RecruitmentManagerDashboard from '@/components/dashboard/RecruitmentManagerDashboard';
 import RecruiterDashboard from '@/components/dashboard/RecruiterDashboard';
@@ -443,6 +444,7 @@ export default function Dashboard() {
     <div className="space-y-6">
 
       <NoticeBar />
+      <CheckInWidget />
 
       {/* ── Today's Progress (associates only) ── */}
       {isAssociate && (() => {

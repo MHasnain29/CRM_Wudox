@@ -8,10 +8,11 @@ import { useStore } from '@/lib/store';
 import { format, isToday, isPast } from 'date-fns';
 import {
   FolderKanban, CheckSquare, CalendarOff, Clock, Users,
-  AlertTriangle, CheckCircle2, Circle, TrendingUp, Inbox
+  AlertTriangle, CheckCircle2, Circle, TrendingUp, Inbox,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NoticeBar } from './NoticeBar';
+import { CheckInWidget } from './CheckInWidget';
 
 const IC_ROLES = new Set([
   'developer', 'qa_engineer', 'ui_ux_designer',
@@ -178,6 +179,7 @@ export default function SoftwareDashboard() {
       <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">HR Dashboard</h1>
         <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<Inbox className="text-orange-500" />} label="Pending Approvals" value={pendingLeave.length} />
@@ -276,6 +278,7 @@ export default function SoftwareDashboard() {
       <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">Finance Dashboard</h1>
         <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={onLeaveToday.length} />
@@ -342,6 +345,7 @@ export default function SoftwareDashboard() {
       <div className="flex flex-col min-h-full p-6 gap-6">
         <h1 className="text-2xl font-semibold">My Dashboard</h1>
         <NoticeBar />
+        <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<FolderKanban className="text-blue-500" />} label="Active Projects" value={activeProjects.length} onClick={() => navigate('/projects')} />
@@ -419,7 +423,7 @@ export default function SoftwareDashboard() {
         {role === 'cto' ? 'CTO Dashboard' : role === 'project_manager' ? 'Project Manager Dashboard' : 'Team Lead Dashboard'}
       </h1>
       <NoticeBar />
-
+      <CheckInWidget />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon={<FolderKanban className="text-blue-500" />} label="Active Projects" value={activeProjects.length} onClick={() => navigate('/projects')} />
