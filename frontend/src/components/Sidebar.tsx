@@ -69,44 +69,45 @@ const navItems: {
   showCount?: boolean;
   excludeRoles?: Set<string>;
   section?: string;
+  color: string;
 }[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', permissions: [...DASHBOARD_PERMISSIONS] },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', permissions: [...DASHBOARD_PERMISSIONS], color: '#6366f1' },
 
   // ── Software Team ──
-  { to: '/projects',   icon: FolderKanban, label: 'Projects',    permissions: ['projects:read'], section: 'Software Team' },
-  { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true },
-  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']) },
-  { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true },
+  { to: '/projects',   icon: FolderKanban, label: 'Projects',    permissions: ['projects:read'], section: 'Software Team', color: '#7c3aed' },
+  { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true, color: '#f59e0b' },
+  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']), color: '#0d9488' },
+  { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true, color: '#0d9488' },
 
   // ── Sales & Marketing ──
-  { to: '/clients',    icon: Building2,    label: 'Clients',     permissions: ['clients:read'],  section: 'Sales & Marketing' },
-  { to: '/leads',      icon: UserCircle,   label: 'My Leads', managerLabel: 'Leads', permissions: ['leads:read'], showCount: true },
-  { to: '/proposals',  icon: FileCheck,    label: 'Proposals',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'], showCount: true },
-  { to: '/pipeline',   icon: GitBranch,    label: 'Pipeline',    permissions: ['pipeline:read'] },
-  { to: '/follow-ups', icon: CalendarClock,label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true, excludeRoles: SOFTWARE_HOUSE_ROLES },
+  { to: '/clients',    icon: Building2,    label: 'Clients',     permissions: ['clients:read'],  section: 'Sales & Marketing', color: '#2563eb' },
+  { to: '/leads',      icon: UserCircle,   label: 'My Leads', managerLabel: 'Leads', permissions: ['leads:read'], showCount: true, color: '#16a34a' },
+  { to: '/proposals',  icon: FileCheck,    label: 'Proposals',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'], showCount: true, color: '#ea580c' },
+  { to: '/pipeline',   icon: GitBranch,    label: 'Pipeline',    permissions: ['pipeline:read'], color: '#9333ea' },
+  { to: '/follow-ups', icon: CalendarClock,label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true, excludeRoles: SOFTWARE_HOUSE_ROLES, color: '#db2777' },
 
   // ── Recruitment ──
-  { to: '/active-clients',      icon: Building2,  label: 'Active Clients', permissions: ['jobs:read'],       section: 'Recruitment' },
-  { to: '/jobs',                icon: Briefcase,  label: 'Jobs',           permissions: ['jobs:read'] },
-  { to: '/employees',           icon: UserCircle2,label: 'Employees',      permissions: ['employees:read'] },
-  { to: '/employee-job-matches',icon: Link2,      label: 'Job Matches',    permissions: ['employees:read'] },
+  { to: '/active-clients',      icon: Building2,  label: 'Active Clients', permissions: ['jobs:read'],       section: 'Recruitment', color: '#2563eb' },
+  { to: '/jobs',                icon: Briefcase,  label: 'Jobs',           permissions: ['jobs:read'],        color: '#0891b2' },
+  { to: '/employees',           icon: UserCircle2,label: 'Employees',      permissions: ['employees:read'],   color: '#7c3aed' },
+  { to: '/employee-job-matches',icon: Link2,      label: 'Job Matches',    permissions: ['employees:read'],   color: '#0d9488' },
 
   // ── Communication ──
-  { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication' },
-  { to: '/emails',      icon: Mail,          label: 'Emails',      permissions: ['calls:read'],  showCount: true },
-  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'], excludeRoles: SOFTWARE_HOUSE_ROLES },
-  { to: '/lists',       icon: List,          label: 'Lists',       excludeRoles: SOFTWARE_HOUSE_ROLES },
-  { to: '/calls',       icon: Phone,         label: 'Calls',       permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES },
-  { to: '/meetings',    icon: Calendar,      label: 'Meetings',    permissions: ['meetings:read'] },
-  { to: '/documents',   icon: FileText,      label: 'Documents',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'] },
+  { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication', color: '#0284c7' },
+  { to: '/emails',      icon: Mail,          label: 'Emails',      permissions: ['calls:read'],  showCount: true, color: '#2563eb' },
+  { to: '/bulk-emails', icon: Mail,          label: 'Bulk Emails', permissions: ['calls:read'], excludeRoles: SOFTWARE_HOUSE_ROLES, color: '#2563eb' },
+  { to: '/lists',       icon: List,          label: 'Lists',       excludeRoles: SOFTWARE_HOUSE_ROLES, color: '#64748b' },
+  { to: '/calls',       icon: Phone,         label: 'Calls',       permissions: ['calls:read'],  excludeRoles: SOFTWARE_HOUSE_ROLES, color: '#16a34a' },
+  { to: '/meetings',    icon: Calendar,      label: 'Meetings',    permissions: ['meetings:read'], color: '#9333ea' },
+  { to: '/documents',   icon: FileText,      label: 'Documents',   permissions: ['proposals:read', 'proposals:write', 'proposals:review'], color: '#64748b' },
 
   // ── Admin ──
-  { to: '/users',       icon: Users,     label: 'Users',       permissions: ['users:directory'],                      section: 'Settings' },
-  { to: '/super-users', icon: Shield,    label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'] },
-  { to: '/calculators', icon: Calculator,label: 'Calculators', permissions: ['leads:read'] },
-  { to: '/bug-reports', icon: Bug,       label: 'Bug Reports', permissions: ['bug_reports:read'] },
-  { to: '/reports',     icon: BarChart3, label: 'Reports',     permissions: ['analytics:read'] },
-  { to: '/settings',    icon: Settings,  label: 'Settings',    permissions: ['settings:read'] },
+  { to: '/users',       icon: Users,     label: 'Users',       permissions: ['users:directory'],                       section: 'Settings', color: '#6366f1' },
+  { to: '/super-users', icon: Shield,    label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'], color: '#dc2626' },
+  { to: '/calculators', icon: Calculator,label: 'Calculators', permissions: ['leads:read'],                            color: '#f59e0b' },
+  { to: '/bug-reports', icon: Bug,       label: 'Bug Reports', permissions: ['bug_reports:read'],                      color: '#dc2626' },
+  { to: '/reports',     icon: BarChart3, label: 'Reports',     permissions: ['analytics:read'],                        color: '#0d9488' },
+  { to: '/settings',    icon: Settings,  label: 'Settings',    permissions: ['settings:read'],                         color: '#64748b' },
 ];
 
 export function Sidebar() {
@@ -258,7 +259,7 @@ export function Sidebar() {
   const showCompanyLogo = companyChrome && Boolean(currentSubCompany?.logoUrl?.trim());
   const showBrandBlock = showAgencyLogo || showCompanyLogo || Boolean(brandTitle);
 
-  const renderNavGroup = (items: (typeof navItems)[number][], parentLabel?: string | null) => {
+  const renderNavGroup = (items: (typeof navItems)[number][]) => {
     const groups: { label?: string; items: (typeof navItems)[number][] }[] = [];
     let currentLabel: string | undefined;
     let currentGroup: (typeof navItems)[number][] = [];
@@ -274,19 +275,11 @@ export function Sidebar() {
     }
     if (currentGroup.length > 0) groups.push({ label: currentLabel, items: currentGroup });
 
-    return groups.map((group, i) => {
-      const showLabel = group.label && group.label !== parentLabel;
-      return (
-        <div key={group.label ?? `s${i}`} className={cn('space-y-0.5', showLabel && 'pt-3')}>
-          {showLabel && (
-            <p className="px-3 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 select-none">
-              {group.label}
-            </p>
-          )}
-          {group.items.map(renderNavItem)}
-        </div>
-      );
-    });
+    return groups.map((group, i) => (
+      <div key={group.label ?? `s${i}`} className={cn('space-y-0.5', i > 0 && 'mt-3')}>
+        {group.items.map(renderNavItem)}
+      </div>
+    ));
   };
 
   const renderNavItem = (item: (typeof navItems)[number]) => {
@@ -302,6 +295,8 @@ export function Sidebar() {
       if (item.to === '/leave/admin') badgeCount = pendingLeaveCount;
     }
 
+    const label = (isManager && item.managerLabel) ? item.managerLabel : item.label;
+
     return (
       <NavLink
         key={item.to}
@@ -309,19 +304,31 @@ export function Sidebar() {
         end={item.to === '/' || item.to === '/leave'}
         className={({ isActive }) =>
           cn(
-            'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] leading-none transition-all duration-150 select-none',
+            'flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-[13px] leading-none transition-all duration-150 select-none',
             isActive
-              ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.07),0_2px_8px_-2px_rgba(0,0,0,0.06)]'
-              : 'font-medium text-sidebar-foreground/55 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
+              ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-sm'
+              : 'font-medium text-sidebar-foreground/55 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
           )
         }
       >
-        <item.icon className="h-[15px] w-[15px] shrink-0 opacity-80" />
-        <span className="flex-1 truncate">{(isManager && item.managerLabel) ? item.managerLabel : item.label}</span>
-        {item.showCount && badgeCount > 0 && (
-          <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px] font-bold">
-            {badgeCount}
-          </Badge>
+        {({ isActive }) => (
+          <>
+            <span
+              className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg transition-colors duration-150"
+              style={{ backgroundColor: isActive ? `${item.color}28` : `${item.color}14` }}
+            >
+              <item.icon
+                className="h-[14px] w-[14px] transition-opacity"
+                style={{ color: item.color, opacity: isActive ? 1 : 0.65 }}
+              />
+            </span>
+            <span className="flex-1 truncate">{label}</span>
+            {item.showCount && badgeCount > 0 && (
+              <Badge variant="destructive" className="h-[18px] min-w-[18px] px-1 text-[10px] font-bold rounded-full">
+                {badgeCount}
+              </Badge>
+            )}
+          </>
         )}
       </NavLink>
     );
@@ -357,19 +364,19 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="px-2 py-4 flex-1 overflow-y-auto">
+      <nav className="px-2 py-3 flex-1 overflow-y-auto">
         <WorkspaceSwitcher />
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {navSections.map((section) => {
             // Collapsed group for the non-active workspace (non-switchable users)
             if (section.secondary) {
               return (
-                <Collapsible key={section.key}>
-                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 hover:text-sidebar-foreground/60 transition-colors [&[data-state=open]>svg]:rotate-180 select-none">
-                    {section.label}
-                    <ChevronDown className="h-3 w-3 transition-transform duration-150 ml-auto" />
+                <Collapsible key={section.key} className="mt-2">
+                  <CollapsibleTrigger className="flex w-full items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium text-sidebar-foreground/35 hover:text-sidebar-foreground/60 hover:bg-sidebar-accent/30 transition-all duration-150 [&[data-state=open]>svg]:rotate-180 select-none">
+                    <span className="flex-1 truncate text-left">{section.label}</span>
+                    <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 shrink-0" />
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-0.5">
+                  <CollapsibleContent className="space-y-0.5 pt-1">
                     {renderNavGroup(section.items)}
                   </CollapsibleContent>
                 </Collapsible>
@@ -388,25 +395,19 @@ export function Sidebar() {
               );
             }
 
-            // Shared section → thin divider instead of "SHARED" text
+            // Shared section → spacing only
             if (isShared) {
               return (
-                <div key={section.key}>
-                  <div className="mx-2 my-4 h-px bg-sidebar-border/50" />
+                <div key={section.key} className="mt-3">
                   {renderNavGroup(section.items)}
                 </div>
               );
             }
 
-            // Default (single-workspace, no tabs) → show label + sub-groups
+            // Default (single-workspace, no tabs) → flat list with dividers between sub-groups
             return (
               <div key={section.key}>
-                {section.label && (
-                  <p className="px-3 pt-5 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/35 select-none">
-                    {section.label}
-                  </p>
-                )}
-                {renderNavGroup(section.items, section.label)}
+                {renderNavGroup(section.items)}
               </div>
             );
           })}
