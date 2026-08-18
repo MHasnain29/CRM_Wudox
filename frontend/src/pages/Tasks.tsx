@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,14 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Plus, CheckCircle2, Clock, AlertCircle, Trash2, Loader2, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
+import { Search, Plus, CheckCircle2, Clock, AlertCircle, Trash2, Loader2, ChevronDown, ChevronUp, TrendingUp, FolderKanban } from 'lucide-react';
 import { useClientPagination, SectionPaginationBar } from '@/components/SectionPagination';
 import { useStore } from '@/lib/store';
 import { format, isBefore, isToday } from 'date-fns';
 import { TaskPriority, TaskStatus, Task } from '@/lib/types';
 import { TaskDetailDialog } from '@/components/TaskDetailDialog';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
-import { fetchTasks, fetchTaskById, deleteTaskApi, mapApiTaskToTask, fetchUsers, type ApiUser } from '@/lib/api';
+import { fetchTasks, fetchTaskById, deleteTaskApi, mapApiTaskToTask, fetchUsers, apiFetch, type ApiUser } from '@/lib/api';
 import { getUserRoleTitle } from '@/lib/roleLabels';
 import { cn } from '@/lib/utils';
 import { onTaskComment, onTaskRefresh } from '@/lib/socket';
@@ -47,6 +47,13 @@ import {
   useHasPermission,
   useIsOwnScope,
 } from '@/lib/access';
+import { useAuthStore } from '@/lib/authStore';
+
+const SOFTWARE_ROLES = new Set([
+  'cto', 'project_manager', 'team_lead',
+  'developer', 'qa_engineer', 'ui_ux_designer',
+  'business_analyst', 'devops_engineer', 'hr', 'finance',
+]);
 
 const priorityColors: Record<TaskPriority, string> = {
   low: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
@@ -93,7 +100,7 @@ function UserTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['user-tasks-section', user.id],
-    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds: [user.id], limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     retry: false,
   });
@@ -187,7 +194,7 @@ function AgencyTasksSection({
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['agency-tasks-section', agency.id, scopeKey],
-    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ subCompanyId: agency.id, ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
   });
 
@@ -408,7 +415,7 @@ function TeamTasksSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['team-tasks-section', ownerIds.join(',')],
-    queryFn: () => fetchTasks({ ownerIds, limit: 500 }),
+    queryFn: () => fetchTasks({ ownerIds, limit: 500, includeProjectTasks: true }),
     staleTime: 0,
     enabled: ownerIds.length > 0,
   });
@@ -651,8 +658,21 @@ export default function Tasks() {
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(true);
   const loadCounterRef = useRef(0);
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isSoftwareRole = SOFTWARE_ROLES.has(user?.role ?? '');
+  const [projectFilter, setProjectFilter] = useState('all');
+  const [projects, setProjects] = useState<{id: string; name: string}[]>([]);
 
   const agencyId = currentSubCompany?.id ?? currentUser.subCompanyId;
+
+  useEffect(() => {
+    if (!isSoftwareRole) return;
+    apiFetch('/projects').then(res => {
+      if (res.ok) setProjects((res.data as any).data ?? []);
+    }).catch(() => {});
+  }, [isSoftwareRole]);
+
   const canViewTeam = useCanViewTeamScope();
   const isOwnScope = useIsOwnScope();
   const canWriteTasks = useCanWriteTasks();
@@ -757,6 +777,8 @@ export default function Tasks() {
             : (isElevated ? undefined : agencyId),
         ownerIds,
         limit: 500,
+        includeProjectTasks: true,
+        ...(projectFilter !== 'all' ? { projectId: projectFilter } : {}),
       });
       if (counter !== loadCounterRef.current) return; // stale response — a newer call is in-flight
       const mapped = data.map((api) => mapApiTaskToTask(api));
@@ -768,7 +790,7 @@ export default function Tasks() {
     } finally {
       if (counter === loadCounterRef.current) setTasksLoading(false);
     }
-  }, [agencyId, isElevated, isPureManager, isManager, showAllTeamView, selectedAgencyId, setTasks, currentUser?.id, elevatedOwnerIds, linkedUserIdParam]);
+  }, [agencyId, isElevated, isPureManager, isManager, showAllTeamView, selectedAgencyId, setTasks, currentUser?.id, elevatedOwnerIds, linkedUserIdParam, projectFilter]);
 
   useEffect(() => {
     loadTasks();
@@ -885,27 +907,21 @@ export default function Tasks() {
 
   const getLinkedItemName = (task: typeof tasks[0]) => {
     if (!task.linkType || !task.linkId) return null;
-    
+
     switch (task.linkType) {
-      case 'lead': {
-        const lead = leads.find(l => l.id === task.linkId);
-        if (lead) {
-          const client = clients.find(c => c.id === lead.clientId);
-          return client?.name;
-        }
-        break;
-      }
       case 'client':
-        return clients.find(c => c.id === task.linkId)?.name;
+        return task.linkedClient?.name ?? clients.find(c => c.id === task.linkId)?.name ?? null;
+      case 'lead':
+        return task.linkedLead?.clientName ?? (() => {
+          const lead = leads.find(l => l.id === task.linkId);
+          if (lead) return clients.find(c => c.id === lead.clientId)?.name ?? null;
+          return null;
+        })();
       case 'meeting':
-        return meetings.find(m => m.id === task.linkId)?.title;
+        return meetings.find(m => m.id === task.linkId)?.title ?? null;
       case 'follow_up': {
         const followUp = followUps.find(f => f.id === task.linkId);
-        if (followUp) {
-          const client = clients.find(c => c.id === followUp.clientId);
-          return client?.name;
-        }
-        break;
+        return followUp ? (clients.find(c => c.id === followUp.clientId)?.name ?? null) : null;
       }
     }
     return null;
@@ -1081,6 +1097,20 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             )}
+
+            {isSoftwareRole && projects.length > 0 && (
+              <Select value={projectFilter} onValueChange={setProjectFilter}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="All Projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </CardHeader>
 
@@ -1100,7 +1130,7 @@ export default function Tasks() {
                 <TableHead>Priority</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Due Date</TableHead>
-                <TableHead>Client</TableHead>
+                {isSoftwareRole ? <TableHead>Project</TableHead> : <TableHead>Client</TableHead>}
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1157,8 +1187,33 @@ export default function Tasks() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {linkedItem ? (
-                        <div className="text-sm font-medium">{linkedItem}</div>
+                      {isSoftwareRole ? (
+                        task.projectId ? (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                            onClick={e => { e.stopPropagation(); navigate(`/projects/${task.projectId}`); }}
+                          >
+                            <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate max-w-[120px]">{task.projectName ?? 'Project'}</span>
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )
+                      ) : linkedItem ? (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline truncate max-w-[140px]"
+                          onClick={e => {
+                            e.stopPropagation();
+                            const clientId = task.linkType === 'client'
+                              ? task.linkId
+                              : task.linkedLead?.clientId ?? leads.find(l => l.id === task.linkId)?.clientId;
+                            if (clientId) navigate(`/clients/${clientId}`);
+                          }}
+                        >
+                          {linkedItem}
+                        </button>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
@@ -1207,6 +1262,7 @@ export default function Tasks() {
         }}
         subCompanyId={writeAgencyId}
         onTaskCreated={loadTasks}
+        defaultProjectId={projectFilter !== 'all' ? projectFilter : undefined}
       />
     </div>
   );

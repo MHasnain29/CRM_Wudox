@@ -4565,6 +4565,8 @@ export interface ApiTask {
   attachments?: ApiTaskAttachment[];
   forwardedFromName?: string | null;
   forwardedFromSubCompanyId?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
 }
 
 export async function fetchTasks(params?: {
@@ -4576,6 +4578,8 @@ export async function fetchTasks(params?: {
   agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
   scope?: 'mine' | 'team' | 'all';
+  projectId?: string;
+  includeProjectTasks?: boolean;
 }): Promise<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
   const searchParams = new URLSearchParams();
   if (params?.page != null) searchParams.set('page', String(params.page));
@@ -4586,6 +4590,8 @@ export async function fetchTasks(params?: {
   if (params?.agencyIds?.length) searchParams.set('agencyIds', params.agencyIds.join(','));
   appendOwnerIds(searchParams, params?.ownerIds, params?.ownerExact);
   if (params?.scope) searchParams.set('scope', params.scope);
+  if (params?.projectId) searchParams.set('projectId', params.projectId);
+  if (params?.includeProjectTasks) searchParams.set('includeProjectTasks', 'true');
   const res = await apiFetch<{ data: ApiTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
     `/tasks?${searchParams.toString()}`
   );
@@ -4602,6 +4608,7 @@ export async function createTask(payload: {
   linkType?: string | null;
   linkId?: string | null;
   subCompanyId?: string;
+  projectId?: string | null;
 }): Promise<ApiTask> {
   const path = payload.subCompanyId ? `/tasks?subCompanyId=${encodeURIComponent(payload.subCompanyId)}` : '/tasks';
   const res = await apiFetch<ApiTask>(path, {
@@ -4614,6 +4621,7 @@ export async function createTask(payload: {
       ownerId: payload.ownerId,
       linkType: payload.linkType ?? null,
       linkId: payload.linkId ?? null,
+      projectId: payload.projectId ?? null,
     }),
   });
   if (!res.ok) throw new Error(res.error || 'Failed to create task');
@@ -4764,6 +4772,8 @@ export function mapApiTaskToTask(
     attachments,
     forwardedFromName: api.forwardedFromName ?? null,
     forwardedFromSubCompanyId: api.forwardedFromSubCompanyId ?? null,
+    projectId: api.projectId ?? null,
+    projectName: api.projectName ?? null,
   };
 }
 
@@ -8329,3 +8339,48 @@ export async function syncEmployeeOnboarding(employeeId: string): Promise<Employ
   return res.data.data;
 }
 
+
+// ── Notices ────────────────────────────────────────────────────────────────
+
+export async function fetchNotices() {
+  const res = await apiFetch<{ data: any[] }>('/notices');
+  if (!res.ok) throw new Error('Failed to fetch notices');
+  return res.data.data;
+}
+
+export async function createNotice(payload: {
+  title: string;
+  message: string;
+  type: string;
+  pinned: boolean;
+  expiresAt: string;
+}) {
+  const res = await apiFetch<{ data: any }>('/notices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((res as any).data?.error ?? (res as any).error ?? 'Failed to create notice');
+  return res.data.data;
+}
+
+export async function updateNotice(id: string, payload: Partial<{
+  title: string;
+  message: string;
+  type: string;
+  pinned: boolean;
+  expiresAt: string;
+}>) {
+  const res = await apiFetch<{ data: any }>(`/notices/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((res as any).data?.error ?? (res as any).error ?? 'Failed to update notice');
+  return res.data.data;
+}
+
+export async function deleteNotice(id: string) {
+  const res = await apiFetch<{ success: boolean }>(`/notices/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete notice');
+}

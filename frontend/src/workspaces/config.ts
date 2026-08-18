@@ -20,7 +20,6 @@ const ROUTE_SIDES: Record<string, WorkspaceSide> = {
   '/leads': 'marketing',
   '/proposals': 'marketing',
   '/pipeline': 'marketing',
-  '/lists': 'marketing',
   '/documents': 'marketing',
   '/active-clients': 'recruitment',
   '/jobs': 'recruitment',

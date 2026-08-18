@@ -33,6 +33,7 @@ const listQuerySchema = z.object({
   agencyIds: z.string().optional(),           // new: comma-separated UUIDs for multi-select
   ownerIds: z.string().optional(),            // multi-user filter: comma-separated UUIDs
   scope: z.enum(['mine', 'team', 'all']).optional(),
+  projectId: z.string().optional(),           // filter by project (implies includeProjectTasks)
 });
 
 const createBodySchema = z.object({
@@ -43,6 +44,7 @@ const createBodySchema = z.object({
   ownerId: z.string().uuid(),
   linkType: z.nativeEnum(TaskLinkType).optional().nullable(),
   linkId: z.string().uuid().optional().nullable(),
+  projectId: z.string().uuid().optional().nullable(),
 });
 
 const updateBodySchema = z.object({
@@ -78,6 +80,12 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
 
   const where: Prisma.TaskWhereInput = { ...scopeFilter };
   if (q.status) where.status = q.status;
+  if (q.projectId) {
+    (where as any).projectId = q.projectId;
+  } else if (req.query.includeProjectTasks !== 'true') {
+    // By default exclude tasks linked to a project (they show in project detail instead)
+    (where as any).projectId = null;
+  }
 
   const userId = effectiveActorId(req);
   const ownerIdsList = q.ownerIds ? q.ownerIds.split(',').filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [];
@@ -113,6 +121,7 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
         attachments: { orderBy: { createdAt: 'asc' } },
         subCompany: { select: { id: true, name: true } },
         forwardedFromUser: { select: { firstName: true, lastName: true, subCompanyId: true } },
+        project: { select: { id: true, name: true } },
       },
     }),
     prisma.task.count({ where }),
@@ -184,6 +193,8 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
         ? `${(t as any).forwardedFromUser.firstName ?? ''} ${(t as any).forwardedFromUser.lastName ?? ''}`.trim() || null
         : null,
       forwardedFromSubCompanyId: (t as any).forwardedFromUser?.subCompanyId ?? null,
+      projectId: (t as any).projectId ?? null,
+      projectName: (t as any).project?.name ?? null,
       linkType: t.linkType,
       linkId: t.linkId,
       reminderEnabled: t.reminderEnabled,
@@ -285,10 +296,12 @@ tasksRouter.post('/', requirePermission('tasks:write'), async (req: Request, res
       subCompanyId,
       linkType: data.linkType ?? null,
       linkId: data.linkId ?? null,
+      projectId: data.projectId ?? null,
     },
     include: {
       owner: { select: { id: true, firstName: true, lastName: true, email: true } },
       assignedBy: { select: { id: true, firstName: true, lastName: true } },
+      project: { select: { id: true, name: true } },
     },
   });
 

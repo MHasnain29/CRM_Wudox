@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { NoticeBar } from './NoticeBar';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -102,6 +103,8 @@ export default function DatabaseManagerDashboard() {
           </Button>
         </div>
       </div>
+
+      <NoticeBar />
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">

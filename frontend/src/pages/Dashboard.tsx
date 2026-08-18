@@ -11,6 +11,7 @@ import {
   CheckCircle2, RotateCcw, ExternalLink, Building2, Activity, Coffee, GraduationCap, Users2, Target
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { useAuthStore } from '@/lib/authStore';
 import { fetchFollowUps, mapApiFollowUpToFollowUp, fetchDashboardTodayStats, fetchMeetings, ApiMeeting, fetchMyTimeLogs, fetchLeads, fetchTasks, mapApiTaskToTask, fetchLeadStatusOverTime, fetchMyActivityLogs, fetchMyPerformanceTarget, type PerformanceTargetValues } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import type { Meeting, Lead, Task, ActivityLog } from '@/lib/types';
@@ -22,6 +23,9 @@ import { TemperatureBadge } from '@/components/TemperatureBadge';
 import { StageBadge } from '@/components/StageBadge';
 import ManagerDashboard from '@/components/dashboard/ManagerDashboard';
 import DirectorDashboard from '@/components/dashboard/DirectorDashboard';
+import SoftwareDashboard from '@/components/dashboard/SoftwareDashboard';
+import { NoticeBar } from '@/components/dashboard/NoticeBar';
+import { CheckInWidget } from '@/components/dashboard/CheckInWidget';
 import DatabaseManagerDashboard from '@/components/dashboard/DatabaseManagerDashboard';
 import RecruitmentManagerDashboard from '@/components/dashboard/RecruitmentManagerDashboard';
 import RecruiterDashboard from '@/components/dashboard/RecruiterDashboard';
@@ -45,8 +49,16 @@ const priorityColors = {
   low: 'bg-green-100 text-green-800 border-green-200',
 };
 
+const SOFTWARE_ROLES = new Set([
+  'cto', 'project_manager', 'team_lead',
+  'developer', 'qa_engineer', 'ui_ux_designer',
+  'business_analyst', 'devops_engineer',
+  'hr', 'finance',
+]);
+
 export default function Dashboard() {
   const { currentUser, currentSubCompany, calls, meetings, clients, followUps, setFollowUps, setMeetings, pipelineStages, activityLogs } = useStore();
+  const userRole = useAuthStore((s) => s.user?.role ?? '');
   const isElevated = useCanAccessMultipleAgencies();
   const isAgencyScopedElevated = useIsAgencyScopedElevated();
   const hasAnalyticsRead = useHasPermission('analytics:read');
@@ -75,12 +87,14 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const agencyId = currentSubCompany?.id ?? currentUser.subCompanyId;
 
+  const isSoftwareRole = SOFTWARE_ROLES.has(userRole);
+
   const loadFollowUps = useCallback(() => {
-    if (!agencyId) return;
+    if (!agencyId || isSoftwareRole) return;
     fetchFollowUps({ subCompanyId: agencyId, limit: 500 })
       .then((res) => setFollowUps(res.data.map(mapApiFollowUpToFollowUp)))
       .catch(() => {});
-  }, [agencyId, setFollowUps]);
+  }, [agencyId, isSoftwareRole, setFollowUps]);
 
   const loadMeetings = useCallback(() => {
     fetchMeetings({ limit: 500 })
@@ -111,10 +125,16 @@ export default function Dashboard() {
   // Load real leads, tasks, and chart data for this user
   useEffect(() => {
     let cancelled = false;
+    const leadsPromise = isSoftwareRole
+      ? Promise.resolve({ data: [] })
+      : fetchLeads({ ownerId: currentUser.id, limit: 500 });
+    const chartPromise = isSoftwareRole
+      ? Promise.resolve([])
+      : fetchLeadStatusOverTime();
     Promise.all([
-      fetchLeads({ ownerId: currentUser.id, limit: 500 }),
+      leadsPromise,
       fetchTasks({ scope: 'mine', limit: 500 }),
-      fetchLeadStatusOverTime(),
+      chartPromise,
       fetchMyActivityLogs({ limit: 20 }),
     ]).then(([leadsRes, tasksRes, chartRes, activityRes]) => {
       if (cancelled) return;
@@ -225,6 +245,11 @@ export default function Dashboard() {
     if (!isAssociate) return;
     fetchMyPerformanceTarget().then(setMyDailyTarget).catch(() => {});
   }, [isAssociate]);
+
+  // Software house roles get their own dashboard
+  if (SOFTWARE_ROLES.has(userRole)) {
+    return <SoftwareDashboard />;
+  }
 
   // Super users viewing the Recruitment side see the recruitment manager dashboard
   if (canSwitchWorkspaceSides && activeWorkspaceSide === 'recruitment') {
@@ -417,6 +442,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+
+      <NoticeBar />
+      <CheckInWidget />
 
       {/* ── Today's Progress (associates only) ── */}
       {isAssociate && (() => {

@@ -424,6 +424,9 @@ export interface Task {
   /** Set when this task was transferred via employee offboarding. */
   forwardedFromName?: string | null;
   forwardedFromSubCompanyId?: string | null;
+  /** Set when this task belongs to a project. */
+  projectId?: string | null;
+  projectName?: string | null;
 }
 
 export interface LeadRequest {
@@ -670,4 +673,23 @@ export interface BookedMeeting {
   notes?: string;
   status: 'scheduled' | 'completed' | 'cancelled';
   createdAt: Date;
+}
+
+export type NoticeType = 'info' | 'warning' | 'holiday' | 'urgent';
+
+export interface Notice {
+  id: string;
+  subCompanyId: string;
+  createdById: string;
+  type: NoticeType;
+  title: string;
+  message: string;
+  pinned: boolean;
+  expiresAt: string;
+  createdAt: string;
+  createdBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
 }

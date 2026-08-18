@@ -598,8 +598,6 @@ function AgencyLeadsSection({
         open={isCreateTaskDialogOpen}
         onOpenChange={setIsCreateTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="lead"
-        defaultLinkId={selectedLead?.id}
       />
       <AlertDialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
         <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -3108,8 +3106,6 @@ export default function Leads() {
         open={isCreateTaskDialogOpen}
         onOpenChange={setIsCreateTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="lead"
-        defaultLinkId={selectedLead?.id}
       />
 
       <AlertDialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>

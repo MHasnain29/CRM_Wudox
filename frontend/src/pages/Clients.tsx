@@ -4057,8 +4057,6 @@ export default function Clients() {
         open={isTaskDialogOpen}
         onOpenChange={setIsTaskDialogOpen}
         subCompanyId={writeAgencyId}
-        defaultLinkType="client"
-        defaultLinkId={selectedClient?.id}
         onTaskCreated={() => setClientListRefreshKey((k) => k + 1)}
       />
 

@@ -12,6 +12,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed-all": "tsx prisma/seedAll.ts",
+    "prisma:seed-clean": "tsx prisma/seed-clean.ts",
     "prisma:seed-rbac": "tsx prisma/seed-rbac.ts",
     "prisma:seed-approval": "tsx prisma/seed-approval.ts",
     "prisma:seed-recruitment": "tsx prisma/seed-recruitment.ts",
