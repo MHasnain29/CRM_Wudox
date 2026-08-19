@@ -176,7 +176,7 @@ export function AgencyManagerUserFilterRows({
   const renderFullRows = () => (
     <>
       {showAgencyChips && (
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+      <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
         <TabChipText
           label="All Agencies"
           active={selectedAgencyId === 'all'}
@@ -205,7 +205,7 @@ export function AgencyManagerUserFilterRows({
           const selected = tierSelections[tier.paramKey];
 
           return (
-            <div key={tier.id} className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <div key={tier.id} className="flex items-center gap-1 overflow-x-auto pb-0.5">
               <TabChipText
                 label={tier.allLabel}
                 active={isAllChipActive(tier.paramKey, selected, urlFlags)}
@@ -277,7 +277,7 @@ export function AgencyManagerUserFilterRows({
         aria-hidden={collapsed}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="space-y-1.5">{renderFullRows()}</div>
+          <div className="space-y-1">{renderFullRows()}</div>
         </div>
       </div>
 

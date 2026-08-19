@@ -171,7 +171,7 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
   const showAgencyFilterOnly = isDatabaseManagerAgencyMode;
   const isAgencyHierarchyViewer =
     (isElevated || isSingleAgencyLead || isDatabaseManagerAgencyMode) && !useDbGlobalUi;
-  const isAgencyScopedElevated = useIsAgencyScopedElevated();
+  const isAgencyScopedElevatedBase = useIsAgencyScopedElevated();
   const showHierarchyFilters =
     (isAgencyHierarchyViewer || isPureManager) && !useDbGlobalUi && !showAgencyFilterOnly;
   const showAgencyFilterBar = showHierarchyFilters || showAgencyFilterOnly;
@@ -183,6 +183,11 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
   const authUser = useAuthStore((s) => s.user);
   const { currentSubCompany } = useStore();
   const { agencies, isLoading: agenciesLoading } = useAgencyFilter();
+  // Global-elevated (e.g. super_admin) with exactly ONE visible agency behaves like
+  // agency-scoped elevated: the home agency is auto-forced into `agencyId`, so a
+  // concrete agencyId is not a drill — unselected chips still mean own records.
+  const isAgencyScopedElevated =
+    isAgencyScopedElevatedBase || (isElevated && !agenciesLoading && agencies.length === 1);
   const { assignableRoles } = useAssignableRoles();
 
   const [searchParams, setSearchParams] = useSearchParams();
