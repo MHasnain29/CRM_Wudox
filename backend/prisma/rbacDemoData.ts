@@ -462,6 +462,11 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'leave:read', name: 'View leave (own)', module: 'leave', parentKey: 'module.leave', sortOrder: 1401, isGroup: false, actionType: 'read' },
   { key: 'leave:write', name: 'Request leave', module: 'leave', parentKey: 'module.leave', sortOrder: 1402, isGroup: false, actionType: 'write' },
   { key: 'leave:approve', name: 'Approve & reject leave requests', module: 'leave', parentKey: 'module.leave', sortOrder: 1403, isGroup: false, actionType: 'custom' },
+
+  // ── Hubstaff time tracking ────────────────────────────────────────────────
+  { key: 'module.hubstaff', name: 'Hubstaff time tracking', module: 'hubstaff', parentKey: null, sortOrder: 1500, isGroup: true },
+  { key: 'hubstaff:view_all', name: 'View time tracking for all users', module: 'hubstaff', parentKey: 'module.hubstaff', sortOrder: 1501, isGroup: false, actionType: 'read' },
+  { key: 'hubstaff:manage', name: 'Connect Hubstaff & manage user mapping', module: 'hubstaff', parentKey: 'module.hubstaff', sortOrder: 1502, isGroup: false, actionType: 'custom' },
 ];
 
 export { PERMISSIONS_BY_ROLE_KEY } from '../src/config/systemRolePermissions';

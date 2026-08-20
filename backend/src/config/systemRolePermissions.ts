@@ -71,6 +71,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
     'attendance:view_all',
+    'hubstaff:view_all', 'hubstaff:manage',
   ]),
   director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -92,6 +93,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
     'attendance:view_all',
+    'hubstaff:view_all', 'hubstaff:manage',
   ]),
   company_director: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -112,6 +114,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read', 'projects:write',
     'leave:read', 'leave:write', 'leave:approve',
     'attendance:view_all',
+    'hubstaff:view_all', 'hubstaff:manage',
   ]),
   sales_manager: withSharedDefaults([
     'users:read', 'users:write', 'users:directory',
@@ -209,6 +212,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'projects:read',
     'leave:read', 'leave:write', 'leave:approve',
     'attendance:view_all',
+    'hubstaff:view_all',
   ]),
   it: withSharedDefaults([
     'users:read', 'users:directory', 'clients:read', 'leads:read', 'pipeline:read', 'tasks:read',
@@ -228,6 +232,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'analytics:read', 'settings:read', 'bug_reports:submit',
     'notices:read', 'notices:write',
     'attendance:view_all',
+    'hubstaff:view_all', 'hubstaff:manage',
   ]),
 
   project_manager: withSharedDefaults([
@@ -238,6 +243,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'leave:read', 'leave:write',
     'bug_reports:submit',
     'notices:read', 'notices:write',
+    'hubstaff:view_all',
   ]),
 
   team_lead: withSharedDefaults([
@@ -309,6 +315,7 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'settings:read', 'bug_reports:submit',
     'notices:read', 'notices:write',
     'attendance:view_all',
+    'hubstaff:view_all', 'hubstaff:manage',
   ]),
 
   finance: withSharedDefaults([

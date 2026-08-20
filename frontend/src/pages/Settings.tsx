@@ -92,6 +92,7 @@ import {
   PenLine,
   Star,
   MoreVertical,
+  Timer,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { getBackupPercentagePreference, setBackupPercentagePreference } from '@/lib/jobsApi';
@@ -118,6 +119,7 @@ import { SettingsRecruitmentAgreementTab } from './Settings_RecruitmentAgreement
 import { EmailTemplatesSection, AutoSignatureCard } from './Settings_EmailTemplates';
 import { NotificationsSection } from './Settings_Notifications';
 import { PhoneSystemTab } from './Settings_PhoneSystemTab';
+import { HubstaffTab } from './Settings_HubstaffTab';
 import { SignatureCreatorWidget } from '@/components/SignatureCreatorWidget';
 import { AvailabilitySettings } from '@/components/AvailabilitySettings';
 import {
@@ -450,6 +452,7 @@ export default function Settings() {
   const canManageAgencyPipeline =
     hasPipelineConfigure || (hasSettingsWrite && canAccessMultipleAgencies);
   const canLinkAgencies = hasUsersLinkAgency;
+  const canManageHubstaff = useHasPermission('hubstaff:manage');
   const [activityTypeFilter, setActivityTypeFilter] = useState<ActivityType | 'all'>('all');
   const [activitySearch, setActivitySearch] = useState('');
   const [liveActivityLogs, setLiveActivityLogs] = useState<ActivityLog[]>([]);
@@ -1590,6 +1593,12 @@ export default function Settings() {
                 <Phone className="h-4 w-4 mr-1" />
                 Phone System
               </TabsTrigger>
+              {canManageHubstaff && (
+                <TabsTrigger value="hubstaff">
+                  <Timer className="h-4 w-4 mr-1" />
+                  Hubstaff
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
         </StickyHeader>
@@ -2203,6 +2212,8 @@ export default function Settings() {
         )}
 
         <PhoneSystemTab isActive={tabFromUrl === 'phone-system'} />
+
+        {canManageHubstaff && <HubstaffTab />}
 
         {/* Agencies Tab - super_admin / director / operations_manager. "Add Agency" stays super-admin only. */}
         {(isSuperAdmin || canManageProposalDefaults || canManageReviewTemplates) && (

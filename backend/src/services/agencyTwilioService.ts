@@ -4,7 +4,7 @@
 import twilio from 'twilio';
 import prisma from '../config/database';
 import { env } from '../config/env';
-import { encryptSecret, decryptSecret } from '../utils/secretsCrypto';
+import { encryptSecret, decryptSecret, tryDecryptSecret } from '../utils/secretsCrypto';
 import { isValidE164, normalizeToE164 } from '../utils/phoneE164';
 
 function twilioStr(v: string | undefined): string | undefined {
@@ -76,12 +76,13 @@ function rowToCredentials(row: {
   twilioRegion: string | null;
 }): AgencyTwilioCredentials | null {
   const accountSid = twilioStr(row.twilioAccountSid ?? undefined);
+  // tryDecryptSecret: a key mismatch must degrade to "not configured", not crash the request
   const authToken = row.twilioAuthTokenEnc
-    ? twilioStr(decryptSecret(row.twilioAuthTokenEnc))
+    ? twilioStr(tryDecryptSecret(row.twilioAuthTokenEnc) ?? undefined)
     : null;
   const apiKeySid = twilioStr(row.twilioApiKeySid ?? undefined);
   const apiKeySecret = row.twilioApiKeySecretEnc
-    ? twilioStr(decryptSecret(row.twilioApiKeySecretEnc))
+    ? twilioStr(tryDecryptSecret(row.twilioApiKeySecretEnc) ?? undefined)
     : null;
   const twimlAppSid = twilioStr(row.twilioTwimlAppSid ?? undefined);
   if (!accountSid || !authToken || !apiKeySid || !apiKeySecret || !twimlAppSid) return null;
