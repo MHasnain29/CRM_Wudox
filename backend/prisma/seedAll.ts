@@ -46,7 +46,7 @@ async function main() {
 
   console.log('  STAFFING CRM  (@wudox.ca)');
   console.log('  ─────────────────────────────────────────────────────');
-  console.log('  hassan@wudox.com              super_admin');
+  console.log('  hassan@wudox.ca              super_admin');
   console.log('  director@wudox.ca             director');
   console.log('  company.director@wudox.ca     company_director');
   console.log('  manager1@wudox.ca             sales_manager');
@@ -62,30 +62,30 @@ async function main() {
   console.log('  operations@wudox.ca           operations_manager');
   console.log('  it@wudox.ca                   it\n');
 
-  console.log('  SOFTWARE HOUSE  (@wudox.com)');
+  console.log('  SOFTWARE HOUSE  (@wudox.ca)');
   console.log('  ─────────────────────────────────────────────────────');
-  console.log('  cto@wudox.com                 cto');
-  console.log('  pm@wudox.com                  project_manager');
-  console.log('  scrum@wudox.com               project_manager');
-  console.log('  hr@wudox.com                  hr');
-  console.log('  hr2@wudox.com                 hr');
-  console.log('  finance@wudox.com             finance');
-  console.log('  accountant@wudox.com          finance');
-  console.log('  lead@wudox.com                team_lead');
-  console.log('  qa.lead@wudox.com             team_lead');
-  console.log('  design.lead@wudox.com         team_lead');
-  console.log('  dev1@wudox.com                developer');
-  console.log('  dev2@wudox.com                developer');
-  console.log('  dev3@wudox.com                developer');
-  console.log('  dev4@wudox.com                developer');
-  console.log('  dev5@wudox.com                developer');
-  console.log('  qa@wudox.com                  qa_engineer');
-  console.log('  qa2@wudox.com                 qa_engineer');
-  console.log('  designer@wudox.com            ui_ux_designer');
-  console.log('  designer2@wudox.com           ui_ux_designer');
-  console.log('  ba@wudox.com                  business_analyst');
-  console.log('  ba2@wudox.com                 business_analyst');
-  console.log('  devops@wudox.com              devops_engineer');
+  console.log('  cto@wudox.ca                 cto');
+  console.log('  pm@wudox.ca                  project_manager');
+  console.log('  scrum@wudox.ca               project_manager');
+  console.log('  hr@wudox.ca                  hr');
+  console.log('  hr2@wudox.ca                 hr');
+  console.log('  finance@wudox.ca             finance');
+  console.log('  accountant@wudox.ca          finance');
+  console.log('  lead@wudox.ca                team_lead');
+  console.log('  qa.lead@wudox.ca             team_lead');
+  console.log('  design.lead@wudox.ca         team_lead');
+  console.log('  dev1@wudox.ca                developer');
+  console.log('  dev2@wudox.ca                developer');
+  console.log('  dev3@wudox.ca                developer');
+  console.log('  dev4@wudox.ca                developer');
+  console.log('  dev5@wudox.ca                developer');
+  console.log('  qa@wudox.ca                  qa_engineer');
+  console.log('  qa2@wudox.ca                 qa_engineer');
+  console.log('  designer@wudox.ca            ui_ux_designer');
+  console.log('  designer2@wudox.ca           ui_ux_designer');
+  console.log('  ba@wudox.ca                  business_analyst');
+  console.log('  ba2@wudox.ca                 business_analyst');
+  console.log('  devops@wudox.ca              devops_engineer');
   console.log(`\n  ${'═'.repeat(58)}\n`);
 }
 
