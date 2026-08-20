@@ -276,7 +276,7 @@ export async function seedUsers(
   const allSuperAdmin = isSeedAllSuperAdmin();
   const demoPassword = await bcrypt.hash('password123', 12);
   const legacySuperAdminPassword =
-    process.env.SUPER_ADMIN_INITIAL_PASSWORD?.trim() || 'NA-Staffing-SuperAdmin-2025!';
+    process.env.SUPER_ADMIN_INITIAL_PASSWORD?.trim() || 'Wudox-SuperAdmin-2025!';
   const legacySuperAdminHash = await bcrypt.hash(legacySuperAdminPassword, 12);
 
   const passwordFor = (def: SeedUserDef): string => {

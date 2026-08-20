@@ -17,9 +17,12 @@ import {
 const ACTIVITY_LEADER_KEY = 'activity_leader';
 
 const ZUSTAND_PERSIST_KEYS = [
+  // Legacy keys from removed features, kept so logout purges stale data
+  // still persisted in existing browsers. 'document-templates-storage' is
+  // the only key with a live producer (documentStore.ts).
   'job-store',
   'document-templates-storage',
-  'calculator-quotes-storage',
+  'calculator-quotes-storage', // calculators feature removed 2026-08
   'employee-storage',
 ] as const;
 

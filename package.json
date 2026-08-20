@@ -1,7 +1,7 @@
 {
-  "name": "na-staffing-crm",
+  "name": "wudox-crm",
   "private": true,
-  "description": "NA Staffing CRM — frontend (React/Vite) and backend (Node/Express/Prisma)",
+  "description": "Wudox CRM — frontend (React/Vite) and backend (Node/Express/Prisma)",
   "scripts": {
     "dev": "npm run dev --prefix frontend",
     "dev:frontend": "npm run dev --prefix frontend",

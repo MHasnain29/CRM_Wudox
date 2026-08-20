@@ -49,6 +49,7 @@ import { canAccessMultipleAgencies } from '../services/accessContext';
 import { renderReviewPdf } from '../services/reviewPdf';
 import { generateProposalPreviewPdf } from '../services/proposalPreviewPdf';
 import { proposalReviewerIds } from '../services/proposalAccess';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 /** LIST templates: Documents page uses proposals:*; send/create often leads:write. */
 const TEMPLATE_LIST_PERMS: Permission[] = [
@@ -283,7 +284,7 @@ async function handleDocumentStateChanged(
               toEmail: contact.email,
               contactName: contact.name,
               clientCompanyName,
-              senderName: agency?.name ?? 'NA Staffing CRM',
+              senderName: agency?.name ?? DEFAULT_BRAND_NAME,
               agency,
               signedPdfBuffer: pdfBuffer,
               signedPdfFilename,
@@ -782,7 +783,7 @@ pandaDocRouter.post(
         (pandaSendAgency?.name || '').trim() ||
         [sender?.firstName, sender?.lastName].filter(Boolean).join(' ') ||
         sender?.email ||
-        'NA Staffing CRM';
+        DEFAULT_BRAND_NAME;
       const pandaDocUrl = `https://app.pandadoc.com/a/#/documents/${doc.id}`;
       const body = `<p>An agreement was sent to <strong>${recipientName}</strong> (${recipientEmail}).</p>
 <p>Recipient role: ${recipientRole}</p>

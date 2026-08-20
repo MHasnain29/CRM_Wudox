@@ -2245,7 +2245,7 @@ export default function Settings() {
                           <Label htmlFor="agency-name">Name</Label>
                           <Input
                             id="agency-name"
-                            placeholder="e.g. NA Staffing Toronto"
+                            placeholder="e.g. Wudox Toronto"
                             value={agencyName}
                             onChange={(e) => setAgencyName(e.target.value)}
                           />

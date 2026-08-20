@@ -41,7 +41,7 @@ const SAMPLE = {
   taskTitle: 'Follow up with client',
   ownerName: 'John Doe',
   clientName: 'Acme Corp',
-  agencyName: 'NA Staffing',
+  agencyName: 'Wudox',
   dueDate: 'Jun 15, 2026',
   dueTime: '2:00 PM',
   reason: 'Missing documentation',

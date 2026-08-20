@@ -74,6 +74,7 @@ import noticesRouter from './routes/notices';
 import { attendanceRouter } from './routes/attendance';
 import { hubstaffRouter } from './routes/hubstaff';
 import { startHubstaffSync, stopHubstaffSync } from './jobs/hubstaffSyncJob';
+import { DEFAULT_BRAND_NAME } from './config/branding';
 
 const app = express();
 
@@ -225,7 +226,7 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 app.get(`${env.API_PREFIX}/${env.API_VERSION}`, (_req: Request, res: Response) => {
   res.json({
-    message: 'NA Staffing CRM API',
+    message: `${DEFAULT_BRAND_NAME} API`,
     version: env.API_VERSION,
     status: 'running',
   });

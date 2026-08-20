@@ -13,7 +13,7 @@ CRM for [Wudox](https://wudox.ca/): **backend** (Node/Express/Prisma/PostgreSQL)
 **Prerequisites:** Node.js & npm (e.g. [nvm](https://github.com/nvm-sh/nvm)), Docker (Postgres/Redis).
 
 ```sh
-# Start isolated Docker DB + Redis (host ports 5433 / 6380 — does not clash with NA Staffing on 5432 / 6379)
+# Start isolated Docker DB + Redis (host ports 5433 / 6380 — does not clash with Wudox on 5432 / 6379)
 cd backend && docker compose up -d && cd ..
 
 # Install dependencies (root + frontend + backend)
@@ -32,7 +32,7 @@ cd backend && npm install && npm run dev
 
 From repo root you can also run `npm run dev` to start the frontend only.
 
-**Login:** `hassan@wudox.com` / `NA-Staffing-SuperAdmin-2025!` or any demo user (`*@wudox.ca`) / `password123` (see `backend/SETUP.md`).
+**Login:** `hassan@wudox.com` / `Wudox-SuperAdmin-2025!` or any demo user (`*@wudox.ca`) / `password123` (see `backend/SETUP.md`).
 
 **Reset all DB data:** `npm run db:reset` (from repo root).
 

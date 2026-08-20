@@ -8,6 +8,7 @@ import { resolveOmSendingEmail } from './omAgencyEmail';
 import { isGlobalSendAsUser } from './globalSendAsEligibility';
 import { getSendGridAuthenticatedDomains } from './sendgridAuthenticatedDomains';
 import { SenderDomainVerificationUnavailableError } from './senderDomainErrors';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 function isSendGridConfigured(): boolean {
   return Boolean(env.SENDGRID_API_KEY);
@@ -66,7 +67,7 @@ export interface AgencyBranding {
   emailTagline?: string | null;
   // Per-agency email sending identity (resolved with fallback chain — never undefined after fetch)
   emailFromAddress: string;          // DB ?? env.EMAIL_FROM ?? ''
-  emailFromName: string;             // DB ?? env.EMAIL_FROM_NAME ?? 'NA Staffing CRM'
+  emailFromName: string;             // DB ?? env.EMAIL_FROM_NAME ?? DEFAULT_BRAND_NAME
   emailSendAsDomain: string | null;  // DB ?? first of SEND_AS_ALLOWED_DOMAINS ?? null
   emailInboundDomain: string | null; // DB ?? env.EMAIL_INBOUND_DOMAIN ?? null
   emailInboundLocalpart: string | null; // DB ?? env.EMAIL_INBOUND_LOCALPART ?? null
@@ -114,7 +115,7 @@ export async function getAgencyBranding(subCompanyId: string | null | undefined)
     emailSignatureTemplate: sc.emailSignatureTemplate ?? null,
     emailTagline: sc.emailTagline ?? null,
     emailFromAddress: sc.emailFromAddress ?? env.EMAIL_FROM ?? '',
-    emailFromName: sc.emailFromName ?? env.EMAIL_FROM_NAME ?? 'NA Staffing CRM',
+    emailFromName: sc.emailFromName ?? env.EMAIL_FROM_NAME ?? DEFAULT_BRAND_NAME,
     emailSendAsDomain: sc.emailSendAsDomain
       ?? (env.SEND_AS_ALLOWED_DOMAINS?.split(',')[0]?.trim() || null),
     emailInboundDomain: sc.emailInboundDomain ?? env.EMAIL_INBOUND_DOMAIN ?? null,
@@ -129,7 +130,7 @@ function minimalBranding(name: string): AgencyBranding {
   return {
     name,
     emailFromAddress: env.EMAIL_FROM ?? '',
-    emailFromName: env.EMAIL_FROM_NAME ?? 'NA Staffing CRM',
+    emailFromName: env.EMAIL_FROM_NAME ?? DEFAULT_BRAND_NAME,
     emailSendAsDomain: env.SEND_AS_ALLOWED_DOMAINS?.split(',')[0]?.trim() || null,
     emailInboundDomain: env.EMAIL_INBOUND_DOMAIN ?? null,
     emailInboundLocalpart: env.EMAIL_INBOUND_LOCALPART ?? null,
@@ -159,7 +160,7 @@ export function buildCrmReplyToAddress(
 function agencyFrom(agency?: AgencyBranding | null): { email: string; name: string } {
   return {
     email: agency?.emailFromAddress || env.EMAIL_FROM || '',
-    name: agency?.emailFromName || agency?.name || 'NA Staffing CRM',
+    name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME,
   };
 }
 
@@ -227,7 +228,7 @@ export async function resolveOutboundUserSender(
 
   const systemSender: SenderIdentity = {
     email: agency?.emailFromAddress || '',
-    name: agency?.emailFromName || agency?.name || 'NA Staffing CRM',
+    name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME,
   };
 
   if (applyOm) {
@@ -541,7 +542,7 @@ function buildEmail(opts: {
   agency?: AgencyBranding;
 }): string {
   const { headerColor, headerIcon, headerTitle, headerSubtitle, body, agency } = opts;
-  const brandName = agency?.name ?? 'NA Staffing CRM';
+  const brandName = agency?.name ?? DEFAULT_BRAND_NAME;
   const safeAgencyName = escapeHtml(brandName);
 
   // Agency logo removed from all outbound emails — always use the emoji icon in the header
@@ -629,7 +630,7 @@ export async function sendPasswordResetEmail(
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(firstName)}</strong>,</p>
@@ -676,7 +677,7 @@ export async function sendWelcomeWithPassword(
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(firstName)}</strong>,</p>
@@ -818,7 +819,7 @@ export async function sendBugReportEmail(options: {
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
   const title = bugTitle ?? 'Bug report';
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">A new bug has been reported and requires your review.</p>
@@ -879,7 +880,7 @@ export async function sendLeadRequestedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const when = requestedAt ? formatDateForEmail(requestedAt) : undefined;
 
   const requestBlock = `<p style="margin:0">
@@ -974,7 +975,7 @@ export async function sendLeadAssignedEmail(options: {
   }
 
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const title = lostLeadReassignment ? 'Lost lead reassigned to you' : 'Lead assigned to you';
   const subtitle = lostLeadReassignment
     ? 'A new open lead was created from a closed-lost record — details below'
@@ -1061,7 +1062,7 @@ export async function sendLeadReassignmentRequestedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const when = requestedAt ? formatDateForEmail(requestedAt) : undefined;
 
   const detailsBlock = `<p style="margin:0">
@@ -1131,7 +1132,7 @@ export async function sendLeadReassignmentApprovedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const detailsBlock = `<p style="margin:0">
     <strong>Client:</strong> ${escapeHtml(clientName)}<br>
@@ -1196,7 +1197,7 @@ export async function sendLeadReassignmentRejectedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const detailsBlock = `<p style="margin:0">
     <strong>Client:</strong> ${escapeHtml(clientName)}<br>
@@ -1279,7 +1280,7 @@ export async function sendClientCreatedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const safeToName = toName.trim() || toEmail;
 
@@ -1362,7 +1363,7 @@ export async function sendLeadRequestApprovedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(toName)}</strong>,</p>
@@ -1416,7 +1417,7 @@ export async function sendLeadRequestRejectedEmail(options: {
     return;
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(toName)}</strong>,</p>
@@ -1469,7 +1470,7 @@ export async function sendBugResolvedEmail(options: {
   }
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
   const title = bugTitle ?? 'Bug report';
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(toName)}</strong>,</p>
@@ -1519,7 +1520,7 @@ function buildSettingsRequestHtml(opts: {
   agency?: AgencyBranding;
 }): string {
   const { headerColor, headerIcon, headerTitle, type, itemName, requesterName, agencyName, settingsUrl, agency } = opts;
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const body = `
     <p style="margin:0 0 14px">Hi <strong>Admin</strong>,</p>
     <p style="margin:0 0 14px">A team member has requested to add a new ${type} to the platform. Please review it in Settings.</p>
@@ -1546,7 +1547,7 @@ function buildSettingsApprovedHtml(opts: {
   agency?: AgencyBranding;
 }): string {
   const { toName, type, itemName, settingsUrl, agency } = opts;
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(toName)}</strong>,</p>
     <p style="margin:0 0 14px">Your ${type} request has been reviewed and approved!</p>
@@ -1576,7 +1577,7 @@ function buildSettingsRejectedHtml(opts: {
   agency?: AgencyBranding;
 }): string {
   const { toName, type, itemName, settingsUrl, agency } = opts;
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(toName)}</strong>,</p>
     <p style="margin:0 0 14px">Your request to add a new ${type} was reviewed and not approved at this time.</p>
@@ -1613,7 +1614,7 @@ export async function sendProposalSubmittedEmail(opts: {
 }): Promise<void> {
   if (!isSendGridConfigured()) return;
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = opts.agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = opts.agency?.name ?? DEFAULT_BRAND_NAME;
 
   const defaultFilesHtml = opts.defaultFiles && opts.defaultFiles.length > 0
     ? `<table cellpadding="0" cellspacing="0" width="100%" style="margin:16px 0">
@@ -1671,7 +1672,7 @@ export async function sendProposalApprovedEmail(opts: {
 }): Promise<void> {
   if (!isSendGridConfigured()) return;
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = opts.agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = opts.agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(opts.ownerName)}</strong>,</p>
@@ -1714,7 +1715,7 @@ export async function sendProposalRejectedEmail(opts: {
 }): Promise<void> {
   if (!isSendGridConfigured()) return;
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = opts.agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = opts.agency?.name ?? DEFAULT_BRAND_NAME;
 
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(opts.ownerName)}</strong>,</p>
@@ -1800,7 +1801,7 @@ export async function buildClientProposalEmailHtml(
   const sig = await resolveSenderSignatureBlock(
     d.fromUserId,
     d.senderName,
-    d.agency?.name ?? 'NA Staffing CRM',
+    d.agency?.name ?? DEFAULT_BRAND_NAME,
     d.agency?.emailSignatureTemplate,
     {
       email: d.fromEmail ?? undefined,
@@ -1929,7 +1930,7 @@ export async function sendSignedDocumentConfirmationEmail(
   const confirmedSig = await resolveSenderSignatureBlock(
     opts.fromUserId,
     senderName,
-    agency?.name ?? 'NA Staffing CRM',
+    agency?.name ?? DEFAULT_BRAND_NAME,
     agency?.emailSignatureTemplate,
     {
       email: sendFrom.email,
@@ -1998,7 +1999,7 @@ export async function sendSignedDocumentConfirmationEmail(
     '',
     `If you have any questions, please don't hesitate to reach out.`,
     '',
-    `— ${agency?.name ?? 'NA Staffing CRM'}`,
+    `— ${agency?.name ?? DEFAULT_BRAND_NAME}`,
   ].join('\n');
 
   await sendClientEmail({
@@ -2282,7 +2283,7 @@ function buildIcsInvite(opts: {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//NA Staffing CRM//EN',
+    `PRODID:-//${DEFAULT_BRAND_NAME}//EN`,
     'CALSCALE:GREGORIAN',
     'METHOD:REQUEST',
     'BEGIN:VEVENT',
@@ -2350,7 +2351,7 @@ export async function sendMeetingScheduledEmail(opts: {
   }
   if (!sendFrom.email) return false;
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
 
   const meetingSig = await resolveSenderSignatureBlock(
     opts.fromUserId,
@@ -2508,7 +2509,7 @@ export async function sendMeetingScheduledEmail(opts: {
       );
       mailPayload.from = {
         email: fallbackFrom,
-        name: env.EMAIL_FROM_NAME || sendFrom.name || 'NA Staffing CRM',
+        name: env.EMAIL_FROM_NAME || sendFrom.name || DEFAULT_BRAND_NAME,
       };
       await sgMail.send(mailPayload);
       return true;
@@ -2671,7 +2672,7 @@ export async function sendReviewEmailToClient(opts: {
       ? 'temporary-staffing-agreement-review.pdf'
       : 'agreement-review.pdf';
 
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const displayName = contactName?.trim() || contactEmail;
 
   const sig = await resolveSenderSignatureBlock(
@@ -2864,7 +2865,7 @@ export async function sendOffboardingReceivedEmail(
       '#1e3a5f',
     )}
     ${tplDivider()}
-    ${tplSig(agency?.name ?? 'NA Staffing CRM', 'Automated · Please do not reply directly')}
+    ${tplSig(agency?.name ?? DEFAULT_BRAND_NAME, 'Automated · Please do not reply directly')}
   `;
 
   sgMail.setApiKey(env.SENDGRID_API_KEY!);
@@ -2970,7 +2971,7 @@ export async function sendEmployeeAssignmentDetailsEmail(options: {
     );
   }
 
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const body = `
     <p style="margin:0 0 14px">Hi,</p>
     <p style="margin:0 0 14px">You have been scheduled for the new assignment. Please review the details below carefully before reporting to work.</p>
@@ -3034,7 +3035,7 @@ export async function sendEmployeeTrainingMessageEmail(options: {
     return null;
   }
 
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const subject = `Training: ${clientName}`;
   const body = `
     <p style="margin:0 0 14px">Hi <strong>${escapeHtml(candidateName)}</strong>,</p>
@@ -3108,7 +3109,7 @@ export async function sendEmployeeStandaloneTrainingEmail(options: {
   }
   const sendFrom = toSendGridFrom(rawFrom);
 
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const label = title?.trim() || 'Training link';
   const subject = title?.trim() ? `Training: ${title.trim()}` : 'Your training link';
   const safeUrl = escapeHtml(url);
@@ -3210,7 +3211,7 @@ export async function sendEmployeeDefaultTrainingsEmail(options: {
   }
   const sendFrom = toSendGridFrom(rawFrom);
 
-  const agencyLabel = agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = agency?.name ?? DEFAULT_BRAND_NAME;
   const subject = 'Your required training courses';
   const cards = trainings
     .map((t) => {

@@ -8,6 +8,7 @@ import { PandaDocError } from './pandadoc/types';
 import { uploadToR2 } from './r2Storage';
 import { getAgencyBranding } from './email';
 import { recordOutboundSentEmail } from './recordOutboundSentEmail';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 type EmployeeTokenSource = {
   firstName: string;
@@ -398,7 +399,7 @@ export async function sendEmployeeOnboardingAgreement(params: {
     (agency?.name || '').trim() ||
     [actor?.firstName, actor?.lastName].filter(Boolean).join(' ') ||
     actor?.email ||
-    'NA Staffing CRM';
+    DEFAULT_BRAND_NAME;
   const pandaDocUrl = `https://app.pandadoc.com/a/#/documents/${doc.id}`;
   const sentBody = `<p>${pandaMessage.replace(/\n/g, '<br/>')}</p>
 <p style="margin-top:16px">An onboarding agreement was emailed to <strong>${fullName}</strong> (${emp.email.trim()}) for e-signature.</p>

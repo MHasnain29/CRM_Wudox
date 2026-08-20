@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store';
 import { fetchSubCompanies, fetchUnreadMessagesCount, fetchNotificationUnreadCount } from '@/lib/api';
 import { onMessageNew, onConversationRead, onTaskAssigned, onTaskRefresh, onProposalRefresh, onCallRefresh, onMeetingRefresh, onFollowUpRefresh, onLeadRefresh } from '@/lib/socket';
 import { showTaskAssignedToast } from '@/lib/taskToast';
+import { TOKEN_KEY, SELECTED_AGENCY_KEY } from '@/lib/sessionKeys';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -47,7 +48,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
         setChecking(false);
         return;
       }
-      const hasToken = !!localStorage.getItem('na_staffing_token');
+      const hasToken = !!localStorage.getItem(TOKEN_KEY);
       if (!hasToken) {
         setChecking(false);
         return;
@@ -76,10 +77,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
           const authUser = useAuthStore.getState().user;
           const isOrgWideRole = isAgencyIndependentRole(authUser?.role);
           if (isOrgWideRole) {
-            localStorage.removeItem('na_staffing_selected_agency_id');
+            localStorage.removeItem(SELECTED_AGENCY_KEY);
           } else {
             const current = useStore.getState().currentSubCompany;
-            const storedId = typeof localStorage !== 'undefined' ? localStorage.getItem('na_staffing_selected_agency_id') : null;
+            const storedId = typeof localStorage !== 'undefined' ? localStorage.getItem(SELECTED_AGENCY_KEY) : null;
             const match = storedId ? subs.find((s) => s.id === storedId) : null;
             if (match) {
               setCurrentSubCompany(match);
@@ -171,7 +172,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     location.pathname === '/login' ||
     location.pathname === '/forgot-password' ||
     location.pathname === '/reset-password';
-  const hasToken = !!localStorage.getItem('na_staffing_token');
+  const hasToken = !!localStorage.getItem(TOKEN_KEY);
 
   if (isPublicAuthPage && hasToken && location.pathname === '/login') {
     return <Navigate to="/" replace />;

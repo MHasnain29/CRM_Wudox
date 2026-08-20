@@ -10,6 +10,7 @@ import {
   type AgencyBranding,
 } from './email';
 import { isSenderDomainError } from './senderDomainErrors';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 export type TrainingOutboundSender = {
   from: { email: string; name: string };
@@ -30,7 +31,7 @@ export async function resolveTrainingOutboundSender(params: {
 
   let agency = agencyFallback;
   let fromEmail = '';
-  let fromName = agencyFallback?.emailFromName || agencyFallback?.name || 'NA Staffing CRM';
+  let fromName = agencyFallback?.emailFromName || agencyFallback?.name || DEFAULT_BRAND_NAME;
   let usedUserFrom = false;
 
   try {

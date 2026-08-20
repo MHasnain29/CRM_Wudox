@@ -19,6 +19,7 @@ import {
   resolveTrainingOutboundSender,
 } from './trainingOutboundSender';
 import { env } from '../config/env';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 /** Prefer recruiter From; always fall back to agency / EMAIL_FROM so placement mail still sends. */
 async function resolveAssignmentOutbound(params: {
@@ -64,7 +65,7 @@ async function resolveAssignmentOutbound(params: {
   return {
     from: {
       email,
-      name: agency?.emailFromName || agency?.name || 'NA Staffing CRM',
+      name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME,
     },
     agency,
     sentByName,

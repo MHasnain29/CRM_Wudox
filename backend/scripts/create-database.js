@@ -1,5 +1,5 @@
 /**
- * Creates the NA Staffing CRM database from DATABASE_URL if it doesn't exist (e.g. na_staffing_crm).
+ * Creates the Wudox CRM database from DATABASE_URL if it doesn't exist (e.g. wudox_crm).
  * Connects to the default "postgres" database to run CREATE DATABASE.
  * Run: node scripts/create-database.js
  */

@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchUsers, fetchTeamMembers, type ApiUser } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { useCanAccessMultipleAgencies, useCanViewTeamScope } from '@/lib/access';
+import { USER_FILTER_PREFIX } from '@/lib/sessionKeys';
 
 function getStorageKey(agencyId: string | undefined): string {
-  return `na_user_filter_${agencyId ?? 'none'}`;
+  return `${USER_FILTER_PREFIX}${agencyId ?? 'none'}`;
 }
 
 /**

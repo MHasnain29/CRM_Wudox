@@ -1,4 +1,4 @@
-// Professional email starter templates for NA Staffing CRM
+// Professional email starter templates for Wudox CRM
 // All templates use inline CSS + table-based layout for email client compatibility
 
 export interface StarterTemplate {
@@ -74,11 +74,11 @@ ${footer()}
     category: 'follow-up',
     subject: 'Following up on our conversation — {{company_name}}',
     html: wrap(`
-${header('NA Staffing', 'Talent Solutions')}
+${header('Wudox', 'Talent Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I wanted to follow up on our recent conversation about staffing solutions for <strong>{{company_name}}</strong>.</p>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">At NA Staffing, we specialize in connecting businesses with top-tier talent. Based on our discussion, I believe we can help you with:</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">At Wudox, we specialize in connecting businesses with top-tier talent. Based on our discussion, I believe we can help you with:</p>
   <ul style="margin:0 0 16px;padding-left:20px;color:#4a4a4a;font-size:14px;line-height:1.9;">
     <li>Temporary and contract staffing</li>
     <li>Direct hire placements</li>
@@ -100,10 +100,10 @@ ${footer()}
     category: 'outreach',
     subject: 'Staffing solutions for {{company_name}}',
     html: wrap(`
-${heroHeader('NA Staffing', 'Your Trusted Staffing Partner')}
+${heroHeader('Wudox', 'Your Trusted Staffing Partner')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hello {{contact_name}},</h2>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">My name is {{sender_name}} from <strong>NA Staffing</strong>. I'm reaching out because we help companies like <strong>{{company_name}}</strong> find exceptional talent quickly and efficiently.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">My name is {{sender_name}} from <strong>Wudox</strong>. I'm reaching out because we help companies like <strong>{{company_name}}</strong> find exceptional talent quickly and efficiently.</p>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr>
     <td width="33%" style="padding:12px;text-align:center;background:#eff6ff;border-radius:8px 0 0 8px;">
       <p style="margin:0;font-size:24px;font-weight:700;color:#1e40af;">500+</p>
@@ -134,7 +134,7 @@ ${footer()}
     category: 'meeting',
     subject: 'Meeting confirmed — {{contact_name}}',
     html: wrap(`
-${header('NA Staffing')}
+${header('Wudox')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 8px;color:#1a1a1a;font-size:18px;">Meeting Confirmed</h2>
   <p style="margin:0 0 24px;color:#71717a;font-size:13px;">Hi {{contact_name}}, your meeting has been scheduled.</p>
@@ -149,7 +149,7 @@ ${header('NA Staffing')}
     </td></tr>
     <tr><td style="padding:20px 24px;">
       <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Attendees</p>
-      <p style="margin:0;font-size:14px;color:#1a1a1a;">{{sender_name}} (NA Staffing) &amp; {{contact_name}} ({{company_name}})</p>
+      <p style="margin:0;font-size:14px;color:#1a1a1a;">{{sender_name}} (Wudox) &amp; {{contact_name}} ({{company_name}})</p>
     </td></tr>
   </table>
   <p style="margin:24px 0 0;color:#4a4a4a;font-size:14px;line-height:1.7;">If you need to reschedule, please let me know at least 24 hours in advance.</p>
@@ -201,10 +201,10 @@ ${footer('{{agency_footer}} · This proposal is confidential and intended solely
     name: 'Newsletter',
     description: 'Multi-section newsletter with hero and 3-column grid',
     category: 'marketing',
-    subject: 'Monthly Workforce Insights — NA Staffing',
+    subject: 'Monthly Workforce Insights — Wudox',
     html: wrap(`
 <tr><td style="background:#1e40af;padding:20px 32px;text-align:center;">
-  <h1 style="margin:0;color:#fff;font-size:20px;">NA Staffing Newsletter</h1>
+  <h1 style="margin:0;color:#fff;font-size:20px;">Wudox Newsletter</h1>
 </td></tr>
 <tr><td style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:40px 32px;text-align:center;">
   <h2 style="margin:0;color:#fff;font-size:22px;font-weight:700;">Monthly Workforce Insights</h2>
@@ -237,7 +237,7 @@ ${footer('{{agency_footer}} · This proposal is confidential and intended solely
       </td>
     </tr>
   </table>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">Hi {{contact_name}}, here's your monthly dose of workforce insights from NA Staffing. We've compiled the latest trends and tips to help {{company_name}} stay ahead.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">Hi {{contact_name}}, here's your monthly dose of workforce insights from Wudox. We've compiled the latest trends and tips to help {{company_name}} stay ahead.</p>
   <div style="text-align:center;">${cta('Read More')}</div>
 </td></tr>
 <tr><td style="background:#0f172a;padding:24px 32px;text-align:center;">
@@ -255,7 +255,7 @@ ${footer('{{agency_footer}} · This proposal is confidential and intended solely
     category: 'follow-up',
     subject: 'Thank you for your time — {{sender_name}}',
     html: wrap(`
-${header('NA Staffing', 'Talent Solutions')}
+${header('Wudox', 'Talent Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Thank you, {{contact_name}}!</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I truly appreciate you taking the time to meet with me today. It was great learning more about <strong>{{company_name}}</strong> and your current staffing needs.</p>
@@ -283,7 +283,7 @@ ${footer()}
     category: 'meeting',
     subject: 'Reminder: Our meeting is tomorrow — {{sender_name}}',
     html: wrap(`
-${header('NA Staffing')}
+${header('Wudox')}
 <tr><td style="padding:32px;">
   <div style="text-align:center;margin-bottom:24px;">
     <div style="display:inline-block;background:#fef3c7;border-radius:50%;width:56px;height:56px;line-height:56px;font-size:28px;">⏰</div>
@@ -310,9 +310,9 @@ ${footer()}
     name: 'Candidate Introduction',
     description: 'Introduce a candidate to a client with profile summary',
     category: 'notification',
-    subject: 'Candidate profile for {{company_name}} — NA Staffing',
+    subject: 'Candidate profile for {{company_name}} — Wudox',
     html: wrap(`
-${header('NA Staffing', 'Candidate Presentation')}
+${header('Wudox', 'Candidate Presentation')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">I'm excited to present a strong candidate for the open position at <strong>{{company_name}}</strong>.</p>
@@ -358,9 +358,9 @@ ${footer()}
     name: 'Welcome / Onboarding',
     description: 'Welcome email for new clients with next steps',
     category: 'outreach',
-    subject: 'Welcome to NA Staffing — Let\'s get started!',
+    subject: 'Welcome to Wudox — Let\'s get started!',
     html: wrap(`
-${heroHeader('Welcome to NA Staffing!', 'We\'re excited to partner with you')}
+${heroHeader('Welcome to Wudox!', 'We\'re excited to partner with you')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">Welcome aboard! We're thrilled to have <strong>{{company_name}}</strong> as a new client. Here's what happens next:</p>
@@ -401,7 +401,7 @@ ${footer()}
     category: 'follow-up',
     subject: 'Checking in — How\'s everything going, {{contact_name}}?',
     html: wrap(`
-${header('NA Staffing', 'Talent Solutions')}
+${header('Wudox', 'Talent Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I hope everything is going well at <strong>{{company_name}}</strong>. I wanted to check in and see how things are going with your current team members we placed.</p>
@@ -429,7 +429,7 @@ ${footer()}
     category: 'notification',
     subject: 'Payment reminder — Invoice #[INV-NUMBER]',
     html: wrap(`
-${header('NA Staffing', 'Accounts Department')}
+${header('Wudox', 'Accounts Department')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Payment Reminder</h2>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">Hi {{contact_name}}, this is a friendly reminder regarding the following outstanding invoice for <strong>{{company_name}}</strong>.</p>
@@ -447,7 +447,7 @@ ${header('NA Staffing', 'Accounts Department')}
   </table>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">If payment has already been sent, please disregard this reminder. If you have any questions about this invoice, don't hesitate to reach out.</p>
   ${cta('View Invoice')}
-  <p style="margin:24px 0 0;color:#4a4a4a;font-size:14px;">Thank you,<br><strong>NA Staffing Accounts</strong></p>
+  <p style="margin:24px 0 0;color:#4a4a4a;font-size:14px;">Thank you,<br><strong>Wudox Accounts</strong></p>
 </td></tr>
 ${footer()}
 `),
@@ -459,7 +459,7 @@ ${footer()}
     name: 'Seasonal Hiring',
     description: 'Promote seasonal staffing solutions',
     category: 'marketing',
-    subject: 'Prepare for peak season — Staffing solutions from NA Staffing',
+    subject: 'Prepare for peak season — Staffing solutions from Wudox',
     html: wrap(`
 <tr><td style="background:linear-gradient(135deg,#ea580c,#f97316);padding:40px 32px;text-align:center;">
   <p style="margin:0 0 4px;font-size:11px;color:#fed7aa;text-transform:uppercase;letter-spacing:2px;">Seasonal Staffing</p>
@@ -503,12 +503,12 @@ ${footer()}
     category: 'outreach',
     subject: 'We miss working with {{company_name}}!',
     html: wrap(`
-${header('NA Staffing', 'Talent Solutions')}
+${header('Wudox', 'Talent Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">It's been a while since we last connected, and I wanted to reach out. A lot has changed at NA Staffing, and we'd love the chance to work with <strong>{{company_name}}</strong> again.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">It's been a while since we last connected, and I wanted to reach out. A lot has changed at Wudox, and we'd love the chance to work with <strong>{{company_name}}</strong> again.</p>
   <div style="background:#eff6ff;border-radius:8px;padding:24px;margin:0 0 24px;">
-    <p style="margin:0 0 12px;color:#1e40af;font-size:15px;font-weight:600;">What's new at NA Staffing:</p>
+    <p style="margin:0 0 12px;color:#1e40af;font-size:15px;font-weight:600;">What's new at Wudox:</p>
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="padding:6px 0;font-size:13px;color:#4a4a4a;">✅ Expanded our talent pool across new industries</td></tr>
       <tr><td style="padding:6px 0;font-size:13px;color:#4a4a4a;">✅ Faster placement times — average 48-hour turnaround</td></tr>
@@ -532,10 +532,10 @@ ${footer()}
     category: 'follow-up',
     subject: 'Know someone who needs staffing help?',
     html: wrap(`
-${header('NA Staffing', 'Talent Solutions')}
+${header('Wudox', 'Talent Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">Thank you for being a valued client of NA Staffing. We've really enjoyed working with <strong>{{company_name}}</strong> and are glad we could help build your team.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">Thank you for being a valued client of Wudox. We've really enjoyed working with <strong>{{company_name}}</strong> and are glad we could help build your team.</p>
   <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;padding:28px;margin:0 0 24px;text-align:center;">
     <p style="margin:0;font-size:32px;">🤝</p>
     <p style="margin:12px 0 4px;color:#1e40af;font-size:18px;font-weight:700;">Refer & Reward</p>
@@ -557,7 +557,7 @@ ${footer()}
     category: 'marketing',
     subject: 'We\'re hiring! {{company_name}} is looking for top talent',
     html: wrap(`
-${header('NA Staffing', 'Job Opportunity')}
+${header('Wudox', 'Job Opportunity')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">We have an exciting new opening that might be a perfect fit for someone in your network.</p>
@@ -594,7 +594,7 @@ ${footer()}
     category: 'notification',
     subject: 'Placement confirmed — {{company_name}}',
     html: wrap(`
-${header('NA Staffing', 'Placement Update')}
+${header('Wudox', 'Placement Update')}
 <tr><td style="padding:32px;">
   <div style="text-align:center;margin-bottom:24px;">
     <div style="display:inline-block;background:#f0fdf4;border-radius:50%;width:56px;height:56px;line-height:56px;font-size:28px;">✅</div>
@@ -634,10 +634,10 @@ ${footer()}
     category: 'notification',
     subject: 'Your staffing contract is up for renewal — {{company_name}}',
     html: wrap(`
-${header('NA Staffing', 'Contract Services')}
+${header('Wudox', 'Contract Services')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
-  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I'm writing to let you know that your staffing contract with NA Staffing is approaching its renewal date.</p>
+  <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">I'm writing to let you know that your staffing contract with Wudox is approaching its renewal date.</p>
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;overflow:hidden;margin:0 0 24px;">
     <tr><td style="padding:20px 24px;">
       <table width="100%" cellpadding="0" cellspacing="0">
@@ -670,12 +670,12 @@ ${footer()}
     name: 'Holiday Greeting',
     description: 'Seasonal holiday greeting to clients and contacts',
     category: 'marketing',
-    subject: 'Happy Holidays from NA Staffing!',
+    subject: 'Happy Holidays from Wudox!',
     html: wrap(`
 <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:48px 32px;text-align:center;">
   <p style="margin:0 0 8px;font-size:36px;">🎄</p>
   <h1 style="margin:0;color:#fff;font-size:26px;font-weight:700;">Happy Holidays!</h1>
-  <p style="margin:12px 0 0;color:#94a3b8;font-size:15px;">From all of us at NA Staffing</p>
+  <p style="margin:12px 0 0;color:#94a3b8;font-size:15px;">From all of us at Wudox</p>
 </td></tr>
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Dear {{contact_name}},</h2>
@@ -684,7 +684,7 @@ ${footer()}
     <p style="margin:0;color:#1e40af;font-size:16px;font-weight:600;line-height:1.6;">Wishing you and your team a wonderful holiday season<br>and a prosperous New Year!</p>
   </div>
   <p style="margin:0 0 16px;color:#4a4a4a;font-size:14px;line-height:1.7;">We look forward to continuing to support your staffing needs in the year ahead. Our offices will be closed from [Date] to [Date] and we'll be back refreshed and ready to help.</p>
-  <p style="margin:0;color:#4a4a4a;font-size:14px;line-height:1.7;">Warm regards,<br><strong>The NA Staffing Team</strong></p>
+  <p style="margin:0;color:#4a4a4a;font-size:14px;line-height:1.7;">Warm regards,<br><strong>The Wudox Team</strong></p>
 </td></tr>
 <tr><td style="background:#0f172a;padding:24px 32px;text-align:center;">
   <p style="margin:0;color:#94a3b8;font-size:12px;">{{agency_footer}}</p>
@@ -699,12 +699,12 @@ ${footer()}
     name: 'Service Overview',
     description: 'Showcase all staffing services with icons',
     category: 'outreach',
-    subject: 'How NA Staffing can help {{company_name}}',
+    subject: 'How Wudox can help {{company_name}}',
     html: wrap(`
-${heroHeader('NA Staffing', 'Complete Staffing Solutions')}
+${heroHeader('Wudox', 'Complete Staffing Solutions')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
-  <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">I wanted to share an overview of how NA Staffing can support <strong>{{company_name}}</strong> across all your workforce needs.</p>
+  <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">I wanted to share an overview of how Wudox can support <strong>{{company_name}}</strong> across all your workforce needs.</p>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
     <tr>
       <td width="50%" style="padding:8px;vertical-align:top;">
@@ -753,9 +753,9 @@ ${footer()}
     name: 'Case Study',
     description: 'Share a success story or client testimonial',
     category: 'marketing',
-    subject: 'How we helped a company like {{company_name}} — NA Staffing',
+    subject: 'How we helped a company like {{company_name}} — Wudox',
     html: wrap(`
-${header('NA Staffing', 'Success Story')}
+${header('Wudox', 'Success Story')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
   <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">I wanted to share a recent success story that I think resonates with what <strong>{{company_name}}</strong> is going through right now.</p>
@@ -779,7 +779,7 @@ ${header('NA Staffing', 'Success Story')}
       </tr>
     </table>
     <div style="border-left:3px solid #3b82f6;padding-left:16px;margin-top:16px;">
-      <p style="margin:0;color:#4a4a4a;font-size:13px;font-style:italic;line-height:1.6;">"NA Staffing completely transformed our hiring process. They understood our culture and delivered candidates that fit perfectly."</p>
+      <p style="margin:0;color:#4a4a4a;font-size:13px;font-style:italic;line-height:1.6;">"Wudox completely transformed our hiring process. They understood our culture and delivered candidates that fit perfectly."</p>
       <p style="margin:8px 0 0;color:#64748b;font-size:12px;font-weight:600;">— [Client Name], [Title]</p>
     </div>
   </div>
@@ -797,12 +797,12 @@ ${footer()}
     name: 'Feedback Request',
     description: 'Request feedback or satisfaction survey from clients',
     category: 'follow-up',
-    subject: 'How are we doing? We\'d love your feedback — NA Staffing',
+    subject: 'How are we doing? We\'d love your feedback — Wudox',
     html: wrap(`
-${header('NA Staffing', 'Your Opinion Matters')}
+${header('Wudox', 'Your Opinion Matters')}
 <tr><td style="padding:32px;">
   <h2 style="margin:0 0 16px;color:#1a1a1a;font-size:18px;">Hi {{contact_name}},</h2>
-  <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">At NA Staffing, we're always striving to improve. We'd love to hear about your experience working with us at <strong>{{company_name}}</strong>.</p>
+  <p style="margin:0 0 24px;color:#4a4a4a;font-size:14px;line-height:1.7;">At Wudox, we're always striving to improve. We'd love to hear about your experience working with us at <strong>{{company_name}}</strong>.</p>
   <div style="text-align:center;margin:0 0 24px;">
     <p style="margin:0 0 12px;color:#1a1a1a;font-size:14px;font-weight:600;">How would you rate your experience?</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
@@ -849,9 +849,9 @@ export const placeholders = [
   { key: '{{sender_name}}', label: 'Sender Name', sample: 'Sarah Johnson' },
   { key: '{{sender_title}}', label: 'Sender Title', sample: 'Senior Staffing Consultant' },
   { key: '{{sender_phone}}', label: 'Sender Phone', sample: '(555) 123-4567' },
-  { key: '{{sender_email}}', label: 'Sender Email', sample: 'sarah@nastaffing.com' },
+  { key: '{{sender_email}}', label: 'Sender Email', sample: 'sarah@wudox.com' },
   { key: '{{date}}', label: 'Date', sample: 'March 28, 2026' },
-  { key: '{{agency_name}}', label: 'Agency Name', sample: 'NA Staffing' },
+  { key: '{{agency_name}}', label: 'Agency Name', sample: 'Wudox' },
   { key: '{{agency_footer}}', label: 'Agency Footer', sample: 'Confidential' },
 ] as const;
 

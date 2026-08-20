@@ -23,7 +23,7 @@ Per-agency phone numbers and caller IDs are configured in **Settings → Phone S
 Voice tokens must be signed with an **API Key**, not the main Auth Token.
 
 1. In Console go to **Account → API keys & tokens** (or [API Keys](https://console.twilio.com/us1/account/keys-credentials/api-keys)).
-2. Create API Key, name it e.g. `NA Staffing Voice`.
+2. Create API Key, name it e.g. `Wudox Voice`.
 3. Copy the **SID** (starts with `SK...`) and **Secret**. The secret is shown only once; store it in `.env` as `TWILIO_API_KEY_SECRET`.
 
 ---
@@ -34,7 +34,7 @@ When the browser places a call, Twilio uses a **TwiML App** to know what to do (
 
 1. In Console go to **Develop → TwiML Apps** (or [TwiML Apps](https://console.twilio.com/us1/develop/voice/api/twiml-apps)).
 2. Create a new TwiML App:
-   - **Friendly Name:** e.g. `NA Staffing CRM Voice`
+   - **Friendly Name:** e.g. `Wudox CRM Voice`
    - **Voice Request URL:** Your backend URL that returns TwiML, e.g.  
      `https://your-api.com/api/v1/voice/twiml`  
      For development you can use a Twilio-hosted TwiML bin or a tunnel (ngrok) to your app.  

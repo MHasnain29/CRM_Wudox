@@ -1,6 +1,6 @@
-# NA Staffing CRM Backend
+# Wudox CRM Backend
 
-Backend API for NA Staffing CRM - A comprehensive staffing agency management system built with Node.js, Express, PostgreSQL, and Prisma.
+Backend API for Wudox CRM - A comprehensive staffing agency management system built with Node.js, Express, PostgreSQL, and Prisma.
 
 ## 🚀 Quick Start
 
@@ -76,13 +76,13 @@ backend/
 1. **Create a new database:**
    - Open pgAdmin 4
    - Right-click on "Databases" → "Create" → "Database"
-   - Name: `na_staffing_crm`
+   - Name: `wudox_crm`
    - Owner: `postgres` (or your user)
    - Click "Save"
 
 2. **Update DATABASE_URL in .env:**
    ```
-   DATABASE_URL=postgresql://postgres:your_password@localhost:5432/na_staffing_crm?schema=public
+   DATABASE_URL=postgresql://postgres:your_password@localhost:5432/wudox_crm?schema=public
    ```
 
 3. **Run migrations:**
@@ -98,9 +98,9 @@ backend/
 ### Default Credentials
 
 After seeding, you can login with:
-- **Director**: `director@nastaffing.com` / `password123`
-- **Sales Associate**: `associate1@nastaffing.com` / `password123`
-- **Manager**: `manager1@nastaffing.com` / `password123`
+- **Director**: `director@wudox.ca` / `password123`
+- **Sales Associate**: `associate1@wudox.ca` / `password123`
+- **Manager**: `manager1@wudox.ca` / `password123`
 
 ## 📝 Available Scripts
 
