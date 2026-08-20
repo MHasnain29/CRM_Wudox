@@ -20,7 +20,6 @@ import {
   Users,
   UserCircle2,
   FileCheck,
-  Calculator,
   FileText,
   Briefcase,
   Shield,
@@ -108,7 +107,6 @@ const navItems: {
   // ── Admin ──
   { to: '/users',       icon: Users,     label: 'Users',       permissions: ['users:directory'],                       section: 'Settings', color: '#6366f1' },
   { to: '/super-users', icon: Shield,    label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'], color: '#dc2626' },
-  { to: '/calculators', icon: Calculator,label: 'Calculators', permissions: ['leads:read'],                            color: '#f59e0b' },
   { to: '/bug-reports', icon: Bug,       label: 'Bug Reports', permissions: ['bug_reports:read'],                      color: '#dc2626' },
   { to: '/reports',     icon: BarChart3, label: 'Reports',     permissions: ['analytics:read'],                        color: '#0d9488' },
   { to: '/settings',    icon: Settings,  label: 'Settings',    permissions: ['settings:read'],                         color: '#64748b' },

@@ -36,7 +36,6 @@ import Users from "./pages/Users";
 import SuperUsers from "./pages/SuperUsers";
 import BugReports from "./pages/BugReports";
 import BookingPage from "./pages/BookingPage";
-import Calculators from "./pages/Calculators";
 import Documents from "./pages/Documents";
 import Employees from "./pages/Employees";
 import EmployeeForm from "./pages/EmployeeForm";
@@ -135,7 +134,6 @@ const App = () => (
                 }
               />
               <Route path="/bug-reports" element={<PermissionRoute permission="bug_reports:read"><BugReports /></PermissionRoute>} />
-              <Route path="/calculators" element={<PermissionRoute permission="leads:read"><Calculators /></PermissionRoute>} />
               <Route
                 path="/documents"
                 element={
