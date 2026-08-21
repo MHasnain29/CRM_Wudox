@@ -87,7 +87,7 @@ export function isUnselectedOwnScope(params: {
     return false;
   }
 
-  // omit / me / empty
+  // omit / me / empty → own records only
   return true;
 }
 
@@ -234,7 +234,12 @@ export function resolveOwnerIds(params: OwnerScopeParams): string[] | undefined 
     return currentUserId ? [currentUserId] : undefined;
   }
 
-  if (isElevated && selectedAgencyId === 'all') {
+  // When no specific agency is drilled into (all, deselected/me, or empty) and a
+  // hierarchy chip IS present, resolve cross-agency owner IDs instead of falling
+  // through to `return undefined` at the bottom of the elevated branch.
+  // Note: the agencyId='me'/'' + NO-chip case is already caught by isUnselectedOwnScope
+  // above and never reaches here.
+  if (isElevated && (selectedAgencyId === 'all' || selectedAgencyId === 'me' || !selectedAgencyId)) {
     return resolveAllAgenciesOwnerIds(params);
   }
 

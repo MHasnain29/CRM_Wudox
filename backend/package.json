@@ -30,6 +30,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:sync-live": "tsx scripts/sync-live.ts",
     "scripts:clear-leads": "tsx scripts/clear-leads.ts",
+    "seed:filter-test": "tsx prisma/seed-filter-test.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",
