@@ -162,6 +162,16 @@ export function MessagesUserList({
                   >
                     {conv?.lastMessage ?? user.email}
                   </p>
+                  {user.subCompany?.name ? (
+                    <p
+                      className={cn(
+                        'text-xs truncate',
+                        isSelected ? 'text-accent-foreground/60' : 'text-muted-foreground/70'
+                      )}
+                    >
+                      {user.subCompany.name}
+                    </p>
+                  ) : null}
                   {conv ? (
                     <p
                       className={cn(

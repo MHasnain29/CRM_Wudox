@@ -414,6 +414,7 @@ export type AgencyMemberRow = {
   email: string;
   role: string;
   userType?: string;
+  subCompany?: { id: string; name: string } | null;
 };
 
 /** GET /users/agency-members — all messageable agency colleagues (Messages list + New message). No users:read required. */

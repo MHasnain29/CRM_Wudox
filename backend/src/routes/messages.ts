@@ -10,6 +10,7 @@ import { authenticate } from '../middleware/auth';
 import { uploadToR2, getFromR2 } from '../services/r2Storage';
 import { env } from '../config/env';
 import { emitToUsers } from '../socket';
+import { resolveAllowedSubCompanyIds } from '../config/agencyScope';
 
 const createConversationSchema = z.object({
   participantUserId: z.string().uuid(),
@@ -40,18 +41,18 @@ function requireAgency(req: Request, res: Response): string | null {
   return subCompanyId;
 }
 
-/** Agency colleague or ops manager assigned to this agency (incl. super users on the agency). */
-async function findMessageRecipient(subCompanyId: string, participantUserId: string) {
+/** Validates a recipient is reachable by the requesting user (respects multi-agency access). */
+async function findMessageRecipient(req: Request, participantUserId: string) {
+  const allowedIds = await resolveAllowedSubCompanyIds(req.user!, req);
+  const agencyFilter = allowedIds.length > 0 ? allowedIds : ['__none__'];
   return prisma.user.findFirst({
     where: {
       id: participantUserId,
       isActive: true,
       OR: [
-        { subCompanyId },
-        {
-          role: 'operations_manager',
-          managedSubCompanies: { some: { subCompanyId } },
-        },
+        { subCompanyId: { in: agencyFilter } },
+        { role: 'operations_manager', managedSubCompanies: { some: { subCompanyId: { in: agencyFilter } } } },
+        { role: { in: ['director', 'company_director', 'super_admin'] } },
       ],
     },
     select: { id: true, firstName: true, lastName: true },
@@ -172,14 +173,14 @@ messagesRouter.post('/conversations', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Cannot start conversation with yourself' });
   }
 
-  const otherUser = await findMessageRecipient(subCompanyId, participantUserId);
+  const otherUser = await findMessageRecipient(req, participantUserId);
   if (!otherUser) {
     return res.status(400).json({ error: 'User not found or not in your agency' });
   }
 
+  // Query by participant only — covers cross-agency conversations too
   const myConvs = await prisma.conversation.findMany({
     where: {
-      subCompanyId,
       participants: { some: { userId: currentUserId } },
     },
     include: { participants: { select: { userId: true } } },
@@ -252,17 +253,14 @@ messagesRouter.get('/conversations/:id', async (req: Request, res: Response) => 
   const subCompanyId = requireAgency(req, res);
   if (!subCompanyId) return;
 
+  const userId = req.user!.sub;
   const conv = await prisma.conversation.findFirst({
-    where: { id: req.params.id, subCompanyId },
+    where: { id: req.params.id, participants: { some: { userId } } },
     include: {
       participants: { include: { user: { select: { id: true, firstName: true, lastName: true, email: true, userType: true } } } },
     },
   });
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-
-  const userId = req.user!.sub;
-  const isParticipant = conv.participants.some((p) => p.userId === userId);
-  if (!isParticipant) return res.status(403).json({ error: 'Not a participant' });
 
   const otherParticipants = conv.participants.filter((p) => p.userId !== userId);
   return res.json({
@@ -277,16 +275,12 @@ messagesRouter.get('/conversations/:id/messages', async (req: Request, res: Resp
   const subCompanyId = requireAgency(req, res);
   if (!subCompanyId) return;
 
+  const userId = req.user!.sub;
   const conv = await prisma.conversation.findFirst({
-    where: { id: req.params.id, subCompanyId },
+    where: { id: req.params.id, participants: { some: { userId } } },
     include: { participants: { select: { userId: true } } },
   });
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-
-  const userId = req.user!.sub;
-  if (!conv.participants.some((p) => p.userId === userId)) {
-    return res.status(403).json({ error: 'Not a participant' });
-  }
 
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const before = req.query.before as string | undefined;
@@ -333,16 +327,12 @@ messagesRouter.post('/conversations/:id/messages', async (req: Request, res: Res
   const subCompanyId = requireAgency(req, res);
   if (!subCompanyId) return;
 
+  const userId = req.user!.sub;
   const conv = await prisma.conversation.findFirst({
-    where: { id: req.params.id, subCompanyId },
+    where: { id: req.params.id, participants: { some: { userId } } },
     include: { participants: { select: { userId: true } } },
   });
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-
-  const userId = req.user!.sub;
-  if (!conv.participants.some((p) => p.userId === userId)) {
-    return res.status(403).json({ error: 'Not a participant' });
-  }
 
   const parsed = sendMessageSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -478,13 +468,12 @@ messagesRouter.patch('/conversations/:id/read', async (req: Request, res: Respon
   const subCompanyId = requireAgency(req, res);
   if (!subCompanyId) return;
 
+  const userId = req.user!.sub;
   const conv = await prisma.conversation.findFirst({
-    where: { id: req.params.id, subCompanyId },
+    where: { id: req.params.id, participants: { some: { userId } } },
     include: { participants: { select: { userId: true } } },
   });
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-
-  const userId = req.user!.sub;
   await prisma.conversationParticipant.updateMany({
     where: { conversationId: req.params.id, userId },
     data: { lastReadAt: new Date() },
