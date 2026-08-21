@@ -601,32 +601,40 @@ const agencyColleagueSelect = {
   lastName: true,
   role: true,
   userType: true,
+  subCompany: { select: { id: true, name: true } },
 } as const;
 
-/** Active agency users + ops managers assigned to this agency (excludes self). Matches messaging recipients. */
-async function listAgencyMessageRecipients(subCompanyId: string, currentUserId: string | null) {
-  const [agencyUsers, assignedOpsManagers] = await Promise.all([
+/** Messageable users for the requesting user — respects multi-agency access via Data Scope. */
+async function listAgencyMessageRecipients(req: Request, subCompanyId: string, currentUserId: string | null) {
+  const allowedIds = await resolveAllowedSubCompanyIds(req.user!, req);
+  const agencyFilter = allowedIds.length > 0 ? allowedIds : [subCompanyId];
+  const excludeSelf = { not: currentUserId ?? '' };
+
+  const [agencyUsers, assignedOpsManagers, globalSuperUsers] = await Promise.all([
+    // All users in every accessible agency
     prisma.user.findMany({
-      where: {
-        subCompanyId,
-        isActive: true,
-        id: { not: currentUserId ?? '' },
-      },
+      where: { subCompanyId: { in: agencyFilter }, isActive: true, id: excludeSelf },
       select: agencyColleagueSelect,
     }),
+    // Ops managers assigned to any accessible agency (they have no subCompanyId of their own)
     prisma.user.findMany({
       where: {
         isActive: true,
         role: 'operations_manager',
-        id: { not: currentUserId ?? '' },
-        managedSubCompanies: { some: { subCompanyId } },
+        id: excludeSelf,
+        managedSubCompanies: { some: { subCompanyId: { in: agencyFilter } } },
       },
+      select: agencyColleagueSelect,
+    }),
+    // Directors, company_directors, super_admins have no subCompanyId — always include globally
+    prisma.user.findMany({
+      where: { isActive: true, role: { in: ['director', 'company_director', 'super_admin'] }, id: excludeSelf },
       select: agencyColleagueSelect,
     }),
   ]);
 
   const byId = new Map<string, (typeof agencyUsers)[number]>();
-  for (const u of [...agencyUsers, ...assignedOpsManagers]) {
+  for (const u of [...agencyUsers, ...assignedOpsManagers, ...globalSuperUsers]) {
     byId.set(u.id, u);
   }
   return [...byId.values()].sort((a, b) => {
@@ -643,7 +651,7 @@ userRouter.get('/agency-members', async (req: Request, res: Response) => {
   if (!subCompanyId) {
     return res.status(403).json({ error: 'Agency context required' });
   }
-  const list = await listAgencyMessageRecipients(subCompanyId, currentUserId);
+  const list = await listAgencyMessageRecipients(req, subCompanyId, currentUserId);
   return res.json({ data: list });
 });
 
@@ -654,7 +662,7 @@ userRouter.get('/agency-share-recipients', async (req: Request, res: Response) =
   if (!subCompanyId) {
     return res.status(403).json({ error: 'Agency context required' });
   }
-  const list = await listAgencyMessageRecipients(subCompanyId, currentUserId);
+  const list = await listAgencyMessageRecipients(req, subCompanyId, currentUserId);
   return res.json({ data: list });
 });
 
