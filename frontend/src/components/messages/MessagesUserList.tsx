@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -22,6 +22,27 @@ type MessagesUserListProps = {
 
 function displayName(u: MessageableUser) {
   return `${u.firstName} ${u.lastName}`.trim() || u.email;
+}
+
+const AVATAR_COLORS = [
+  'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-cyan-600', 'bg-orange-500', 'bg-indigo-500',
+];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]!;
+}
+
+function relativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const diffMins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (diffMins < 1) return 'now';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (isToday(date)) return format(date, 'h:mm a');
+  if (isYesterday(date)) return 'Yesterday';
+  if (diffMins < 7 * 24 * 60) return format(date, 'EEE');
+  return format(date, 'MMM d');
 }
 
 function getInitials(name: string) {
@@ -121,12 +142,12 @@ export function MessagesUserList({
             >
               <div className="flex items-start gap-3">
                 <Avatar className="h-10 w-10 flex-shrink-0">
-                  <AvatarFallback className="bg-primary text-primary-foreground">
+                  <AvatarFallback className={cn('text-white font-medium', avatarColor(name))}>
                     {getInitials(name)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
                     <p
                       className={cn(
                         'font-medium text-sm truncate',
@@ -134,26 +155,27 @@ export function MessagesUserList({
                       )}
                     >
                       {name}
-                      {user.userType?.trim() ? (
-                        <span
-                          className={cn(
-                            'font-normal',
-                            isSelected ? 'text-accent-foreground/70' : 'text-muted-foreground'
-                          )}
-                        >
-                          {' '}
-                          ({user.userType.trim()})
-                        </span>
-                      ) : null}
                     </p>
-                    {isOpening ? (
-                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-muted-foreground" />
-                    ) : conv && conv.unreadCount > 0 ? (
-                      <Badge variant="destructive" className="h-5 px-1.5 text-xs flex-shrink-0">
-                        {conv.unreadCount}
-                      </Badge>
-                    ) : null}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {isOpening ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : conv && conv.unreadCount > 0 ? (
+                        <Badge variant="destructive" className="h-4.5 min-w-[18px] px-1 text-[10px] leading-none flex items-center justify-center">
+                          {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                        </Badge>
+                      ) : null}
+                      {conv && (
+                        <span className={cn('text-[11px]', isSelected ? 'text-accent-foreground/60' : 'text-muted-foreground')}>
+                          {relativeTime(conv.lastMessageTime)}
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  {user.userType?.trim() ? (
+                    <p className={cn('text-xs truncate', isSelected ? 'text-accent-foreground/70' : 'text-muted-foreground')}>
+                      {user.userType.trim()}
+                    </p>
+                  ) : null}
                   <p
                     className={cn(
                       'text-xs truncate',
@@ -170,16 +192,6 @@ export function MessagesUserList({
                       )}
                     >
                       {user.subCompany.name}
-                    </p>
-                  ) : null}
-                  {conv ? (
-                    <p
-                      className={cn(
-                        'text-xs mt-1',
-                        isSelected ? 'text-accent-foreground/70' : 'text-muted-foreground'
-                      )}
-                    >
-                      {format(new Date(conv.lastMessageTime), 'MMM d, h:mm a')}
                     </p>
                   ) : null}
                 </div>
