@@ -4,7 +4,8 @@
  * CRM overlap remains the source of truth for create/update conflicts.
  */
 import prisma from '../config/database';
-import { decryptToken, queryCalendarFreeBusy } from './googleCalendar';
+import { queryCalendarFreeBusy } from './googleCalendar';
+import { tryDecryptToken } from '../utils/secretsCrypto';
 import type { MeetingAvailabilityResult } from './meetingAvailability';
 
 export async function enrichAvailabilityWithGoogleFreeBusy(opts: {
@@ -40,8 +41,13 @@ export async function enrichAvailabilityWithGoogleFreeBusy(opts: {
     return { results: opts.results, googleChecked: false };
   }
 
+  const refreshToken = tryDecryptToken(agency.googleRefreshToken);
+  if (!refreshToken) {
+    return { results: opts.results, googleChecked: false };
+  }
+
   const freeBusy = await queryCalendarFreeBusy({
-    refreshToken: decryptToken(agency.googleRefreshToken),
+    refreshToken,
     timeMin: opts.startTime,
     timeMax: opts.endTime,
     calendarIds: [...emailByUser.values()],

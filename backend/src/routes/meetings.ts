@@ -27,6 +27,7 @@ import {
   deleteCalendarEvent,
   decryptToken,
 } from '../services/googleCalendar';
+import { tryDecryptToken } from '../utils/secretsCrypto';
 
 async function resolveAllowedMeetingAgencyIds(req: Request): Promise<string[] | null> {
   const scope = await resolveListAgencyScope(req);
@@ -1067,10 +1068,14 @@ meetingsRouter.delete('/:id', requirePermission('meetings:write'), async (req: R
     agencyGcal?.googleCalendarConnected &&
     agencyGcal.googleRefreshToken
   ) {
-    void deleteCalendarEvent({
-      refreshToken: decryptToken(agencyGcal.googleRefreshToken),
-      googleEventId: meetingWithGcal.googleCalendarEventId,
-    }).catch((err) => console.error('[meetings] Google Calendar delete failed:', err));
+    // tryDecryptToken: decryptToken throws synchronously, before .catch() could apply
+    const gcalDeleteToken = tryDecryptToken(agencyGcal.googleRefreshToken);
+    if (gcalDeleteToken) {
+      void deleteCalendarEvent({
+        refreshToken: gcalDeleteToken,
+        googleEventId: meetingWithGcal.googleCalendarEventId,
+      }).catch((err) => console.error('[meetings] Google Calendar delete failed:', err));
+    }
   }
 
   emitToUsers(meetingRefreshUserIds(meeting.ownerId, staffAttendeeIds), 'meeting:refresh', { subCompanyId });

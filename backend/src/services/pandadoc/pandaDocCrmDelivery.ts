@@ -18,6 +18,7 @@ import {
   tplSig,
 } from '../email';
 import { pandaDocService } from './pandadocService';
+import { DEFAULT_BRAND_NAME } from '../../config/branding';
 
 export type PandaDocCrmDeliveryResult = {
   delivery: 'crm' | 'pandadoc';
@@ -116,7 +117,7 @@ async function resolveAgencyFrom(subCompanyId: string): Promise<{
   const fromEmail = (sc?.emailFromAddress || env.EMAIL_FROM || '').trim();
   // Explicit Integrations From name → else agency name (not a personal PandaDoc member).
   const fromName =
-    (sc?.emailFromName || '').trim() || agencyName || env.EMAIL_FROM_NAME || 'NA Staffing CRM';
+    (sc?.emailFromName || '').trim() || agencyName || env.EMAIL_FROM_NAME || DEFAULT_BRAND_NAME;
   return { fromEmail, fromName, agencyName };
 }
 

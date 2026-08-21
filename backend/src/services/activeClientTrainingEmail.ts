@@ -11,6 +11,7 @@ import {
   type SentEmailContent,
 } from './email';
 import { resolveSenderSignatureBlock } from './sender';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 export async function sendActiveClientTrainingEmail(params: {
   toEmail: string;
@@ -25,7 +26,7 @@ export async function sendActiveClientTrainingEmail(params: {
   attachment: { contentBase64: string; filename: string; mimeType: string };
 }): Promise<SentEmailContent> {
   const clientName = params.clientName.trim() || 'the client';
-  const agencyLabel = params.agency?.name ?? 'NA Staffing CRM';
+  const agencyLabel = params.agency?.name ?? DEFAULT_BRAND_NAME;
   const subject = `Required client training — ${clientName}`;
   const fileName = params.attachment.filename || 'client-training.pdf';
 

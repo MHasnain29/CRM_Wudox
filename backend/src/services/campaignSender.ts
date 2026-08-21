@@ -12,6 +12,7 @@ import { isSenderDomainError } from './senderDomainErrors';
 import { resolveSenderSignatureBlock, injectSenderSignature, toSendGridFrom } from './sender';
 import { shouldSendNow } from './emailSendWindow';
 import { recomputeCampaignStats } from './campaignStats';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 const SEND_BATCH_SIZE = 100;
 
@@ -51,7 +52,7 @@ function buildTemplateVars(opts: {
   emailFromAddress?: string | null;
   emailFromName?: string | null;
 }): TemplateVars {
-  const senderName = opts.emailFromName || opts.agencyName || 'NA Staffing CRM Team';
+  const senderName = opts.emailFromName || opts.agencyName || `${DEFAULT_BRAND_NAME} Team`;
   const senderEmail = opts.emailFromAddress || '';
   const senderTitle = opts.agencyName ? `${opts.agencyName} Team` : 'Staffing Team';
   const senderPhone = 'N/A';

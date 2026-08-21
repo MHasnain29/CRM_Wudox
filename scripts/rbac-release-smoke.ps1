@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  RBAC, approval-policy, and workflow smoke tests for NA Staffing CRM.
+  RBAC, approval-policy, and workflow smoke tests for Wudox CRM.
 
 .DESCRIPTION
   Hits the live API (default http://localhost:3001) to verify roles, permissions,
@@ -20,6 +20,13 @@
 .PARAMETER DemoPassword
   Shared password for seeded demo users (default password123).
 
+.PARAMETER EmailDomain
+  Domain of the demo user accounts in the target environment (default wudox.ca).
+  Environments provisioned before the Wudox rebrand may still have accounts under
+  the previous domain — pass it here to match. Note: the local seed creates only
+  one agency, so the Vancouver multi-agency tests skip on freshly seeded databases;
+  they require an environment with both Toronto and Vancouver agencies.
+
 .PARAMETER SkipE2E
   Skip mutating workflow tests (client add chain, lead request, DB manager add).
 
@@ -36,8 +43,9 @@
 param(
   [string]$ApiBase = "http://localhost:3001",
   [string]$SuperAdminEmail = "hassan@wudox.com",
-  [string]$SuperAdminPassword = "NA-Staffing-SuperAdmin-2025!",
+  [string]$SuperAdminPassword = "Wudox-SuperAdmin-2025!",
   [string]$DemoPassword = "password123",
+  [string]$EmailDomain = "wudox.ca",
   [switch]$SkipE2E
 )
 
@@ -229,7 +237,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Director"
-    Email    = "director@nastaffing.com"
+    Email    = "director@$EmailDomain"
     Password = $DemoPassword
     Role     = "director"
     Scope    = "agency"
@@ -238,7 +246,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Company Director (Toronto)"
-    Email    = "company.director@nastaffing.com"
+    Email    = "company.director@$EmailDomain"
     Password = $DemoPassword
     Role     = "company_director"
     Scope    = "agency"
@@ -247,7 +255,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Sales Manager (Toronto)"
-    Email    = "manager1@nastaffing.com"
+    Email    = "manager1@$EmailDomain"
     Password = $DemoPassword
     Role     = "sales_manager"
     Scope    = "team"
@@ -256,7 +264,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Sales Associate (Toronto)"
-    Email    = "associate1@nastaffing.com"
+    Email    = "associate1@$EmailDomain"
     Password = $DemoPassword
     Role     = "sales_associate"
     Scope    = "own"
@@ -265,7 +273,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Database Manager"
-    Email    = "db.manager@nastaffing.com"
+    Email    = "db.manager@$EmailDomain"
     Password = $DemoPassword
     Role     = "database_manager"
     Scope    = "agency"
@@ -274,7 +282,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Sales Associate (Vancouver)"
-    Email    = "associate.vancouver@nastaffing.com"
+    Email    = "associate.vancouver@$EmailDomain"
     Password = $DemoPassword
     Role     = "sales_associate"
     Scope    = "own"
@@ -283,7 +291,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Sales Manager (Vancouver)"
-    Email    = "manager2@nastaffing.com"
+    Email    = "manager2@$EmailDomain"
     Password = $DemoPassword
     Role     = "sales_manager"
     Scope    = "team"
@@ -292,7 +300,7 @@ $RoleAccounts = @(
   },
   @{
     Label    = "Company Director (Vancouver)"
-    Email    = "company.director.vancouver@nastaffing.com"
+    Email    = "company.director.vancouver@$EmailDomain"
     Password = $DemoPassword
     Role     = "company_director"
     Scope    = "agency"
@@ -301,7 +309,7 @@ $RoleAccounts = @(
   }
 )
 
-Write-Host "NA Staffing RBAC release smoke" -ForegroundColor White
+Write-Host "Wudox RBAC release smoke" -ForegroundColor White
 Write-Host "API: $script:ApiV1"
 if ($SkipE2E) { Write-Host "E2E workflows: SKIPPED" -ForegroundColor Yellow }
 

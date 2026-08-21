@@ -15,7 +15,7 @@ The database **does exist** on the same PostgreSQL server your app uses (localho
    Click the server (or right‑click → **Connect**). If you see "server could not be contacted", pgAdmin can’t talk to PostgreSQL and won’t show any databases. Fix that first (see sections below or use Prisma Studio).
 
 3. **Refresh the database list**  
-   Expand **Servers → [Your Server] → Databases**, then right‑click **Databases** → **Refresh**. You should see `postgres`, `na_staffing_crm`, `template0`, `template1`.
+   Expand **Servers → [Your Server] → Databases**, then right‑click **Databases** → **Refresh**. You should see `postgres`, `wudox_crm`, `template0`, `template1`.
 
 4. **Quick check from terminal**  
    From the project:
@@ -28,7 +28,7 @@ The database **does exist** on the same PostgreSQL server your app uses (localho
    c.connect().then(() => c.query('SELECT datname FROM pg_database')).then(r => { console.log(r.rows); }).finally(() => c.end());
    "
    ```
-   If this lists `na_staffing_crm`, the DB is there; the issue is only pgAdmin’s connection or which server you’re viewing.
+   If this lists `wudox_crm`, the DB is there; the issue is only pgAdmin’s connection or which server you’re viewing.
 
 ---
 
@@ -116,10 +116,10 @@ You can manage the database directly via command line:
 
 ```bash
 # Connect to PostgreSQL
-psql -U postgres -d na_staffing_crm
+psql -U postgres -d wudox_crm
 
 # Or if you need to specify host/port
-psql -h localhost -p 5432 -U postgres -d na_staffing_crm
+psql -h localhost -p 5432 -U postgres -d wudox_crm
 ```
 
 ## Quick Workaround: Use Prisma Studio Instead
@@ -162,7 +162,7 @@ Once pgAdmin is working, you can:
 1. Connect to PostgreSQL server:
    - Host: `localhost`
    - Port: `5432`
-   - Database: `na_staffing_crm`
+   - Database: `wudox_crm`
    - Username: `postgres`
    - Password: (your PostgreSQL password)
 

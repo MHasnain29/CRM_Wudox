@@ -14,6 +14,7 @@ import { sendDailyReportEmail, type UserDailyStats } from '../services/email';
 import { env } from '../config/env';
 import { getRoleLabel } from '../config/permissions';
 import { getUserIdsWithMinScope } from '../services/accessContext';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -207,7 +208,7 @@ async function checkAndSendReports(): Promise<void> {
           logoUrl: setting.subCompany.agencyLogoUrl?.trim() || null,
           emailFooterText: setting.subCompany.emailFooterText,
           emailFromAddress: setting.subCompany.emailFromAddress ?? '',
-          emailFromName: setting.subCompany.emailFromName ?? setting.subCompany.name ?? 'NA Staffing CRM',
+          emailFromName: setting.subCompany.emailFromName ?? setting.subCompany.name ?? DEFAULT_BRAND_NAME,
           emailSendAsDomain: setting.subCompany.emailSendAsDomain ?? null,
           emailInboundDomain: setting.subCompany.emailInboundDomain ?? env.EMAIL_INBOUND_DOMAIN ?? null,
           emailInboundLocalpart: setting.subCompany.emailInboundLocalpart ?? env.EMAIL_INBOUND_LOCALPART ?? null,

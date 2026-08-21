@@ -36,7 +36,6 @@ import Users from "./pages/Users";
 import SuperUsers from "./pages/SuperUsers";
 import BugReports from "./pages/BugReports";
 import BookingPage from "./pages/BookingPage";
-import Calculators from "./pages/Calculators";
 import Documents from "./pages/Documents";
 import Employees from "./pages/Employees";
 import EmployeeForm from "./pages/EmployeeForm";
@@ -48,6 +47,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Leave from "./pages/Leave";
 import LeaveAdmin from "./pages/LeaveAdmin";
 import Attendance from "./pages/Attendance";
+import TimeTracking from "./pages/TimeTracking";
 import NotFound from "./pages/NotFound";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -134,7 +134,6 @@ const App = () => (
                 }
               />
               <Route path="/bug-reports" element={<PermissionRoute permission="bug_reports:read"><BugReports /></PermissionRoute>} />
-              <Route path="/calculators" element={<PermissionRoute permission="leads:read"><Calculators /></PermissionRoute>} />
               <Route
                 path="/documents"
                 element={
@@ -154,6 +153,7 @@ const App = () => (
               <Route path="/leave" element={<PermissionRoute permission="leave:read"><Leave /></PermissionRoute>} />
               <Route path="/leave/admin" element={<PermissionRoute permission="leave:approve"><LeaveAdmin /></PermissionRoute>} />
               <Route path="/attendance" element={<Attendance />} />
+              <Route path="/time-tracking" element={<TimeTracking />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Route>

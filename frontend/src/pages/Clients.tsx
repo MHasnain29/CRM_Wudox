@@ -886,6 +886,15 @@ export default function Clients() {
   const isElevated = canScopeClientsByAgency;
   const dataScopeLevel = useDataScopeLevel();
 
+  // Elevated users (director, super_admin, etc.) default to All Agencies on
+  // first load so the chip bar shows "All Authorities" pre-selected.
+  useEffect(() => {
+    if (!isElevated) return;
+    if (searchParams.get('agencyId')) return;
+    setSearchParams((prev) => { prev.set('agencyId', 'all'); return prev; }, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isElevated]);
+
   const canShowReportingManager = useCanViewAgencyScope();
 
   const { data: superUsersForLookup = [] } = useQuery({

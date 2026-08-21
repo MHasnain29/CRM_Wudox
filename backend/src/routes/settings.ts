@@ -43,6 +43,7 @@ import {
 } from '../services/notificationRuleService';
 import { getRegistryEntry } from '../services/notificationRegistry';
 import { fetchAllAgencyIds, resolveAgencyScope } from '../config/agencyScope';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 import {
   buildSignatureHtmlFromConfig,
   migrateSignatureConfigToV2,
@@ -486,7 +487,7 @@ settingsRouter.post('/industry-requests', async (req: Request, res: Response) =>
     const body = `${requesterName} requested a new industry: ${name}`;
     await sendClientEmail({
       to: admins.map((a) => ({ email: a.email, name: a.firstName })),
-      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
       subject: 'New industry request: ' + name,
       text: `${body}${settingsUrl ? `\n\nReview in Settings: ${settingsUrl}` : ''}`,
       html: buildSettingsRequestHtml({ headerColor: '#6d28d9', headerIcon: '🏭', headerTitle: 'New Industry Request', type: 'industry', itemName: name, requesterName, agencyName: request.subCompany.name, settingsUrl: settingsUrl ? `${settingsUrl}?tab=requests` : undefined, agency }),
@@ -528,7 +529,7 @@ settingsRouter.patch('/industry-requests/:id/approve', requireSettingsWrite, asy
   const agency = await getAgencyBranding(ir.subCompanyId);
   await sendClientEmail({
     to: [{ email: ir.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Industry request approved: ${ir.name}`,
     text: `Your request to add industry "${ir.name}" was approved. You can now use it when adding clients.`,
     html: buildSettingsApprovedHtml({ toName: requesterName.split(' ')[0], type: 'industry', itemName: ir.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),
@@ -564,7 +565,7 @@ settingsRouter.patch('/industry-requests/:id/reject', requireSettingsWrite, asyn
   const agency = await getAgencyBranding(ir.subCompanyId);
   await sendClientEmail({
     to: [{ email: ir.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Industry request rejected: ${ir.name}`,
     text: `Your request to add industry "${ir.name}" was rejected. Contact an administrator if you have questions.`,
     html: buildSettingsRejectedHtml({ toName: requesterName.split(' ')[0], type: 'industry', itemName: ir.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),
@@ -660,7 +661,7 @@ settingsRouter.post('/tag-requests', async (req: Request, res: Response) => {
     const body = `${requesterName} requested a new tag: ${name}`;
     await sendClientEmail({
       to: admins.map((a) => ({ email: a.email, name: a.firstName })),
-      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
       subject: `New tag request: ${name}`,
       text: `${body}${settingsUrl ? `\n\nReview in Settings: ${settingsUrl}` : ''}`,
       html: buildSettingsRequestHtml({ headerColor: '#b45309', headerIcon: '🏷️', headerTitle: 'New Tag Request', type: 'tag', itemName: name, requesterName, agencyName: request.subCompany.name, settingsUrl: settingsUrl ? `${settingsUrl}?tab=requests` : undefined, agency }),
@@ -702,7 +703,7 @@ settingsRouter.patch('/tag-requests/:id/approve', requireSettingsWrite, async (r
   const agency = await getAgencyBranding(tr.subCompanyId);
   await sendClientEmail({
     to: [{ email: tr.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Tag request approved: ${tr.name}`,
     text: `Your request to add tag "${tr.name}" was approved.`,
     html: buildSettingsApprovedHtml({ toName: requesterName.split(' ')[0], type: 'tag', itemName: tr.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),
@@ -738,7 +739,7 @@ settingsRouter.patch('/tag-requests/:id/reject', requireSettingsWrite, async (re
   const agency = await getAgencyBranding(tr.subCompanyId);
   await sendClientEmail({
     to: [{ email: tr.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Tag request rejected: ${tr.name}`,
     text: `Your request to add tag "${tr.name}" was rejected.`,
     html: buildSettingsRejectedHtml({ toName: requesterName.split(' ')[0], type: 'tag', itemName: tr.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),
@@ -1016,7 +1017,7 @@ settingsRouter.post('/job-title-requests', async (req: Request, res: Response) =
     const body = `${requesterName} requested a new job title: ${name}`;
     await sendClientEmail({
       to: admins.map((a) => ({ email: a.email, name: a.firstName })),
-      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+      from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
       subject: `New job title request: ${name}`,
       text: `${body}${settingsUrl ? `\n\nReview in Settings: ${settingsUrl}` : ''}`,
       html: buildSettingsRequestHtml({ headerColor: '#0e7490', headerIcon: '💼', headerTitle: 'New Job Title Request', type: 'job title', itemName: name, requesterName, agencyName: request.subCompany.name, settingsUrl: settingsUrl ? `${settingsUrl}?tab=requests` : undefined, agency }),
@@ -1058,7 +1059,7 @@ settingsRouter.patch('/job-title-requests/:id/approve', requireSettingsWrite, as
   const agency = await getAgencyBranding(jr.subCompanyId);
   await sendClientEmail({
     to: [{ email: jr.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Job title request approved: ${jr.name}`,
     text: `Your request to add job title "${jr.name}" was approved. You can now use it for contacts.`,
     html: buildSettingsApprovedHtml({ toName: requesterName.split(' ')[0], type: 'job title', itemName: jr.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),
@@ -1094,7 +1095,7 @@ settingsRouter.patch('/job-title-requests/:id/reject', requireSettingsWrite, asy
   const agency = await getAgencyBranding(jr.subCompanyId);
   await sendClientEmail({
     to: [{ email: jr.requestedBy.email, name: requesterName }],
-    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || 'NA Staffing CRM' },
+    from: { email: agency?.emailFromAddress || '', name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME },
     subject: `Job title request rejected: ${jr.name}`,
     text: `Your request to add job title "${jr.name}" was rejected.`,
     html: buildSettingsRejectedHtml({ toName: requesterName.split(' ')[0], type: 'job title', itemName: jr.name, settingsUrl: env.FRONTEND_URL ? `${env.FRONTEND_URL}/settings` : undefined, agency }),

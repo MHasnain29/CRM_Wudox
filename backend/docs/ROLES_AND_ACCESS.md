@@ -26,7 +26,7 @@ Implements RBAC. Roles are stored in the `users` table (`role` = UserRole enum).
 Operations Managers have `subCompanyId: null` and `agencies:cross_org`, but **list routes only resolve agency context from `operations_manager_sub_companies` rows**. Without at least one assignment, `resolveAllowedSubCompanyIds` returns `[]` and tasks/emails/calls return **403 Agency context required**.
 
 - **Assign agencies:** Settings → Super Users → edit the OM → assign Toronto/Vancouver (or other agencies). This writes `operations_manager_sub_companies` (`userId`, `subCompanyId`).
-- **Dev seed:** `backend/prisma/seed.ts` assigns the demo OM (`operations@nastaffing.com`) to both seeded agencies.
+- **Dev seed:** `backend/prisma/seed.ts` assigns the demo OM (`operations@wudox.ca`) to both seeded agencies.
 - **Existing production OMs:** Super Admin must add agency rows manually; there is no automatic backfill from `cross_org` alone.
 - **List API:** Tasks, emails, calls, meetings, and follow-ups use `resolveListAgencyScope` so Director/OM do not need a home `subCompanyId` when allowed agencies exist.
 | **it** | IT | Read-most + settings read/write (support). |

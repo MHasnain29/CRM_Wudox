@@ -72,6 +72,9 @@ import { projectsRouter } from './routes/projects';
 import { leaveRouter } from './routes/leave';
 import noticesRouter from './routes/notices';
 import { attendanceRouter } from './routes/attendance';
+import { hubstaffRouter } from './routes/hubstaff';
+import { startHubstaffSync, stopHubstaffSync } from './jobs/hubstaffSyncJob';
+import { DEFAULT_BRAND_NAME } from './config/branding';
 
 const app = express();
 
@@ -223,7 +226,7 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 app.get(`${env.API_PREFIX}/${env.API_VERSION}`, (_req: Request, res: Response) => {
   res.json({
-    message: 'NA Staffing CRM API',
+    message: `${DEFAULT_BRAND_NAME} API`,
     version: env.API_VERSION,
     status: 'running',
   });
@@ -285,6 +288,7 @@ app.use(`${prefix}/projects`, projectsRouter);
 app.use(`${prefix}/leave`, leaveRouter);
 app.use(`${prefix}/notices`, noticesRouter);
 app.use(`${prefix}/attendance`, attendanceRouter);
+app.use(`${prefix}/hubstaff`, hubstaffRouter);
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');
@@ -325,6 +329,7 @@ const start = async () => {
     startSendGridSync();
     startCampaignStatsRefresher();
     startOutboundEmailQueueProcessor();
+    startHubstaffSync();
 
     const port = parseInt(env.PORT);
     httpServer.listen(port, '0.0.0.0', () => {
@@ -352,6 +357,7 @@ const shutdown = async () => {
   stopSendGridSync();
   stopCampaignStatsRefresher();
   stopOutboundEmailQueueProcessor();
+  stopHubstaffSync();
   await prisma.$disconnect();
   await disconnectRedis();
   process.exit(0);

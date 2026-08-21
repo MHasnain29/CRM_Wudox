@@ -128,7 +128,9 @@ CREATE INDEX IF NOT EXISTS "leave_requests_start_date_end_date_idx" ON "leave_re
 -- Add project_id column to tasks
 ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "project_id" TEXT;
 
-ALTER TABLE "tasks" ADD CONSTRAINT "tasks_project_id_fkey"
-  FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "tasks" ADD CONSTRAINT "tasks_project_id_fkey"
+    FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 CREATE INDEX IF NOT EXISTS "tasks_project_id_idx" ON "tasks" ("project_id");

@@ -48,7 +48,7 @@ interface SeedUserDef {
 const SEED_USER_DEFS: SeedUserDef[] = [
   {
     key: 'superAdmin',
-    email: 'hassan@wudox.com',
+    email: 'hassan@wudox.ca',
     firstName: 'Hassan',
     lastName: 'Super Admin',
     phone: '+1-416-555-0000',
@@ -249,7 +249,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
   },
   {
     key: 'devTeamUser',
-    email: 'devteam@wudox.com',
+    email: 'devteam@wudox.ca',
     firstName: 'Dev',
     lastName: 'Team',
     phone: '+1-416-555-0111',
@@ -276,7 +276,7 @@ export async function seedUsers(
   const allSuperAdmin = isSeedAllSuperAdmin();
   const demoPassword = await bcrypt.hash('password123', 12);
   const legacySuperAdminPassword =
-    process.env.SUPER_ADMIN_INITIAL_PASSWORD?.trim() || 'NA-Staffing-SuperAdmin-2025!';
+    process.env.SUPER_ADMIN_INITIAL_PASSWORD?.trim() || 'Wudox-SuperAdmin-2025!';
   const legacySuperAdminHash = await bcrypt.hash(legacySuperAdminPassword, 12);
 
   const passwordFor = (def: SeedUserDef): string => {
@@ -347,7 +347,7 @@ export async function seedUsers(
   if (allSuperAdmin) {
     console.log('  ⚠ All users seeded as super_admin — Super Users page and approval demos will be empty. Use default seed (omit SEED_ALL_SUPER_ADMIN) for full demo data.');
   } else {
-    console.log('  ✓ Users seeded with persona roles + password123 (hassan@wudox.com = super_admin).');
+    console.log('  ✓ Users seeded with persona roles + password123 (hassan@wudox.ca = super_admin).');
   }
 
   return {

@@ -1,5 +1,5 @@
 /**
- * API client for NA Staffing CRM backend.
+ * API client for Wudox CRM backend.
  * Base URL from VITE_API_URL (default https://staffing.wudox.ca).
  * Auth: Bearer token from authStore; optional refresh on 401.
  */
@@ -7342,7 +7342,7 @@ export async function setRemarkPin(id: string, isPinned: boolean): Promise<void>
 /** POST /activity/end-session — called on logout via sendBeacon for reliability. */
 export function sendActivityEndSession(sessionId: string): void {
   const url = `${API_PREFIX}/activity/end-session`;
-  const token = localStorage.getItem('token') ?? '';
+  const token = localStorage.getItem(TOKEN_KEY) ?? '';
   const body = JSON.stringify({ sessionId });
   void fetch(url, {
     method: 'POST',

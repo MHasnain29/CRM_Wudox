@@ -1216,8 +1216,8 @@ ${emailFooter()}`),
 
   // Bug report email recipients (super_admin manages in Settings; default recipient)
   await prisma.bugReportRecipient.upsert({
-    where: { email: 'hassan@wudox.com' },
-    create: { email: 'hassan@wudox.com' },
+    where: { email: 'hassan@wudox.ca' },
+    create: { email: 'hassan@wudox.ca' },
     update: {},
   });
 

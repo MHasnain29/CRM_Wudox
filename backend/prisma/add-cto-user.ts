@@ -1,5 +1,5 @@
 /**
- * Adds cto@wudox.com (password123) to the existing Wudox CRM company.
+ * Adds cto@wudox.ca (password123) to the existing Wudox CRM company.
  * Safe to run on top of existing data — does NOT wipe anything.
  */
 import { PrismaClient } from '@prisma/client';
@@ -20,10 +20,10 @@ async function main() {
   const passwordHash = await bcrypt.hash('password123', 12);
 
   const user = await prisma.user.upsert({
-    where: { email: 'cto@wudox.com' },
+    where: { email: 'cto@wudox.ca' },
     update: { passwordHash, isActive: true, role: 'cto', subCompanyId: company.id },
     create: {
-      email: 'cto@wudox.com',
+      email: 'cto@wudox.ca',
       passwordHash,
       firstName: 'Ali',
       lastName: 'CTO',
