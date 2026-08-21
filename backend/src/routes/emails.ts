@@ -296,8 +296,10 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           OR: [{ toUserId: { in: ownerIdsList } }, { forwardedToUserId: { in: ownerIdsList } }],
         };
       }
-    } else {
+    } else if (subCompanyId) {
       where = { subCompanyId, folder, OR: [{ toUserId: userId }, { forwardedToUserId: userId }] };
+    } else {
+      where = { folder, OR: [{ toUserId: userId }, { forwardedToUserId: userId }] };
     }
   } else if (folder === 'drafts') {
     if (linkedScope) {

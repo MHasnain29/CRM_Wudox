@@ -39,7 +39,7 @@ async function main() {
   const passwordHash = await bcrypt.hash('password123', 12);
   await prisma.user.create({
     data: {
-      email: 'hassan@wudox.com',
+      email: 'hassan@wudox.ca',
       passwordHash,
       firstName: 'Hassan',
       lastName: 'Admin',
@@ -53,7 +53,7 @@ async function main() {
 
   console.log('✅ Clean seed complete');
   console.log('');
-  console.log('🔑 Login: hassan@wudox.com / password123');
+  console.log('🔑 Login: hassan@wudox.ca / password123');
   console.log('🏢 Company: Wudox CRM');
   console.log('');
   console.log('Next: npm run prisma:seed-rbac');

@@ -447,7 +447,7 @@ async function downloadImportErrorsExcel(
   parsed: ParsedFile | null | undefined,
 ): Promise<void> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'NA Staffing';
+  wb.creator = 'Wudox';
   wb.created = new Date();
 
   const total = countImportConflicts(result);

@@ -44,6 +44,24 @@ export function decryptSecret(stored: string): string {
   return decipher.update(encrypted).toString('utf8') + decipher.final('utf8');
 }
 
+/**
+ * Non-throwing decrypt: returns null when the stored secret cannot be decrypted
+ * (typically GOOGLE_TOKEN_ENCRYPTION_KEY changed after the secret was saved).
+ * Callers must treat null as "integration not configured" — never crash the request.
+ */
+export function tryDecryptSecret(stored: string): string | null {
+  try {
+    return decryptSecret(stored);
+  } catch (err) {
+    console.error(
+      '[secretsCrypto] Failed to decrypt stored secret — GOOGLE_TOKEN_ENCRYPTION_KEY likely changed since it was saved. Re-save the credentials in Settings.',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
 /** Alias for Google refresh tokens — same AES-256-GCM format as Twilio secrets. */
 export const encryptToken = encryptSecret;
 export const decryptToken = decryptSecret;
+export const tryDecryptToken = tryDecryptSecret;

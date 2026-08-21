@@ -64,7 +64,7 @@ Runs at http://localhost:5173
 
 | Role | Email | Password |
 |---|---|---|
-| Super Admin | hassan@wudox.com | `NA-Staffing-SuperAdmin-2025!` |
+| Super Admin | hassan@wudox.com | `Wudox-SuperAdmin-2025!` |
 | Director | director@wudox.ca | `password123` |
 | Manager | manager1@wudox.ca | `password123` |
 | Associate | associate1@wudox.ca | `password123` |

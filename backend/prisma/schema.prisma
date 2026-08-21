@@ -103,6 +103,7 @@ model SubCompany {
   projects                      Project[]
   notices                       Notice[]
   attendance                    Attendance[]
+  hubstaffConfig                HubstaffConfig?
 
   @@index([mainOrgId])
   @@map("sub_companies")
@@ -350,6 +351,8 @@ model User {
   leaveRequestsApproved                   LeaveRequest[]                @relation("LeaveApprover")
   notices                                 Notice[]
   attendance                              Attendance[]
+  hubstaffUserLinks                       HubstaffUserLink[]
+  hubstaffDailyActivities                 HubstaffDailyActivity[]
 
   @@index([email])
   @@index([subCompanyId])
@@ -3342,4 +3345,82 @@ model Attendance {
   @@unique([userId, date])
   @@index([subCompanyId, date])
   @@map("attendance")
+}
+
+// ── Hubstaff time tracking ────────────────────────────────────────────────────
+
+/// Per-agency Hubstaff connection. The stored refresh token is a Hubstaff
+/// Personal Access Token; Hubstaff rotates it on every refresh, so the latest
+/// value must always be persisted back here.
+model HubstaffConfig {
+  id                   String    @id @default(uuid())
+  subCompanyId         String    @unique @map("sub_company_id")
+  hubstaffOrgId        Int       @map("hubstaff_org_id")
+  orgName              String?   @map("org_name")
+  refreshToken         String    @map("refresh_token") @db.Text
+  accessToken          String?   @map("access_token") @db.Text
+  accessTokenExpiresAt DateTime? @map("access_token_expires_at")
+  syncEnabled          Boolean   @default(true) @map("sync_enabled")
+  lastSyncAt           DateTime? @map("last_sync_at")
+  lastSyncError        String?   @map("last_sync_error") @db.Text
+  connectedById        String?   @map("connected_by_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  subCompany SubCompany         @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
+  userLinks  HubstaffUserLink[]
+
+  @@map("hubstaff_configs")
+}
+
+/// Maps a Hubstaff organization member to a CRM user (auto-matched by email,
+/// or set manually in Settings → Hubstaff).
+model HubstaffUserLink {
+  id             String   @id @default(uuid())
+  configId       String   @map("config_id")
+  subCompanyId   String   @map("sub_company_id")
+  hubstaffUserId Int      @map("hubstaff_user_id")
+  hubstaffName   String?  @map("hubstaff_name")
+  hubstaffEmail  String?  @map("hubstaff_email")
+  userId         String?  @map("user_id")
+  autoMatched    Boolean  @default(false) @map("auto_matched")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  config HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  user   User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([configId, hubstaffUserId])
+  @@index([subCompanyId])
+  @@index([userId])
+  @@map("hubstaff_user_links")
+}
+
+/// One row per Hubstaff user × date × project (hubstaffProjectId 0 = no project),
+/// synced from GET /v2/organizations/{org}/activities/daily. All durations in seconds.
+model HubstaffDailyActivity {
+  id                  String   @id @default(uuid())
+  subCompanyId        String   @map("sub_company_id")
+  hubstaffUserId      Int      @map("hubstaff_user_id")
+  userId              String?  @map("user_id")
+  date                DateTime @map("date") @db.Date
+  hubstaffProjectId   Int      @default(0) @map("hubstaff_project_id")
+  projectName         String?  @map("project_name")
+  trackedSeconds      Int      @default(0) @map("tracked_seconds")
+  keyboardSeconds     Int      @default(0) @map("keyboard_seconds")
+  mouseSeconds        Int      @default(0) @map("mouse_seconds")
+  overallSeconds      Int      @default(0) @map("overall_seconds")
+  inputTrackedSeconds Int      @default(0) @map("input_tracked_seconds")
+  manualSeconds       Int      @default(0) @map("manual_seconds")
+  idleSeconds         Int      @default(0) @map("idle_seconds")
+  billableSeconds     Int      @default(0) @map("billable_seconds")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([subCompanyId, hubstaffUserId, date, hubstaffProjectId])
+  @@index([subCompanyId, date])
+  @@index([userId, date])
+  @@map("hubstaff_daily_activities")
 }

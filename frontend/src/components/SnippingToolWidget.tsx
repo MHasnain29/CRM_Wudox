@@ -15,6 +15,7 @@ import {
   type TabCaptureFailReason,
 } from '@/lib/captureScreen';
 import { cn } from '@/lib/utils';
+import { TOKEN_KEY } from '@/lib/sessionKeys';
 import { toast } from 'sonner';
 
 const PUBLIC_AUTH_PATHS = new Set(['/login', '/forgot-password', '/reset-password']);
@@ -22,7 +23,7 @@ const PUBLIC_AUTH_PATHS = new Set(['/login', '/forgot-password', '/reset-passwor
 export function SnippingToolWidget() {
   const location = useLocation();
   const { snip } = useFloatingActionDockLayout();
-  const isAuthenticatedView = Boolean(localStorage.getItem('na_staffing_token')) && !PUBLIC_AUTH_PATHS.has(location.pathname);
+  const isAuthenticatedView = Boolean(localStorage.getItem(TOKEN_KEY)) && !PUBLIC_AUTH_PATHS.has(location.pathname);
 
   const [snipping, setSnipping] = useState(false);
   const [preparing, setPreparing] = useState(false);

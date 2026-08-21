@@ -17,6 +17,7 @@ import { getAgencyBranding, sendEmployeeAssignmentDetailsEmail } from './email';
 import { resolveTrainingOutboundSender } from './trainingOutboundSender';
 import { env } from '../config/env';
 import { assertEmployeeNotActivelyPlacedElsewhere } from './employeeAssignments';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 
 type ShiftJson = {
@@ -254,7 +255,7 @@ export async function placeEmployeeOnJob(params: {
       const clientName = activeClient?.name?.trim() || job.company;
       const subCompanyId = job.subCompanyId;
       if (toEmail && clientName && subCompanyId) {
-        let from = { email: '', name: 'NA Staffing CRM' };
+        let from = { email: '', name: DEFAULT_BRAND_NAME };
         let agency = await getAgencyBranding(subCompanyId);
         let sentByName = 'Recruitment';
 
@@ -269,7 +270,7 @@ export async function placeEmployeeOnJob(params: {
         } else {
           from = {
             email: (agency?.emailFromAddress || env.EMAIL_FROM || '').trim(),
-            name: agency?.emailFromName || agency?.name || 'NA Staffing CRM',
+            name: agency?.emailFromName || agency?.name || DEFAULT_BRAND_NAME,
           };
           console.warn(
             `[jobPlacements] assignment email using agency From after resolve failed: ${outbound.error}`,

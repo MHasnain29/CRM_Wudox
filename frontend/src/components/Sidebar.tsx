@@ -20,7 +20,6 @@ import {
   Users,
   UserCircle2,
   FileCheck,
-  Calculator,
   FileText,
   Briefcase,
   Shield,
@@ -29,6 +28,7 @@ import {
   FolderKanban,
   CalendarOff,
   Clock,
+  Timer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -80,6 +80,7 @@ const navItems: {
   { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']), color: '#0d9488' },
   { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true, color: '#0d9488' },
   { to: '/attendance', icon: Clock,        label: 'Attendance',  permissions: ['calls:read'], color: '#6366f1' },
+  { to: '/time-tracking', icon: Timer,     label: 'Time Tracking', permissions: ['calls:read'], color: '#0ea5e9' },
 
   // ── Sales & Marketing ──
   { to: '/clients',    icon: Building2,    label: 'Clients',     permissions: ['clients:read'],  section: 'Sales & Marketing', color: '#2563eb' },
@@ -106,7 +107,6 @@ const navItems: {
   // ── Admin ──
   { to: '/users',       icon: Users,     label: 'Users',       permissions: ['users:directory'],                       section: 'Settings', color: '#6366f1' },
   { to: '/super-users', icon: Shield,    label: 'Super Users', permissions: ['agencies:global', 'agencies:cross_org'], color: '#dc2626' },
-  { to: '/calculators', icon: Calculator,label: 'Calculators', permissions: ['leads:read'],                            color: '#f59e0b' },
   { to: '/bug-reports', icon: Bug,       label: 'Bug Reports', permissions: ['bug_reports:read'],                      color: '#dc2626' },
   { to: '/reports',     icon: BarChart3, label: 'Reports',     permissions: ['analytics:read'],                        color: '#0d9488' },
   { to: '/settings',    icon: Settings,  label: 'Settings',    permissions: ['settings:read'],                         color: '#64748b' },

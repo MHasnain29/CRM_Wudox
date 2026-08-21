@@ -12,6 +12,7 @@ import { renderReviewPdf } from './reviewPdf';
 import { uploadToR2, getFromR2 } from './r2Storage';
 import { emitToUsers } from '../socket';
 import { env } from '../config/env';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 async function resolveReviewTemplateId(
   subCompanyId: string,
@@ -93,7 +94,7 @@ export async function sendReviewEmailForProposal(opts: {
   const agency = await getAgencyBranding(proposal.lead.subCompanyId);
   const agencySystemSender = {
     email: agency?.emailFromAddress ?? '',
-    name: agency?.emailFromName ?? agency?.name ?? 'NA Staffing CRM',
+    name: agency?.emailFromName ?? agency?.name ?? DEFAULT_BRAND_NAME,
   };
   const ownerSender = resolveUserSender(
     proposal.lead.owner,

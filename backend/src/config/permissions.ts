@@ -73,7 +73,9 @@ export type Permission =
   | 'leave:write'
   | 'leave:approve'
   | 'notices:read'
-  | 'notices:write';
+  | 'notices:write'
+  | 'hubstaff:view_all'
+  | 'hubstaff:manage';
 
 /** Role as stored in DB and JWT (UserRole enum values) */
 export type Role = string;
@@ -110,6 +112,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'leave:approve',
   'notices:read',
   'notices:write',
+  'hubstaff:view_all',
+  'hubstaff:manage',
 ];
 
 /** Static fallback when role has no rows in role_permissions (see getEffectivePermissionKeysForRoleKey). */

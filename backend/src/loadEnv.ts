@@ -9,6 +9,31 @@ import dotenv from 'dotenv';
 const envPath = path.resolve(__dirname, '..', '.env');
 dotenv.config({ path: envPath, override: true });
 
+/**
+ * Duplicate keys in .env are resolved silently (last line wins), which is
+ * disastrous for GOOGLE_TOKEN_ENCRYPTION_KEY: stored secrets encrypted under
+ * the other value can no longer be decrypted. Warn loudly.
+ */
+function warnOnDuplicateEnvKeys(): void {
+  if (!fs.existsSync(envPath)) return;
+  const seen = new Map<string, number>();
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^([A-Z0-9_]+)=/);
+    if (m) seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
+  }
+  for (const [key, count] of seen) {
+    if (count > 1) {
+      console.warn(
+        `⚠️  [env] "${key}" appears ${count} times in .env — the last value wins. ` +
+          (key === 'GOOGLE_TOKEN_ENCRYPTION_KEY'
+            ? 'Stored secrets encrypted under the other value CANNOT be decrypted. Remove the wrong line.'
+            : 'Remove the duplicate to avoid surprises.'),
+      );
+    }
+  }
+}
+warnOnDuplicateEnvKeys();
+
 /** Dev-only: monorepo root dev-tunnel.env → PUBLIC_API_URL for Twilio webhooks. */
 function applyDevTunnelEnv(): void {
   if (process.env.NODE_ENV === 'production') return;

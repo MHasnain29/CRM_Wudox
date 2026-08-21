@@ -10,6 +10,7 @@ import { pandaDocService } from './pandadoc/pandadocService';
 import { PandaDocError } from './pandadoc/types';
 import { recordOutboundSentEmail } from './recordOutboundSentEmail';
 import { buildAgencyR2Key, uploadToR2 } from './r2Storage';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 import {
   isAllowedActiveClientTrainingTemplateId,
   pandaDocTrainingSnapshotKey,
@@ -187,7 +188,7 @@ export async function sendActiveClientTrainingPandaDoc(params: {
     (agency?.emailFromName || '').trim() ||
     (agency?.name || '').trim() ||
     [actor?.firstName, actor?.lastName].filter(Boolean).join(' ') ||
-    'NA Staffing CRM';
+    DEFAULT_BRAND_NAME;
   const pandaDocUrl = `https://app.pandadoc.com/a/#/documents/${doc.id}`;
   const sentBody = `<p>${pandaMessage.replace(/\n/g, '<br/>')}</p>
 <p style="margin-top:16px">Client training was emailed to <strong>${fullName}</strong> (${emp.email.trim()}) for e-signature.</p>

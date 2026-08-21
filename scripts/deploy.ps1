@@ -22,7 +22,7 @@ function Run-Step {
   }
 }
 
-Write-Host "Starting NA Staffing production deploy..."
+Write-Host "Starting Wudox production deploy..."
 
 $status = git status --porcelain
 if ($status -and -not $AllowDirty) {
@@ -63,17 +63,17 @@ Write-Host "Frontend build present under backend/client"
 # On Windows, running Node can lock Prisma's query engine DLL; stop app before generate.
 Write-Host ""
 Write-Host "==> Stop CRM in PM2 (release Prisma engine lock on Windows)"
-pm2 stop na-staffing-crm 2>$null
+pm2 stop wudox-crm 2>$null
 # Do not fail deploy if process was already stopped / missing
 
 Run-Step -Name "Apply backend Prisma migrations" -Command "npm run prisma:migrate:deploy --prefix backend"
 Run-Step -Name "Regenerate Prisma client" -Command "npm run prisma:generate --prefix backend"
 Run-Step -Name "Build backend (TypeScript)" -Command "npm run build --prefix backend"
 
-Run-Step -Name "Start CRM with PM2" -Command "pm2 start na-staffing-crm"
+Run-Step -Name "Start CRM with PM2" -Command "pm2 start wudox-crm"
 Run-Step -Name "Save PM2 process list" -Command "pm2 save"
 
 Write-Host ""
 Write-Host "Deploy completed successfully." -ForegroundColor Green
 Write-Host "Check status with: pm2 ls"
-Write-Host "Check logs with: pm2 logs na-staffing-crm --lines 200"
+Write-Host "Check logs with: pm2 logs wudox-crm --lines 200"

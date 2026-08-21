@@ -5,13 +5,14 @@
  */
 import { io, Socket } from 'socket.io-client';
 import { API_BASE, getTunnelHeaders } from './apiConfig';
+import { TOKEN_KEY } from './sessionKeys';
 
 const SOCKET_PATH = '/socket.io';
 
 let socket: Socket | null = null;
 
 function getToken(): string | null {
-  return localStorage.getItem('na_staffing_token');
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export interface MessageNewPayload {

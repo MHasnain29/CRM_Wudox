@@ -1,7 +1,7 @@
 {
-  "name": "na-staffing-crm-backend",
+  "name": "wudox-crm-backend",
   "version": "1.0.0",
-  "description": "Backend API for NA Staffing CRM - Staffing Agency Management System",
+  "description": "Backend API for Wudox CRM - Staffing Agency Management System",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -30,6 +30,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:sync-live": "tsx scripts/sync-live.ts",
     "scripts:clear-leads": "tsx scripts/clear-leads.ts",
+    "seed:filter-test": "tsx prisma/seed-filter-test.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",
@@ -67,7 +68,7 @@
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.12.0",
     "multer": "^2.1.0",
-    "na-staffing-crm": "file:..",
+    "wudox-crm": "file:..",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
     "pdfkit": "^0.18.0",

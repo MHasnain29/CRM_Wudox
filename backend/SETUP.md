@@ -20,7 +20,7 @@ From `backend/`:
 docker compose up -d
 ```
 
-This starts an **isolated** stack that can run beside NA Staffing on the same machine:
+This starts an **isolated** stack that can run beside Wudox on the same machine:
 
 | Service | Container | Host port |
 |---|---|---|
@@ -304,7 +304,7 @@ Once setup is complete:
 
 After seeding:
 
-- **Super Admin**: `hassan@wudox.com` / `NA-Staffing-SuperAdmin-2025!` (or `SUPER_ADMIN_INITIAL_PASSWORD`)
+- **Super Admin**: `hassan@wudox.com` / `Wudox-SuperAdmin-2025!` (or `SUPER_ADMIN_INITIAL_PASSWORD`)
 - **Director**: `director@wudox.ca` / `password123`
 - **Sales Manager**: `manager1@wudox.ca` / `password123`
 - **Sales Associate**: `associate1@wudox.ca` / `password123`

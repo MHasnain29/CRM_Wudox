@@ -5,6 +5,7 @@
  */
 import prisma from '../config/database';
 import { emitToUsers } from '../socket';
+import { DEFAULT_BRAND_NAME } from '../config/branding';
 
 export type OutboundSentRecipient = {
   name?: string | null;
@@ -54,7 +55,7 @@ export async function recordOutboundSentEmail(
 
   const subject = (params.subject || '(No subject)').slice(0, 500);
   const body = params.body ?? '';
-  const fromName = (params.fromName || '').trim() || params.fromEmail || 'NA Staffing CRM';
+  const fromName = (params.fromName || '').trim() || params.fromEmail || DEFAULT_BRAND_NAME;
   const fromEmail = (params.fromEmail || '').trim();
 
   try {

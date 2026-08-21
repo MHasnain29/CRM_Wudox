@@ -11,7 +11,7 @@ You can use a hosted Redis service so you don’t need to run Redis locally. The
 
 2. **Create a Redis database**  
    - Click **Create Database**.  
-   - Choose a name (e.g. `na-staffing-crm`), region, and **Free** plan.  
+   - Choose a name (e.g. `wudox-crm`), region, and **Free** plan.  
    - Create the database.
 
 3. **Get the connection URL**  

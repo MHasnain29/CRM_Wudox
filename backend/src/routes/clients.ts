@@ -3324,7 +3324,7 @@ clientRouter.patch(
             });
             if (!primaryContact?.email) return;
             const agency = await prisma.subCompany.findUnique({ where: { id: subCompanyId }, select: { name: true } });
-            const agencyName = agency?.name || 'NA Staffing';
+            const agencyName = agency?.name || 'Wudox';
             const agencyBranding = await getAgencyBranding(subCompanyId);
 
             if (newStatus === 'permanently_closed') {
@@ -4013,7 +4013,7 @@ clientRouter.post(
     if (!guard.ok) return res.status(403).json({ error: guard.error });
 
     const senderName = [actor?.firstName, actor?.lastName].filter(Boolean).join(' ') || actor?.email || 'Team Member';
-    const agencyName = agency?.name || 'NA Staffing';
+    const agencyName = agency?.name || 'Wudox';
     const clientName = client?.name || 'Unknown';
 
     // Send unsubscribe email

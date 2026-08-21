@@ -1,5 +1,5 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "wudox-crm-frontend",
   "private": true,
   "version": "2.0.3",
   "type": "module",
@@ -58,7 +58,7 @@
     "jspdf": "^3.0.4",
     "lucide-react": "^0.462.0",
     "mammoth": "^1.11.0",
-    "na-staffing-crm": "file:..",
+    "wudox-crm": "file:..",
     "next-themes": "^0.3.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
