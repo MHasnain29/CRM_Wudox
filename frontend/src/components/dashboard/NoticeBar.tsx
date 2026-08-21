@@ -56,7 +56,7 @@ export function NoticeBar() {
   useEffect(() => {
     fetchNotices()
       .then(setNotices)
-      .catch(() => toast.error('Failed to load notices'))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
