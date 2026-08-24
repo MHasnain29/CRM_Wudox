@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Send, Paperclip, FileText, Image as ImageIcon, Film, X, MessageSquarePlus, Loader2, Phone, Video, PhoneMissed, PhoneOff } from 'lucide-react';
+import { Search, Send, Paperclip, FileText, Image as ImageIcon, Film, X, MessageSquarePlus, Loader2, Phone, Video, PhoneMissed, PhoneOff, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,8 +27,44 @@ import { onMessageNew, onConversationRead } from '@/lib/socket';
 import { NewMessageDialog } from '@/components/NewMessageDialog';
 import { MessagesUserList } from '@/components/messages/MessagesUserList';
 import { useInternalCallStore } from '@/lib/internalCallStore';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
+
+const AVATAR_COLORS = [
+  'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-cyan-600', 'bg-orange-500', 'bg-indigo-500',
+];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]!;
+}
+
+function highlightText(text: string, term: string, isFocused: boolean): React.ReactNode {
+  if (!term) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  const lower = text.toLowerCase();
+  let offset = 0;
+  let key = 0;
+  let idx;
+  while ((idx = lower.indexOf(term, offset)) !== -1) {
+    if (idx > offset) parts.push(text.slice(offset, idx));
+    parts.push(
+      <mark
+        key={key++}
+        className={cn(
+          'rounded-sm px-0.5',
+          isFocused ? 'bg-yellow-400 text-black' : 'bg-yellow-200/80 text-inherit'
+        )}
+      >
+        {text.slice(idx, idx + term.length)}
+      </mark>
+    );
+    offset = idx + term.length;
+  }
+  if (offset < text.length) parts.push(text.slice(offset));
+  return <>{parts}</>;
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -65,6 +101,13 @@ export default function Messages() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   selectedConversationIdRef.current = selectedConversationId;
+
+  // In-conversation message search
+  const [msgSearchOpen, setMsgSearchOpen] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState('');
+  const [msgSearchIndex, setMsgSearchIndex] = useState(0);
+  const msgSearchInputRef = useRef<HTMLInputElement>(null);
+  const msgItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const loadConversations = useCallback(async () => {
     if (!currentSubCompany?.id) return;
@@ -279,6 +322,39 @@ export default function Messages() {
     void loadUnreadCount();
   };
 
+  // Reset search when switching conversations
+  useEffect(() => {
+    setMsgSearchOpen(false);
+    setMsgSearchQuery('');
+    setMsgSearchIndex(0);
+  }, [selectedConversationId]);
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (msgSearchOpen) msgSearchInputRef.current?.focus();
+  }, [msgSearchOpen]);
+
+  const msgSearchTerm = msgSearchQuery.trim().toLowerCase();
+  const msgSearchMatches = useMemo(
+    () =>
+      msgSearchTerm
+        ? messages.filter((msg) => msg.type !== 'call' && !!msg.text?.toLowerCase().includes(msgSearchTerm))
+        : [],
+    [messages, msgSearchTerm]
+  );
+  const clampedSearchIndex =
+    msgSearchMatches.length > 0 ? Math.min(msgSearchIndex, msgSearchMatches.length - 1) : -1;
+
+  // Scroll to current match. Depend on primitives only so this doesn't fire on
+  // every incoming WebSocket message (msgSearchMatches gets a new ref each time).
+  useEffect(() => {
+    if (clampedSearchIndex < 0) return;
+    const targetMsg = msgSearchMatches[clampedSearchIndex];
+    if (!targetMsg) return;
+    msgItemRefs.current.get(targetMsg.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clampedSearchIndex, msgSearchTerm]);
+
   return (
     <div className="h-[calc(100vh-120px)] flex gap-4">
       <NewMessageDialog
@@ -351,6 +427,15 @@ export default function Messages() {
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <Button
                         type="button"
+                        variant={msgSearchOpen ? 'secondary' : 'outline'}
+                        size="icon"
+                        aria-label="Search messages"
+                        onClick={() => setMsgSearchOpen((o) => !o)}
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
                         variant="outline"
                         size="icon"
                         aria-label="Start audio call"
@@ -387,14 +472,113 @@ export default function Messages() {
               </div>
             </div>
 
+            {msgSearchOpen && (
+              <div className="px-4 py-2 border-b border-border flex items-center gap-2 bg-muted/30 flex-shrink-0">
+                <Search className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <Input
+                  ref={msgSearchInputRef}
+                  placeholder="Search in conversation..."
+                  value={msgSearchQuery}
+                  onChange={(e) => {
+                    setMsgSearchQuery(e.target.value);
+                    setMsgSearchIndex(0);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setMsgSearchOpen(false);
+                      setMsgSearchQuery('');
+                      setMsgSearchIndex(0);
+                    } else if (e.key === 'Enter' && msgSearchMatches.length > 0) {
+                      e.preventDefault();
+                      setMsgSearchIndex((i) =>
+                        e.shiftKey
+                          ? (i - 1 + msgSearchMatches.length) % msgSearchMatches.length
+                          : (i + 1) % msgSearchMatches.length
+                      );
+                    }
+                  }}
+                  className="h-8 flex-1"
+                />
+                {msgSearchQuery.trim() && (
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {msgSearchMatches.length > 0
+                      ? `${clampedSearchIndex + 1} / ${msgSearchMatches.length}`
+                      : 'No results'}
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0"
+                  disabled={msgSearchMatches.length === 0}
+                  onClick={() =>
+                    setMsgSearchIndex((i) => (i - 1 + msgSearchMatches.length) % msgSearchMatches.length)
+                  }
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0"
+                  disabled={msgSearchMatches.length === 0}
+                  onClick={() =>
+                    setMsgSearchIndex((i) => (i + 1) % msgSearchMatches.length)
+                  }
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0"
+                  onClick={() => {
+                    setMsgSearchOpen(false);
+                    setMsgSearchQuery('');
+                    setMsgSearchIndex(0);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
             <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
               {messagesLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {messages.map((msg) => {
+                <div className="flex flex-col pb-2">
+                  {messages.flatMap((msg, index) => {
+                    const prevMsg = messages[index - 1];
+                    const msgDate = new Date(msg.createdAt);
+                    const prevDate = prevMsg ? new Date(prevMsg.createdAt) : null;
+                    const showDateSep = !prevDate || !isSameDay(msgDate, prevDate);
+                    const isGrouped =
+                      !showDateSep &&
+                      prevMsg?.senderId === msg.senderId &&
+                      prevMsg?.type !== 'call' &&
+                      msg.type !== 'call' &&
+                      msgDate.getTime() - (prevDate?.getTime() ?? 0) < 5 * 60 * 1000;
+
+                    const els: JSX.Element[] = [];
+
+                    if (showDateSep) {
+                      const label = isToday(msgDate)
+                        ? 'Today'
+                        : isYesterday(msgDate)
+                          ? 'Yesterday'
+                          : format(msgDate, 'MMMM d, yyyy');
+                      els.push(
+                        <div key={`sep-${msg.id}`} className="flex items-center gap-3 py-3 px-1">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs text-muted-foreground font-medium">{label}</span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+                      );
+                    }
+
                     if (msg.type === 'call') {
                       const media = msg.metadata?.mediaType ?? 'audio';
                       const outcome = msg.metadata?.outcome;
@@ -406,8 +590,8 @@ export default function Messages() {
                             : media === 'video'
                               ? Video
                               : Phone;
-                      return (
-                        <div key={msg.id} className="flex justify-center py-1">
+                      els.push(
+                        <div key={msg.id} className={cn('flex justify-center', isGrouped ? 'mt-1' : 'mt-3')}>
                           <div className="inline-flex max-w-[90%] items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
                             <CallIcon className="h-3.5 w-3.5 flex-shrink-0" />
                             <span className="truncate">{msg.text ?? 'Call'}</span>
@@ -417,45 +601,58 @@ export default function Messages() {
                           </div>
                         </div>
                       );
+                      return els;
                     }
 
                     const isCurrentUser = msg.senderId === currentUser?.id;
-                    return (
+                    const isFocusedMatch = msgSearchMatches[clampedSearchIndex]?.id === msg.id;
+                    els.push(
                       <div
                         key={msg.id}
+                        ref={(el) => {
+                          if (el) msgItemRefs.current.set(msg.id, el);
+                          else msgItemRefs.current.delete(msg.id);
+                        }}
                         className={cn(
-                          'flex gap-3',
-                          isCurrentUser ? 'flex-row-reverse' : 'flex-row'
+                          'flex gap-2 px-1',
+                          isGrouped ? 'mt-0.5' : 'mt-3',
+                          isCurrentUser ? 'flex-row-reverse' : 'flex-row',
+                          isFocusedMatch && 'rounded-xl bg-yellow-50/40 dark:bg-yellow-900/10'
                         )}
                       >
-                        <Avatar className="h-8 w-8 flex-shrink-0">
-                          <AvatarFallback
-                            className={cn(
-                              isCurrentUser
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted'
-                            )}
-                          >
-                            {getInitials(msg.senderName)}
-                          </AvatarFallback>
-                        </Avatar>
+                        {isGrouped ? (
+                          <div className="w-8 flex-shrink-0" />
+                        ) : (
+                          <Avatar className="h-8 w-8 flex-shrink-0 mt-0.5">
+                            <AvatarFallback
+                              className={cn(
+                                'text-white text-xs font-medium',
+                                isCurrentUser ? 'bg-primary' : avatarColor(msg.senderName)
+                              )}
+                            >
+                              {getInitials(msg.senderName)}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
                         <div
                           className={cn(
-                            'flex flex-col gap-1 max-w-[75%]',
+                            'flex flex-col gap-0.5 max-w-[72%]',
                             isCurrentUser ? 'items-end' : 'items-start'
                           )}
                         >
                           <div
                             className={cn(
-                              'rounded-lg px-4 py-2',
+                              'px-3.5 py-2',
                               isCurrentUser
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted'
+                                ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm'
+                                : 'bg-muted rounded-2xl rounded-bl-sm'
                             )}
                           >
                             {msg.text && (
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {msg.text}
+                              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                                {msgSearchTerm
+                                  ? highlightText(msg.text, msgSearchTerm, isFocusedMatch)
+                                  : msg.text}
                               </p>
                             )}
                             {msg.attachments && msg.attachments.length > 0 && (
@@ -492,12 +689,13 @@ export default function Messages() {
                               </div>
                             )}
                           </div>
-                          <span className="text-xs text-muted-foreground px-1">
+                          <span className="text-[11px] text-muted-foreground px-1">
                             {format(new Date(msg.createdAt), 'h:mm a')}
                           </span>
                         </div>
                       </div>
                     );
+                    return els;
                   })}
                   <div ref={messagesEndRef} />
                 </div>
@@ -600,10 +798,18 @@ export default function Messages() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
-            <MessageSquarePlus className="h-12 w-12 opacity-50" />
-            <p>Select a person to message</p>
-            <Button variant="outline" onClick={() => setNewMessageOpen(true)}>
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+              <MessageSquarePlus className="h-9 w-9 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground mb-1">No conversation selected</h3>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                Pick a person from the list or start a new conversation.
+              </p>
+            </div>
+            <Button onClick={() => setNewMessageOpen(true)}>
+              <MessageSquarePlus className="h-4 w-4 mr-2" />
               New message
             </Button>
           </div>
