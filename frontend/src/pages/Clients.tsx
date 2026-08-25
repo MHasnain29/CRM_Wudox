@@ -104,6 +104,7 @@ import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
 import { useActAs } from '@/hooks/useActAs';
 import { useWriteAgencyId } from '@/hooks/useWriteAgencyId';
 import { resolveLinkedAwareOwnerIds } from '@/lib/linkedAwareOwnerIds';
+import { hasExplicitPeopleOwnerFilter, ownerIdsForClientsTab } from '@/lib/allClientsOwnerIds';
 import { ownerExactFlag } from '@/lib/ownerExactFlag';
 import { resolveOwnerIds } from '@/lib/ownerScope';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
@@ -1056,6 +1057,13 @@ export default function Clients() {
     [listOwnerIdsKey],
   );
   const listOwnerExact = linkedOwnerResolve.ownerExact;
+  const explicitPeopleOwnerFilter = hasExplicitPeopleOwnerFilter({
+    linkedUserIdsRaw: linkedUserIdParam,
+    actAsActive: actAs.isActive,
+    leaderParamInUrl,
+    managerParamInUrl,
+    userParamInUrl,
+  });
 
   useEffect(() => {
     ownerExactFlag.set(listOwnerExact);
@@ -1073,9 +1081,8 @@ export default function Clients() {
   }, [isUnifiedGlobalDbTab, selectedAgencyId, selectedLeaderId, selectedManagerId, selectedUserId, onlyMe, listOwnerIdsKey, linkedUserIdParam]);
   const unifiedFetchScopeKey = useMemo(() => {
     if (isUnifiedGlobalDbTab) return 'global-all';
-    // Same owner scope on every status tab (including All Clients) so filters behave consistently.
-    return `${effectiveAgencyId}|${listOwnerIdsKey ?? ''}|${linkedScopeParam}|${linkedUserIdParam}|exact:${listOwnerExact ? 1 : 0}|tab:${activeTab}`;
-  }, [isUnifiedGlobalDbTab, activeTab, effectiveAgencyId, listOwnerIdsKey, listOwnerExact, linkedScopeParam, linkedUserIdParam]);
+    return `${effectiveAgencyId}|${listOwnerIdsKey ?? ''}|${linkedScopeParam}|${linkedUserIdParam}|exact:${listOwnerExact ? 1 : 0}|people:${explicitPeopleOwnerFilter ? 1 : 0}|tab:${activeTab}`;
+  }, [isUnifiedGlobalDbTab, activeTab, effectiveAgencyId, listOwnerIdsKey, listOwnerExact, linkedScopeParam, linkedUserIdParam, explicitPeopleOwnerFilter]);
   const useInfiniteScroll = !isAllAgenciesView && activeTab !== 'all' && activeTab !== 'contactedByMe' && activeTab !== 'pending';
 
   const permissions = useAuthStore((s) => s.permissions);
@@ -1385,6 +1392,11 @@ export default function Clients() {
       ? effectiveAgencyId
       : (canViewAnyAgency ? currentSubCompany?.id : undefined);
     const ownerIdsParam = listOwnerIdsParam;
+    const allTabOwnerIds = ownerIdsForClientsTab({
+      tab: 'all',
+      ownerIds: ownerIdsParam,
+      explicitPeopleFilter: explicitPeopleOwnerFilter,
+    });
     const dbManagerGlobalAllCount =
       isDatabaseManagerRole && isDatabaseManagerAgencyMode && !agencyParam;
 
@@ -1392,7 +1404,7 @@ export default function Clients() {
       fetchClients(
         useGlobalDbClientsUi || dbManagerGlobalAllCount
           ? { page: 1, limit: 1, globalDb: true }
-          : { page: 1, limit: 1, subCompanyId: agencyParam, linkedAgencyId, ownerIds: ownerIdsParam },
+          : { page: 1, limit: 1, subCompanyId: agencyParam, linkedAgencyId, ownerIds: allTabOwnerIds },
       ),
       fetchClients({ page: 1, limit: 1, contactedByMe: true, contactedScope: 'mine', subCompanyId: agencyParam, ownerIds: ownerIdsParam }),
       canFilterContactedTeam
@@ -1433,7 +1445,7 @@ export default function Clients() {
     return () => {
       cancelled = true;
     };
-  }, [activeClientFilter, canFilterContactedTeam, canFilterLostTeam, canViewAnyAgency, currentSubCompany?.id, isManagerRole, isAssociate, isElevated, isAllAgenciesView, unifiedFetchScopeKey, isUnifiedGlobalDbTab, isDatabaseManagerRole, isDatabaseManagerAgencyMode, useGlobalDbClientsUi, activeTab, effectiveAgencyId, listOwnerIdsKey, linkedAgencyId]);
+  }, [activeClientFilter, canFilterContactedTeam, canFilterLostTeam, canViewAnyAgency, currentSubCompany?.id, isManagerRole, isAssociate, isElevated, isAllAgenciesView, unifiedFetchScopeKey, isUnifiedGlobalDbTab, isDatabaseManagerRole, isDatabaseManagerAgencyMode, useGlobalDbClientsUi, activeTab, effectiveAgencyId, listOwnerIdsKey, linkedAgencyId, explicitPeopleOwnerFilter]);
 
   useEffect(() => {
     if (isAllAgenciesView || useGlobalDbClientsUi) return;
@@ -1454,14 +1466,18 @@ export default function Clients() {
       ? (canFilterContactedTeam && !canViewAnyAgency ? contactedClientFilter : (onlyMe ? 'mine' : 'team'))
       : undefined;
     const isGlobalDbTab = isUnifiedGlobalDbTab;
-    // Management = ownership-type pool (not people filter). All other tabs, including All Clients,
-    // use the same chip/owner scope so unselected = own records everywhere.
-    const listOwnerIds =
+    // All Clients = approved visibility pool (agency lock, then org-wide). Other tabs stay people-scoped.
+    const rawListOwnerIds =
       activeTab === 'management'
         ? undefined
         : listOwnerIdsParam !== undefined
           ? listOwnerIdsParam
           : ((isAgencyHierarchyViewer || isPureManager) ? scopedOwnerIds : undefined);
+    const listOwnerIds = ownerIdsForClientsTab({
+      tab: activeTab,
+      ownerIds: rawListOwnerIds,
+      explicitPeopleFilter: explicitPeopleOwnerFilter,
+    });
     const hasLeadParam = availabilityFilter === 'available' ? false : availabilityFilter === 'non-available' ? true : undefined;
     const industryParam = industryFilters.length > 0 ? industryFilters.join(',') : undefined;
     const locationParam = [...cityFilters, ...provinceFilters].length > 0 ? [...cityFilters, ...provinceFilters].join(',') : undefined;
@@ -1548,6 +1564,7 @@ export default function Clients() {
     unifiedFetchScopeKey,
     useInfiniteScroll,
     isUnifiedGlobalDbTab,
+    explicitPeopleOwnerFilter,
   ]);
 
   // Load next page when the sentinel becomes visible (infinite scroll tabs only)

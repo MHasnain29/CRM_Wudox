@@ -15,6 +15,7 @@ export const SYSTEM_ROLE_KEYS = [
   'sales_manager',
   'sales_associate',
   'sales_executive',
+  'marketing',
   'recruitment_manager',
   'recruiter',
   'sr_recruiter',
@@ -144,6 +145,17 @@ export const PERMISSIONS_BY_ROLE_KEY: Record<SystemRoleKey, string[]> = {
     'leave:read', 'leave:write',
   ]),
   sales_associate: withSharedDefaults([
+    'users:read',
+    'clients:read', 'clients:write', 'clients:contacts:add',
+    'leads:read', 'leads:write', 'leads:reassign', 'pipeline:read', 'pipeline:write',
+    'calls:write', 'tasks:read', 'tasks:write',
+    'meetings:read', 'meetings:write', 'meetings:add_participants', 'analytics:read', 'voice:use', 'bug_reports:submit',
+    'remarks:write',
+    'client_notes:fields:write', 'client_notes:fields:read',
+    'leave:read', 'leave:write',
+  ]),
+  /** Same grants as sales_associate. Pages stay permission-based (no Marketing-only hides). */
+  marketing: withSharedDefaults([
     'users:read',
     'clients:read', 'clients:write', 'clients:contacts:add',
     'leads:read', 'leads:write', 'leads:reassign', 'pipeline:read', 'pipeline:write',
