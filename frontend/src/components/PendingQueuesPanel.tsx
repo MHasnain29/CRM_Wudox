@@ -688,7 +688,7 @@ export function PendingQueuesPanel({
             <DialogDescription className="text-center">
               {processingLabel}
               <br />
-              Please wait — this may take a minute for large imports. Do not close this page.
+              Please wait — do not close this page.
             </DialogDescription>
           </DialogHeader>
         </DialogContent>
