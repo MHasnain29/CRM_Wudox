@@ -19,7 +19,10 @@ export function MeetingScheduleSection({ onInsertMeetingLink, onInsertBookingLin
   const getBookingLinkUser = () => {
     const isPakistani = currentUser.country === 'Pakistan';
     const isCanadianSalesRole = currentUser.country === 'Canada' && 
-      (currentUser.userType === 'Sales Associate' || currentUser.userType === 'Sales Executive');
+      (currentUser.userType === 'Sales Associate'
+        || currentUser.userType === 'Sales Executive'
+        || currentUser.userType === 'Marketing'
+        || currentUser.role === 'marketing');
 
     if (isCanadianSalesRole) {
       // Canadian Sales Associates and Executives use their own booking link

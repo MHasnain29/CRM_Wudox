@@ -4,6 +4,7 @@ export type UserRole =
   | 'dev_team'
   | 'sales_associate'
   | 'sales_executive'
+  | 'marketing'
   | 'sales_manager'
   | 'data_entry_specialist'
   | 'database_manager'
@@ -16,7 +17,7 @@ export type UserRole =
   | 'recruitment_manager'
   | (string & {});
 
-export type UserType = 'Super Admin' | 'Dev Team' | 'Sales Associate' | 'Sales Executive' | 'Sales Manager' | 'Data Entry Specialist' | 'Database Manager' | 'Operations Manager' | 'IT' | 'Director' | 'Company Director' | 'Recruiter' | 'Sr. Recruiter' | 'Recruitment Manager';
+export type UserType = 'Super Admin' | 'Dev Team' | 'Sales Associate' | 'Sales Executive' | 'Marketing' | 'Sales Manager' | 'Data Entry Specialist' | 'Database Manager' | 'Operations Manager' | 'IT' | 'Director' | 'Company Director' | 'Recruiter' | 'Sr. Recruiter' | 'Recruitment Manager';
 
 import type { Country } from './countries';
 export type { Country };

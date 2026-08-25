@@ -42,6 +42,7 @@ import { useWriteAgencyId } from '@/hooks/useWriteAgencyId';
 const ROLE_LABELS: Record<string, string> = {
   sales_associate: 'Sales Associate',
   sales_executive: 'Sales Executive',
+  marketing: 'Marketing',
   recruiter: 'Recruiter',
   sr_recruiter: 'Sr. Recruiter',
   sales_manager: 'Sales Manager',

@@ -216,7 +216,7 @@ export async function getOwnScopeChildRoleKeys(parentRoleKey: string): Promise<s
 export async function isOwnScopeRoleKey(roleKey: string): Promise<boolean> {
   const scope = await getDataScopeLevelForRoleKey(roleKey);
   if (scope) return scope === 'own';
-  return ['sales_associate', 'sales_executive', 'recruiter', 'sr_recruiter', 'data_entry_specialist'].includes(roleKey);
+  return ['sales_associate', 'sales_executive', 'marketing', 'recruiter', 'sr_recruiter', 'data_entry_specialist'].includes(roleKey);
 }
 
 export async function listRolesTree(): Promise<RbacRoleTreeNode[]> {

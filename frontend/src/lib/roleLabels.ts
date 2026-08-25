@@ -169,7 +169,7 @@ export function filterRolesForActor(
       });
     }
   } else if (actorRole === 'sales_manager') {
-    filtered = options.filter((o) => o.role === 'sales_associate');
+    filtered = options.filter((o) => o.role === 'sales_associate' || o.role === 'marketing');
   } else if (actorRole === 'recruitment_manager') {
     filtered = options.filter((o) => ['recruiter', 'sr_recruiter'].includes(o.role));
   } else if (actorRole) {

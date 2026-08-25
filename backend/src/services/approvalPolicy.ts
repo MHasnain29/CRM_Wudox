@@ -87,6 +87,7 @@ export const DEFAULT_ROLE_CAPABILITY_BY_KEY: Record<string, Partial<Record<Appro
   },
   sales_associate: {},
   sales_executive: {},
+  marketing: {},
   recruiter: {},
   sr_recruiter: {},
   data_entry_specialist: {},

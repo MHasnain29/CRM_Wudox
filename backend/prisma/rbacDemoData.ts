@@ -73,6 +73,14 @@ export const ROLE_HIERARCHY: RoleSeed[] = [
     scopeLevel: 'own',
   },
   {
+    key: 'marketing',
+    name: 'Marketing',
+    description: 'Client outreach; same access as Sales Associate',
+    parentKey: 'sales_manager',
+    sortOrder: 13,
+    scopeLevel: 'own',
+  },
+  {
     key: 'recruitment_manager',
     name: 'Recruitment Manager',
     description: 'Manages recruiters within agency',
