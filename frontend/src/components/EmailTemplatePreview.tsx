@@ -7,19 +7,34 @@ import { fillPlaceholders } from '@/lib/emailStarterTemplates';
 interface EmailTemplatePreviewProps {
   html: string;
   agencyFooterText?: string | null;
+  agencyName?: string | null;
   className?: string;
 }
 
-export function EmailTemplatePreview({ html, agencyFooterText, className }: EmailTemplatePreviewProps) {
+export function EmailTemplatePreview({ html, agencyFooterText, agencyName, className }: EmailTemplatePreviewProps) {
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const previewHtml = fillPlaceholders(html, agencyFooterText);
+  const previewHtml = fillPlaceholders(html, agencyFooterText, agencyName);
 
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
+
+    const syncHeight = () => {
+      try {
+        const doc = iframe.contentDocument;
+        const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
+        iframe.style.height = `${Math.max(h || 0, 420)}px`;
+      } catch {
+        iframe.style.height = '500px';
+      }
+    };
+
+    iframe.addEventListener('load', syncHeight);
+    iframe.style.height = '420px';
     iframe.srcdoc = previewHtml;
+    return () => iframe.removeEventListener('load', syncHeight);
   }, [previewHtml]);
 
   return (
@@ -65,7 +80,7 @@ export function EmailTemplatePreview({ html, agencyFooterText, className }: Emai
             ref={iframeRef}
             sandbox="allow-same-origin"
             className="w-full border-none"
-            style={{ minHeight: '500px' }}
+            style={{ minHeight: '320px' }}
             title="Email template preview"
           />
         </div>

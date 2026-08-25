@@ -1,6 +1,6 @@
 /**
  * Large centered modal: manage personal email template copies.
- * Visual editor only — no raw HTML for normal users.
+ * HTML paste + live preview of the exact email the client receives.
  *
  * Delete confirm is in-dialog (not nested AlertDialog) to avoid Radix
  * body pointer-events lock that freezes the screen.
@@ -20,9 +20,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  EmailRichTextEditor,
-  type EmailRichTextEditorHandle,
-} from '@/components/EmailRichTextEditor';
+  CustomTemplateBodyEditor,
+  type CustomTemplateBodyEditorHandle,
+} from '@/components/email/CustomTemplateBodyEditor';
 import {
   customizeEmailTemplate,
   deleteEmailTemplate,
@@ -31,6 +31,8 @@ import {
   type ApiEmailTemplate,
 } from '@/lib/api';
 import { emailTemplateFillFields } from '@/lib/emailStarterTemplates';
+import { recoverPastedEmailHtml } from '@/lib/recoverPastedEmailHtml';
+import { useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { SectionPaginationBar, useClientPagination } from '@/components/SectionPagination';
 
@@ -43,46 +45,15 @@ interface CustomEmailTemplatesSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Full email HTML docs → editable inner body for the visual editor. */
-function isFullEmailDoc(html: string): boolean {
-  const t = html.trim().toLowerCase();
-  return t.startsWith('<!doctype') || t.startsWith('<html');
-}
-
-function extractEditableHtml(html: string): string {
-  if (!isFullEmailDoc(html)) return html;
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body?.innerHTML?.trim() || html;
-  } catch {
-    return html;
-  }
-}
-
-/** Put visual edits back into the original full-document shell when needed. */
-function mergeEditableHtml(originalHtml: string, editedInner: string): string {
-  if (!isFullEmailDoc(originalHtml)) return editedInner;
-  try {
-    const doc = new DOMParser().parseFromString(originalHtml, 'text/html');
-    if (!doc.body) return editedInner;
-    doc.body.innerHTML = editedInner;
-    return `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
-  } catch {
-    return editedInner;
-  }
-}
-
 function resetUiState(
   setMode: (m: Mode) => void,
   setEditing: (t: ApiEmailTemplate | null) => void,
   setDeleteId: (id: string | null) => void,
-  setShellHtml: (s: string) => void,
   setForm: (f: { name: string; subject: string; bodyHtml: string }) => void,
 ) {
   setMode('list');
   setEditing(null);
   setDeleteId(null);
-  setShellHtml('');
   setForm({ name: '', subject: '', bodyHtml: '' });
 }
 
@@ -94,10 +65,14 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<ApiEmailTemplate | null>(null);
-  const [shellHtml, setShellHtml] = useState('');
   const [form, setForm] = useState({ name: '', subject: '', bodyHtml: '' });
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const editorRef = useRef<EmailRichTextEditorHandle>(null);
+  const editorRef = useRef<CustomTemplateBodyEditorHandle>(null);
+  const agencyFooterText = useStore((s) => {
+    const sub = s.currentSubCompany;
+    return [sub?.emailFooterText?.trim(), sub?.emailTagline?.trim()].filter(Boolean).join(' · ') || null;
+  });
+  const agencyName = useStore((s) => s.currentSubCompany?.name?.trim() || null);
 
   const minePage = useClientPagination(mine, [mine.length, open], LIST_PAGE_SIZE);
   const sharedPage = useClientPagination(shared, [shared.length, mode], LIST_PAGE_SIZE);
@@ -116,7 +91,7 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
 
   useEffect(() => {
     if (!open) {
-      resetUiState(setMode, setEditing, setDeleteId, setShellHtml, setForm);
+      resetUiState(setMode, setEditing, setDeleteId, setForm);
       setSaving(false);
       setDeleting(false);
       // Clear any leftover Radix body lock from prior nested dialogs
@@ -144,11 +119,10 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
   const startEdit = (t: ApiEmailTemplate) => {
     setDeleteId(null);
     setEditing(t);
-    setShellHtml(t.bodyHtml);
     setForm({
       name: t.name,
       subject: t.subject,
-      bodyHtml: extractEditableHtml(t.bodyHtml),
+      bodyHtml: recoverPastedEmailHtml(t.bodyHtml),
     });
     setMode('edit');
   };
@@ -190,7 +164,7 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
     }
     setSaving(true);
     try {
-      const bodyHtml = mergeEditableHtml(shellHtml, form.bodyHtml.trim());
+      const bodyHtml = (editorRef.current?.getHtml() ?? form.bodyHtml).trim();
       const updated = await updateEmailTemplate(editing.id, {
         name: form.name.trim(),
         subject: form.subject.trim(),
@@ -198,7 +172,6 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
       });
       setMine((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
       setEditing(updated);
-      setShellHtml(updated.bodyHtml);
       toast.success('Template updated');
       setMode('list');
     } catch (e) {
@@ -217,7 +190,6 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
       setDeleteId(null);
       if (editing?.id === id) {
         setEditing(null);
-        setShellHtml('');
         setForm({ name: '', subject: '', bodyHtml: '' });
         setMode('list');
       }
@@ -234,7 +206,7 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-full max-w-[min(960px,94vw)] h-[min(720px,90vh)] !flex !flex-col gap-0 p-0 overflow-hidden sm:rounded-xl border-border/80 shadow-2xl">
+      <DialogContent className="w-full max-w-[min(1080px,94vw)] h-[min(780px,92vh)] !flex !flex-col gap-0 p-0 overflow-hidden sm:rounded-xl border-border/80 shadow-2xl">
         <DialogHeader className="px-6 py-4 border-b border-border/70 bg-muted/25 shrink-0 text-left pr-12 space-y-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -249,7 +221,7 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
                   {mode === 'pick-shared'
                     ? 'Pick a company template to copy for yourself'
                     : isEdit
-                      ? 'Edit your personal copy — shared templates stay unchanged'
+                      ? 'Paste HTML and preview the email the client will receive'
                       : 'Your copies only. Company templates stay unchanged.'}
                 </DialogDescription>
               </div>
@@ -330,7 +302,7 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
                       Insert field
                     </p>
                     <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
-                      Click to add at your cursor in the message.
+                      Click to insert into the HTML at your cursor.
                     </p>
                   </div>
                   <div className="flex flex-col gap-1 pt-0.5">
@@ -365,18 +337,18 @@ export function CustomEmailTemplatesSheet({ open, onOpenChange }: CustomEmailTem
                 </div>
               </aside>
 
-              {/* Right: message editor */}
+              {/* Right: HTML paste + visual preview */}
               <div className="min-w-0 min-h-0 flex flex-col gap-2 order-1 lg:order-2 px-5 py-4 bg-muted/20">
                 <Label className={cn(fieldLabel, 'shrink-0')}>Message</Label>
-                <EmailRichTextEditor
+                <CustomTemplateBodyEditor
+                  key={editing.id}
                   ref={editorRef}
                   value={form.bodyHtml}
                   onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))}
-                  placeholder="Write your message…"
-                  compact
-                  hideModeTabs
-                  stretch
-                  className="flex-1 min-h-0 [&_.rounded-lg]:rounded-xl [&_.rounded-lg]:shadow-sm [&_.rounded-lg]:border-border/70"
+                  agencyFooterText={agencyFooterText}
+                  agencyName={agencyName}
+                  disabled={saving}
+                  className="flex-1"
                 />
               </div>
             </div>
