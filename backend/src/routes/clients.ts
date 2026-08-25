@@ -60,6 +60,7 @@ import {
   bulkApprovePendingImportsAsNew,
   bulkRejectPendingImports,
 } from '../services/pendingImportApproval';
+import { notifyImportUploadersOfApproval } from '../services/pendingImportApprovalNotify';
 import {
   bulkApprovePendingContactImports,
   bulkRejectPendingContactImports,
@@ -1620,6 +1621,11 @@ clientRouter.post(
         subCompanyId,
         result.hadGlobalVisibility ? 'global' : 'agency',
       );
+      await notifyImportUploadersOfApproval({
+        subCompanyId,
+        actorUserId: req.user!.sub,
+        groups: result.uploaderApprovals,
+      });
     }
     return res.json(result);
   },
@@ -2044,6 +2050,18 @@ clientRouter.post(
         await tx.pendingImportedClient.delete({ where: { id: pending.id } });
       });
       await invalidateClientListCache(subCompanyId);
+      await notifyImportUploadersOfApproval({
+        subCompanyId,
+        actorUserId: req.user!.sub,
+        groups: [
+          {
+            importedById: pending.importedById,
+            count: 1,
+            sampleName: pending.name,
+            clientId: target.id,
+          },
+        ],
+      });
       return res.json({ mode, clientId: target.id, appended: stagedContacts.length });
     }
 
@@ -2148,6 +2166,18 @@ clientRouter.post(
     });
 
     await afterClientVisibilityChange(subCompanyId, visibility);
+    await notifyImportUploadersOfApproval({
+      subCompanyId,
+      actorUserId: req.user!.sub,
+      groups: [
+        {
+          importedById: pending.importedById,
+          count: 1,
+          sampleName: created.name,
+          clientId: created.id,
+        },
+      ],
+    });
     return res.status(201).json({
       mode,
       clientId: created.id,
