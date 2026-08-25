@@ -213,7 +213,7 @@ const CLIENT_MANUAL_EDIT_EVENT_KEYS: Record<ApprovalNotifyPhase, string> = {
 const CLIENT_IMPORT_EVENT_KEYS: Record<ApprovalNotifyPhase, string> = {
   submit: 'client_import_row_pending',
   forward: 'client_import_forwarded',
-  approved: 'client_created_approved',
+  approved: 'client_import_approved',
   rejected: 'client_submission_declined',
 };
 
@@ -626,6 +626,16 @@ const STATIC_ENTRIES: NotificationRegistryEntry[] = [
     defaultBody: 'Forwarded to you: import "{{entityLabel}}" from {{actorName}}.',
     placeholders: ['entityLabel', 'actorName'],
     sampleContext: { entityLabel: SAMPLE.entityLabel, actorName: SAMPLE.actorName },
+  }),
+  entry({
+    eventKey: 'client_import_approved',
+    storeAsType: 'client_created',
+    category: 'clients',
+    label: 'CSV import approved',
+    description: 'Uploader notified when imported clients are approved.',
+    defaultTitle: 'Import approved',
+    defaultBody: '{{actorName}} approved your import: {{entityLabel}}.',
+    placeholders: ['entityLabel', 'actorName', 'count'],
   }),
   entry({
     eventKey: 'client_submission_declined',

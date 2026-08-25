@@ -2077,7 +2077,17 @@ export default function Clients() {
     setClientListRefreshKey((k) => k + 1);
   };
 
-  // Bulk approve/reject imports — one API call per agency (not one HTTP request per row).
+  // API allows max 1000 ids per request. Chunk so select-all of 1000+ rows still works.
+  const PENDING_IMPORT_BATCH_SIZE = 1000;
+  const chunkIds = (ids: string[]): string[][] => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += PENDING_IMPORT_BATCH_SIZE) {
+      chunks.push(ids.slice(i, i + PENDING_IMPORT_BATCH_SIZE));
+    }
+    return chunks;
+  };
+
+  // Bulk approve/reject imports — one API call per agency batch (not one HTTP request per row).
   const runBulkOnImports = async (
     ids: string[],
     action: 'approve' | 'reject',
@@ -2097,27 +2107,29 @@ export default function Clients() {
     const succeededIds = new Set<string>();
 
     for (const [subCompanyId, agencyIds] of byAgency) {
-      try {
-        if (action === 'approve') {
-          const result = await bulkApprovePendingImports(agencyIds, { subCompanyId });
-          ok += result.approved;
-          for (const f of result.failed) {
-            failures.push(f.name || f.id);
+      for (const batch of chunkIds(agencyIds)) {
+        try {
+          if (action === 'approve') {
+            const result = await bulkApprovePendingImports(batch, { subCompanyId });
+            ok += result.approved;
+            for (const f of result.failed) {
+              failures.push(f.name || f.id);
+            }
+            batch
+              .filter((id) => !result.failed.some((f) => f.id === id))
+              .forEach((id) => succeededIds.add(id));
+          } else {
+            const result = await bulkRejectPendingImports(batch, { subCompanyId });
+            ok += result.deleted;
+            batch.forEach((id) => succeededIds.add(id));
           }
-          agencyIds
-            .filter((id) => !result.failed.some((f) => f.id === id))
-            .forEach((id) => succeededIds.add(id));
-        } else {
-          const result = await bulkRejectPendingImports(agencyIds, { subCompanyId });
-          ok += result.deleted;
-          agencyIds.forEach((id) => succeededIds.add(id));
+        } catch (err) {
+          for (const id of batch) {
+            const row = rowsById.get(id);
+            failures.push(row?.name || id);
+          }
+          console.error('bulk pending-import action failed', { subCompanyId, action, err });
         }
-      } catch (err) {
-        for (const id of agencyIds) {
-          const row = rowsById.get(id);
-          failures.push(row?.name || id);
-        }
-        console.error('bulk pending-import action failed', { subCompanyId, action, err });
       }
     }
 
@@ -2161,22 +2173,24 @@ export default function Clients() {
     const succeededIds = new Set<string>();
 
     for (const [subCompanyId, agencyIds] of byAgency) {
-      try {
-        if (action === 'approve') {
-          const result = await bulkApprovePendingContactImports(agencyIds, { subCompanyId });
-          ok += result.approved;
-          for (const f of result.failed) failures.push(f.id);
-          agencyIds
-            .filter((id) => !result.failed.some((f) => f.id === id))
-            .forEach((id) => succeededIds.add(id));
-        } else {
-          const result = await bulkRejectPendingContactImports(agencyIds, { subCompanyId });
-          ok += result.rejected;
-          agencyIds.forEach((id) => succeededIds.add(id));
+      for (const batch of chunkIds(agencyIds)) {
+        try {
+          if (action === 'approve') {
+            const result = await bulkApprovePendingContactImports(batch, { subCompanyId });
+            ok += result.approved;
+            for (const f of result.failed) failures.push(f.id);
+            batch
+              .filter((id) => !result.failed.some((f) => f.id === id))
+              .forEach((id) => succeededIds.add(id));
+          } else {
+            const result = await bulkRejectPendingContactImports(batch, { subCompanyId });
+            ok += result.rejected;
+            batch.forEach((id) => succeededIds.add(id));
+          }
+        } catch (err) {
+          for (const id of batch) failures.push(id);
+          console.error('bulk pending-contact-import action failed', { subCompanyId, action, err });
         }
-      } catch (err) {
-        for (const id of agencyIds) failures.push(id);
-        console.error('bulk pending-contact-import action failed', { subCompanyId, action, err });
       }
     }
 

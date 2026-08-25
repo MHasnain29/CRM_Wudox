@@ -28,6 +28,7 @@ import {
 } from '../types/approval';
 import { executePendingSubmissionApproval, executePendingEditApproval } from './clientApprovalExecutor';
 import { approvePendingImportAsNew } from './pendingImportApproval';
+import { notifyImportUploadersOfApproval } from './pendingImportApprovalNotify';
 import { approvePendingContactImport } from './pendingContactImportApproval';
 import { defaultLockDays } from './clientVisibilityPolicy';
 
@@ -419,6 +420,18 @@ async function executeFinalApproval(
           approverUserId,
         });
         if (!row) return { ok: false, error: 'Failed', status: 500 };
+        await notifyImportUploadersOfApproval({
+          subCompanyId: pending.subCompanyId ?? subCompanyId,
+          actorUserId: approverUserId,
+          groups: [
+            {
+              importedById: pending.importedById,
+              count: 1,
+              sampleName: pending.name,
+              clientId: row.clientId,
+            },
+          ],
+        });
         return { ok: true, action: 'approve', data: row };
       }
       const visibilitySetting = await prisma.clientVisibilitySetting.findUnique({
@@ -429,6 +442,18 @@ async function executeFinalApproval(
       const row = await prisma.$transaction((tx) =>
         approvePendingImportAsNew(tx, { pending, subCompanyId, lockDays, codeSuffix: '0' }),
       );
+      await notifyImportUploadersOfApproval({
+        subCompanyId,
+        actorUserId: approverUserId,
+        groups: [
+          {
+            importedById: pending.importedById,
+            count: 1,
+            sampleName: pending.name,
+            clientId: row.clientId,
+          },
+        ],
+      });
       return { ok: true, action: 'approve', data: row };
     }
     case 'contact_import':

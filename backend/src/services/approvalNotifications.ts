@@ -337,6 +337,8 @@ export async function notifyRequesterAfterApprove(params: {
     'client_manual_add',
     'client_manual_edit',
     'lead_reassignment',
+    'client_import',
+    'database_client_import',
   ];
   if (skip.includes(params.workflow)) return;
 
