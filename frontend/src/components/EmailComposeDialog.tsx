@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/popover';
 import { Send, FileText, Calendar, ChevronDown, ChevronUp, Loader2, PenLine, Paperclip, X, Image as ImageIcon, Film, Mail } from 'lucide-react';
 import { applyAgencyFooter } from '@/lib/emailStarterTemplates';
+import { recoverPastedEmailHtml } from '@/lib/recoverPastedEmailHtml';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useStore } from '@/lib/store';
 import { useActAs } from '@/hooks/useActAs';
@@ -368,7 +369,9 @@ export function EmailComposeDialog({
   const handleTemplateSelect = (template: ApiEmailTemplate) => {
     setSelectedTemplateId(template.id);
     setSubject(template.subject);
-    const fullBody = [template.headerHtml, template.bodyHtml, template.footerHtml].filter(Boolean).join('\n');
+    const fullBody = recoverPastedEmailHtml(
+      [template.headerHtml, template.bodyHtml, template.footerHtml].filter(Boolean).join('\n'),
+    );
     const combinedFooter = [currentSubCompany?.emailFooterText?.trim(), currentSubCompany?.emailTagline?.trim()].filter(Boolean).join(' · ') || null;
     setBody(applyAgencyFooter(fullBody, combinedFooter));
     toast.success(`"${template.name}" template loaded – you can edit below`);

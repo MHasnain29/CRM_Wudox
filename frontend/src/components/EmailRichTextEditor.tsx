@@ -32,11 +32,16 @@ import {
 import { cn } from '@/lib/utils';
 import { emailTemplateFillFields } from '@/lib/emailStarterTemplates';
 
-/** Normalize HTML for storage: ensure we have at least a paragraph for empty content */
+/** Normalize HTML for storage: keep real markup, wrap plain text in paragraphs. */
+function looksLikeHtml(html: string): boolean {
+  const t = html.trim();
+  return /^<!doctype/i.test(t) || /^<html[\s>]/i.test(t) || /^<[a-z]/i.test(t);
+}
+
 function normalizeHtml(html: string): string {
   const t = (html || '').trim();
   if (!t) return '';
-  if (!/^<[a-z]/i.test(t)) return `<p>${t.replace(/\n/g, '</p><p>')}</p>`;
+  if (!looksLikeHtml(t)) return `<p>${t.replace(/\n/g, '</p><p>')}</p>`;
   return t;
 }
 
