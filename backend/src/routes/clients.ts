@@ -2648,6 +2648,78 @@ clientRouter.get('/:id/lead-history', async (req: Request, res: Response) => {
   return res.json({ data });
 });
 
+clientRouter.get(
+  '/pending-contact-imports',
+  authenticate,
+  requirePermission('clients:read'),
+  async (req: Request, res: Response) => {
+    const ctx = await ensureAccessContext(req);
+    const scope = typeof req.query.scope === 'string' ? req.query.scope : undefined;
+
+    if (isDatabaseManagerRole(ctx?.roleKey)) {
+      const scopeSubCompanyId = parseSubCompanyIdQuery(req);
+      const allowedAgencyIds = await resolveAllowedSubCompanyIds(req.user!, req);
+      if (scopeSubCompanyId && !allowedAgencyIds.includes(scopeSubCompanyId)) {
+        return res.status(403).json({ error: 'Agency not in your scope' });
+      }
+      const where = (
+        scope === 'global'
+          ? { submissionSource: 'global_database' as const, importedById: req.user!.sub }
+          : scopeSubCompanyId
+            ? {
+                submissionSource: 'agency' as const,
+                importedById: req.user!.sub,
+                subCompanyId: scopeSubCompanyId,
+              }
+            : {
+                importedById: req.user!.sub,
+                OR: [
+                  { submissionSource: 'global_database' as const },
+                  ...(allowedAgencyIds.length > 0
+                    ? [{ submissionSource: 'agency' as const, subCompanyId: { in: allowedAgencyIds } }]
+                    : []),
+                ],
+              }
+      ) as Prisma.PendingImportedContactWhereInput;
+      const records = await prisma.pendingImportedContact.findMany({
+        where,
+        orderBy: { importedAt: 'desc' },
+        include: {
+          importedBy: { select: { firstName: true, lastName: true } },
+          targetClient: { select: { id: true, name: true, corporateCode: true } },
+        },
+      });
+      return res.json(records);
+    }
+
+    if (!(await assertPendingQueueAccess(req, res))) return;
+
+    if (scope === 'global') {
+      const records = await prisma.pendingImportedContact.findMany({
+        where: { submissionSource: 'global_database' },
+        orderBy: { importedAt: 'desc' },
+        include: {
+          importedBy: { select: { firstName: true, lastName: true } },
+          targetClient: { select: { id: true, name: true, corporateCode: true } },
+        },
+      });
+      return res.json(records);
+    }
+
+    const subCompanyId = await getEffectiveSubCompanyId(req);
+    if (!subCompanyId) return res.status(403).json({ error: 'Agency context required' });
+    const records = await prisma.pendingImportedContact.findMany({
+      where: { subCompanyId, submissionSource: 'agency' },
+      orderBy: { importedAt: 'desc' },
+      include: {
+        importedBy: { select: { firstName: true, lastName: true } },
+        targetClient: { select: { id: true, name: true, corporateCode: true } },
+      },
+    });
+    return res.json(records);
+  },
+);
+
 clientRouter.get('/:id', async (req: Request, res: Response) => {
   const subCompanyId = await getEffectiveSubCompanyId(req);
   if (!subCompanyId) {
@@ -4563,78 +4635,6 @@ clientRouter.post(
       }
       throw err;
     }
-  },
-);
-
-clientRouter.get(
-  '/pending-contact-imports',
-  authenticate,
-  requirePermission('clients:read'),
-  async (req: Request, res: Response) => {
-    const ctx = await ensureAccessContext(req);
-    const scope = typeof req.query.scope === 'string' ? req.query.scope : undefined;
-
-    if (isDatabaseManagerRole(ctx?.roleKey)) {
-      const scopeSubCompanyId = parseSubCompanyIdQuery(req);
-      const allowedAgencyIds = await resolveAllowedSubCompanyIds(req.user!, req);
-      if (scopeSubCompanyId && !allowedAgencyIds.includes(scopeSubCompanyId)) {
-        return res.status(403).json({ error: 'Agency not in your scope' });
-      }
-      const where = (
-        scope === 'global'
-          ? { submissionSource: 'global_database' as const, importedById: req.user!.sub }
-          : scopeSubCompanyId
-            ? {
-                submissionSource: 'agency' as const,
-                importedById: req.user!.sub,
-                subCompanyId: scopeSubCompanyId,
-              }
-            : {
-                importedById: req.user!.sub,
-                OR: [
-                  { submissionSource: 'global_database' as const },
-                  ...(allowedAgencyIds.length > 0
-                    ? [{ submissionSource: 'agency' as const, subCompanyId: { in: allowedAgencyIds } }]
-                    : []),
-                ],
-              }
-      ) as Prisma.PendingImportedContactWhereInput;
-      const records = await prisma.pendingImportedContact.findMany({
-        where,
-        orderBy: { importedAt: 'desc' },
-        include: {
-          importedBy: { select: { firstName: true, lastName: true } },
-          targetClient: { select: { id: true, name: true, corporateCode: true } },
-        },
-      });
-      return res.json(records);
-    }
-
-    if (!(await assertPendingQueueAccess(req, res))) return;
-
-    if (scope === 'global') {
-      const records = await prisma.pendingImportedContact.findMany({
-        where: { submissionSource: 'global_database' },
-        orderBy: { importedAt: 'desc' },
-        include: {
-          importedBy: { select: { firstName: true, lastName: true } },
-          targetClient: { select: { id: true, name: true, corporateCode: true } },
-        },
-      });
-      return res.json(records);
-    }
-
-    const subCompanyId = await getEffectiveSubCompanyId(req);
-    if (!subCompanyId) return res.status(403).json({ error: 'Agency context required' });
-    const records = await prisma.pendingImportedContact.findMany({
-      where: { subCompanyId, submissionSource: 'agency' },
-      orderBy: { importedAt: 'desc' },
-      include: {
-        importedBy: { select: { firstName: true, lastName: true } },
-        targetClient: { select: { id: true, name: true, corporateCode: true } },
-      },
-    });
-    return res.json(records);
   },
 );
 
