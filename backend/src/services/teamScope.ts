@@ -677,7 +677,7 @@ async function buildSingleAgencyTree(
   if (viewerCtx.roleKey === 'company_director' && selfAsDirector) {
     const salesManagers = managers.filter((m) => m.role === 'sales_manager');
     const salesOrphans = orphans.filter((u) =>
-      ['sales_associate', 'sales_executive'].includes(u.role),
+      ['sales_associate', 'sales_executive', 'marketing'].includes(u.role),
     );
     return [
       {

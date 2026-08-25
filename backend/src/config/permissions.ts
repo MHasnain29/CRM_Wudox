@@ -146,6 +146,7 @@ export const ROLE_LABELS: Record<string, string> = {
   recruitment_manager: 'Recruitment Manager',
   sales_associate: 'Sales Associate',
   sales_executive: 'Sales Executive',
+  marketing: 'Marketing',
   recruiter: 'Recruiter',
   sr_recruiter: 'Senior Recruiter',
   data_entry_specialist: 'Data Entry Specialist',
@@ -175,7 +176,7 @@ export const SUBCOMPANY_WIDE_ROLES: Role[] = ['super_admin', 'director', 'compan
 export const MANAGER_ROLES: Role[] = ['sales_manager', 'recruitment_manager', 'operations_manager'];
 
 /** Field roles: own leads/clients only; must not see other associates' pipeline status in the same agency */
-export const ASSOCIATE_ROLES: Role[] = ['sales_associate', 'sales_executive'];
+export const ASSOCIATE_ROLES: Role[] = ['sales_associate', 'sales_executive', 'marketing'];
 
 /** @deprecated Prefer RBAC scopeLevel === 'own' via isOwnScopeRole. */
 export function isAssociateRole(role: string | undefined): boolean {

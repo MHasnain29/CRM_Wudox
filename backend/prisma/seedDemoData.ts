@@ -15,6 +15,7 @@ export type SeedUserKey =
   | 'salesManager1'
   | 'salesAssociate1'
   | 'salesAssociate2'
+  | 'marketingUser'
   | 'recruiter1'
   | 'pakistanUser'
   | 'recruitmentManager'
@@ -122,6 +123,21 @@ const SEED_USER_DEFS: SeedUserDef[] = [
     country: 'Canada',
     role: 'sales_associate',
     userType: 'Sales Associate',
+    agency: 'mississauga',
+    location: 'toronto',
+    reportingTo: ['salesManager1'],
+    dailyCallsTarget: 100,
+    dailyEmailsTarget: 50,
+  },
+  {
+    key: 'marketingUser',
+    email: 'marketing@wudox.ca',
+    firstName: 'Maya',
+    lastName: 'Patel',
+    phone: '+1-416-555-0120',
+    country: 'Canada',
+    role: 'marketing',
+    userType: 'Marketing',
     agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['salesManager1'],
@@ -357,6 +373,7 @@ export async function seedUsers(
     salesManager1: usersByKey.get('salesManager1')!,
     salesAssociate1: usersByKey.get('salesAssociate1')!,
     salesAssociate2: usersByKey.get('salesAssociate2')!,
+    marketingUser: usersByKey.get('marketingUser')!,
     recruiter1: usersByKey.get('recruiter1')!,
     pakistanUser: usersByKey.get('pakistanUser')!,
     recruitmentManager: usersByKey.get('recruitmentManager')!,

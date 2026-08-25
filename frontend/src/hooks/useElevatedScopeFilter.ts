@@ -252,6 +252,7 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
 
   useEffect(() => {
     if (!isAgencyScopedElevated || agenciesLoading || agencies.length !== 1) return;
+    if (linkedOwnsScope) return;
     const onlyAgencyId = agencies[0]!.id;
     if (urlAgencyId === 'all' || urlAgencyId === 'me' || urlAgencyId !== onlyAgencyId) {
       setSearchParams(
@@ -263,7 +264,7 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
         { replace: true },
       );
     }
-  }, [isAgencyScopedElevated, agencies, agenciesLoading, urlAgencyId, setSearchParams]);
+  }, [isAgencyScopedElevated, agencies, agenciesLoading, urlAgencyId, setSearchParams, linkedOwnsScope]);
 
   const filterAgencies: Agency[] = isPureManager
     ? currentSubCompany
