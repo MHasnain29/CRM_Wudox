@@ -73,6 +73,7 @@ import { leaveRouter } from './routes/leave';
 import noticesRouter from './routes/notices';
 import { attendanceRouter } from './routes/attendance';
 import { hubstaffRouter } from './routes/hubstaff';
+import { dangerousAdminRouter } from './routes/dangerousAdmin';
 import { startHubstaffSync, stopHubstaffSync } from './jobs/hubstaffSyncJob';
 import { DEFAULT_BRAND_NAME } from './config/branding';
 
@@ -289,14 +290,21 @@ app.use(`${prefix}/leave`, leaveRouter);
 app.use(`${prefix}/notices`, noticesRouter);
 app.use(`${prefix}/attendance`, attendanceRouter);
 app.use(`${prefix}/hubstaff`, hubstaffRouter);
+if (env.ALLOW_DANGEROUS_ADMIN_TOOLS) {
+  app.use(`${prefix}/dangerous-admin`, dangerousAdminRouter);
+  console.warn('⚠️  Danger Zone tools enabled (ALLOW_DANGEROUS_ADMIN_TOOLS). Disable before client handover.');
+}
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');
 if (fs.existsSync(clientDir)) {
   app.use(express.static(clientDir));
-  // SPA fallback: serve index.html for non-API GET so client-side routing works
-  app.get('*', (_req: Request, res: Response) => {
-    res.sendFile(path.join(clientDir, 'index.html'));
+  // SPA fallback for non-API GET only — never swallow missing API routes as index.html
+  app.get('*', (req: Request, res: Response) => {
+    if (req.path.startsWith('/api/') || req.originalUrl.startsWith('/api/')) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.sendFile(path.join(clientDir, 'index.html'));
   });
 }
 
