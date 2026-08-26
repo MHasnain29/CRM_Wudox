@@ -136,6 +136,14 @@ export function hasAllPermissions(role: Role, permissions: Permission[]): boolea
   return permissions.every((p) => hasPermission(role, p));
 }
 
+export const MARKETING_ROLE_KEY = 'marketing';
+export const MARKETING_ROLE_LABEL = 'Sales & Marketing Executive';
+
+/** True when a stored title is the old default for the marketing role. */
+export function isLegacyMarketingTitle(role: string, title: string | null | undefined): boolean {
+  return role === MARKETING_ROLE_KEY && (title ?? '').trim().toLowerCase() === 'marketing';
+}
+
 /** Human-readable labels for roles (for UI and docs) */
 export const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super Admin',
@@ -146,7 +154,7 @@ export const ROLE_LABELS: Record<string, string> = {
   recruitment_manager: 'Recruitment Manager',
   sales_associate: 'Sales Associate',
   sales_executive: 'Sales Executive',
-  marketing: 'Marketing',
+  marketing: MARKETING_ROLE_LABEL,
   recruiter: 'Recruiter',
   sr_recruiter: 'Senior Recruiter',
   data_entry_specialist: 'Data Entry Specialist',

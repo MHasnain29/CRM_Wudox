@@ -8,6 +8,7 @@ import { agencyLabelForUser } from './agencyIndependentUsers';
 import {
   getPermissionsForRole as getStaticPermissionsForRole,
   getRoleLabel as getStaticRoleLabel,
+  isLegacyMarketingTitle,
   type Permission,
 } from '../config/permissions';
 import { PERMISSIONS_BY_ROLE_KEY, SYSTEM_ROLE_KEYS } from '../config/systemRolePermissions';
@@ -89,8 +90,10 @@ export async function getUserRoleTitle(user: {
   role: string;
 }): Promise<string> {
   const trimmed = user.userType?.trim();
-  if (trimmed) return trimmed;
-  return getRoleDisplayName(user.role);
+  if (trimmed && !isLegacyMarketingTitle(user.role, trimmed)) return trimmed;
+  const fromDb = await getRoleDisplayName(user.role);
+  if (isLegacyMarketingTitle(user.role, fromDb)) return getStaticRoleLabel(user.role);
+  return fromDb;
 }
 
 export function getUserRoleTitleSync(user: {
@@ -98,7 +101,7 @@ export function getUserRoleTitleSync(user: {
   role: string;
 }): string {
   const trimmed = user.userType?.trim();
-  if (trimmed) return trimmed;
+  if (trimmed && !isLegacyMarketingTitle(user.role, trimmed)) return trimmed;
   return getStaticRoleLabel(user.role);
 }
 
@@ -181,7 +184,7 @@ export async function listAssignableRoles(): Promise<AssignableRoleOption[]> {
   });
   return rows.map((r) => ({
     key: r.key,
-    name: r.name,
+    name: isLegacyMarketingTitle(r.key, r.name) ? getStaticRoleLabel(r.key) : r.name,
     scopeLevel: r.scopeLevel,
     sortOrder: r.sortOrder,
     isSystem: r.isSystem,

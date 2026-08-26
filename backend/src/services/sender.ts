@@ -305,7 +305,7 @@ export function resolveClientFacingSenderTitle(user: {
   const custom = user.userType?.trim();
   let candidate: string | null = null;
   if (custom) {
-    candidate = custom;
+    candidate = getUserRoleTitleSync({ role: user.role, userType: custom });
   } else if (!INTERNAL_CLIENT_TITLE_ROLES.has(user.role)) {
     candidate = getUserRoleTitleSync({ role: user.role, userType: user.userType }).trim() || null;
   }

@@ -22,6 +22,7 @@ export function MeetingScheduleSection({ onInsertMeetingLink, onInsertBookingLin
       (currentUser.userType === 'Sales Associate'
         || currentUser.userType === 'Sales Executive'
         || currentUser.userType === 'Marketing'
+        || currentUser.userType === 'Sales & Marketing Executive'
         || currentUser.role === 'marketing');
 
     if (isCanadianSalesRole) {

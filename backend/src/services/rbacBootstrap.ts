@@ -4,7 +4,9 @@
  * rewrite every system role's permissions).
  */
 import { ensureMissingSystemRoles } from './ensureMissingSystemRoles';
+import { syncMarketingRoleDisplayName } from './syncMarketingRoleDisplayName';
 
 export async function ensureSystemRbacRoles(): Promise<void> {
   await ensureMissingSystemRoles();
+  await syncMarketingRoleDisplayName();
 }
