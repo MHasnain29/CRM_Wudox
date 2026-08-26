@@ -290,10 +290,7 @@ app.use(`${prefix}/leave`, leaveRouter);
 app.use(`${prefix}/notices`, noticesRouter);
 app.use(`${prefix}/attendance`, attendanceRouter);
 app.use(`${prefix}/hubstaff`, hubstaffRouter);
-if (env.ALLOW_DANGEROUS_ADMIN_TOOLS) {
-  app.use(`${prefix}/dangerous-admin`, dangerousAdminRouter);
-  console.warn('⚠️  Danger Zone tools enabled (ALLOW_DANGEROUS_ADMIN_TOOLS). Disable before client handover.');
-}
+app.use(`${prefix}/dangerous-admin`, dangerousAdminRouter);
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');

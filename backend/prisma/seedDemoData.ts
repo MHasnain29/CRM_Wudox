@@ -137,7 +137,7 @@ const SEED_USER_DEFS: SeedUserDef[] = [
     phone: '+1-416-555-0120',
     country: 'Canada',
     role: 'marketing',
-    userType: 'Marketing',
+    userType: 'Sales & Marketing Executive',
     agency: 'mississauga',
     location: 'toronto',
     reportingTo: ['salesManager1'],

@@ -16,6 +16,7 @@ import { useAssignableRoles } from '@/hooks/useAssignableRoles';
 import {
   filterRolesForActor,
   getRoleLabel,
+  getUserRoleTitle,
   isOwnScopeRoleKey,
   isTeamScopeRoleKey,
 } from '@/lib/roleLabels';
@@ -1401,7 +1402,7 @@ export default function Users() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{user.userType || user.role || '-'}</Badge>
+                    <Badge variant="secondary">{getUserRoleTitle(user, assignableRoles) || '-'}</Badge>
                   </TableCell>
                   <TableCell>
                     {hasDailyTargets(user.role) ? (

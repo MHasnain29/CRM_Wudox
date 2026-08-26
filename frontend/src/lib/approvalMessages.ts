@@ -6,6 +6,7 @@ const ROLE_LABELS: Record<string, string> = {
   sales_manager: 'Sales Manager',
   company_director: 'Company Director',
   recruitment_manager: 'Recruitment Manager',
+  marketing: 'Sales & Marketing Executive',
 };
 
 /** Human-readable role name from key. */

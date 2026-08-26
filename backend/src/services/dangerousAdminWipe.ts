@@ -1,9 +1,6 @@
 /**
- * Dangerous admin wipe — keep one super-admin user + system scaffolding.
- * Used by CLI script and by Settings → Danger Zone (env-gated).
- *
- * HANDOVER: remove this module, routes/dangerousAdmin.ts, Settings_DangerZoneTab.tsx,
- * and ALLOW_DANGEROUS_ADMIN_TOOLS from env before client handover.
+ * CRM wipe used by CLI script and Settings → Danger Zone.
+ * Keeps one super-admin user + system scaffolding (agencies, RBAC, settings).
  */
 
 import prisma from '../config/database';

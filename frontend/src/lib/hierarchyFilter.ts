@@ -37,7 +37,7 @@ export const STATIC_ASSIGNABLE_ROLES: AssignableRoleOption[] = [
   { key: 'sales_manager', name: 'Sales Manager', scopeLevel: 'team', sortOrder: 10, isSystem: true, parentKey: 'company_director' },
   { key: 'sales_associate', name: 'Sales Associate', scopeLevel: 'own', sortOrder: 11, isSystem: true, parentKey: 'sales_manager' },
   { key: 'sales_executive', name: 'Sales Executive', scopeLevel: 'own', sortOrder: 12, isSystem: true, parentKey: 'sales_manager' },
-  { key: 'marketing', name: 'Marketing', scopeLevel: 'own', sortOrder: 13, isSystem: true, parentKey: 'sales_manager' },
+  { key: 'marketing', name: 'Sales & Marketing Executive', scopeLevel: 'own', sortOrder: 13, isSystem: true, parentKey: 'sales_manager' },
   { key: 'recruiter', name: 'Recruiter', scopeLevel: 'own', sortOrder: 14, isSystem: true, parentKey: 'recruitment_manager' },
   { key: 'sr_recruiter', name: 'Senior Recruiter', scopeLevel: 'own', sortOrder: 15, isSystem: true, parentKey: 'recruitment_manager' },
   { key: 'data_entry_specialist', name: 'Data Entry Specialist', scopeLevel: 'own', sortOrder: 16, isSystem: true, parentKey: 'sales_manager' },

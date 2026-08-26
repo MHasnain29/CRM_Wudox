@@ -14,6 +14,7 @@ describe('roleHierarchy', () => {
     { key: 'company_director', name: 'Company Director', parentKey: 'director' },
     { key: 'sales_manager', name: 'Sales Manager', parentKey: 'company_director' },
     { key: 'sales_associate', name: 'Sales Associate', parentKey: 'sales_manager' },
+    { key: 'marketing', name: 'Sales & Marketing Executive', parentKey: 'sales_manager' },
     { key: 'recruitment_manager', name: 'Recruitment Manager', parentKey: 'director' },
   ];
 
@@ -22,6 +23,7 @@ describe('roleHierarchy', () => {
     expect(isRoleAncestorOf('company_director', 'sales_manager', parentByKey)).toBe(true);
     expect(isRoleAncestorOf('director', 'sales_manager', parentByKey)).toBe(true);
     expect(isRoleAncestorOf('sales_manager', 'sales_associate', parentByKey)).toBe(true);
+    expect(isRoleAncestorOf('sales_manager', 'marketing', parentByKey)).toBe(true);
     expect(isRoleAncestorOf('director', 'sales_associate', parentByKey)).toBe(true);
     expect(isRoleAncestorOf('sales_manager', 'director', parentByKey)).toBe(false);
     expect(isRoleAncestorOf('recruitment_manager', 'sales_manager', parentByKey)).toBe(false);

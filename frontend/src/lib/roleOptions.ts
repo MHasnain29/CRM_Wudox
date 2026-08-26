@@ -2,6 +2,13 @@
  * Backend-aligned role options for user management.
  * role = API/DB enum value; label = display/userType string.
  */
+export const MARKETING_ROLE_KEY = 'marketing';
+export const MARKETING_ROLE_LABEL = 'Sales & Marketing Executive';
+
+export function isLegacyMarketingTitle(roleKey: string, title: string | null | undefined): boolean {
+  return roleKey === MARKETING_ROLE_KEY && (title ?? '').trim().toLowerCase() === 'marketing';
+}
+
 export const ROLE_OPTIONS: { role: string; label: string }[] = [
   { role: 'super_admin', label: 'Super Admin' },
   { role: 'dev_team', label: 'Dev Team' },
@@ -11,7 +18,7 @@ export const ROLE_OPTIONS: { role: string; label: string }[] = [
   { role: 'recruitment_manager', label: 'Recruitment Manager' },
   { role: 'sales_associate', label: 'Sales Associate' },
   { role: 'sales_executive', label: 'Sales Executive' },
-  { role: 'marketing', label: 'Marketing' },
+  { role: MARKETING_ROLE_KEY, label: MARKETING_ROLE_LABEL },
   { role: 'recruiter', label: 'Recruiter' },
   { role: 'sr_recruiter', label: 'Senior Recruiter' },
   { role: 'data_entry_specialist', label: 'Data Entry Specialist' },

@@ -1,6 +1,5 @@
 /**
- * Wipe CRM business data. Keeps only KEEP_EMAIL (default hassan@wudox.ca)
- * and system scaffolding so login still works.
+ * Wipe CRM business data. Keeps hassan@wudox.ca and system scaffolding so login still works.
  *
  * Usage (from backend/):
  *   npx tsx scripts/wipe-crm-keep-hassan.ts
@@ -8,13 +7,12 @@
  */
 
 import {
-  DEFAULT_KEEP_EMAIL,
   executeCrmWipe,
   previewCrmWipe,
 } from '../src/services/dangerousAdminWipe';
 import prisma from '../src/config/database';
 
-const KEEP_EMAIL = (process.env.KEEP_EMAIL ?? process.env.DANGEROUS_ADMIN_KEEP_EMAIL ?? DEFAULT_KEEP_EMAIL).trim();
+const KEEP_EMAIL = 'hassan@wudox.ca';
 const confirm = process.argv.includes('--confirm');
 
 async function main() {

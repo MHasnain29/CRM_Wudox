@@ -1,7 +1,6 @@
 /**
  * Settings → Danger Zone (temporary wipe tools).
- * Visible only to super_admin. API only works when ALLOW_DANGEROUS_ADMIN_TOOLS=true.
- * HANDOVER: delete this file and the Settings tab wiring.
+ * Visible only to super_admin. HANDOVER: delete before client delivery.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -62,28 +61,22 @@ export function SettingsDangerZoneTab({ isActive }: { isActive: boolean }) {
     try {
       const res = await apiFetch<StatusResponse>('/dangerous-admin/status');
       if (!res.ok) {
-        if (res.status === 404) {
-          setUnavailable(
-            'Danger Zone is off on this server. Set ALLOW_DANGEROUS_ADMIN_TOOLS=true in backend .env and restart the backend.',
-          );
-        } else if (res.status === 403) {
+        if (res.status === 403) {
           setUnavailable(res.error || 'Only the designated keep user may open Danger Zone.');
         } else if (res.status === 0 || res.status >= 500) {
-          setUnavailable('Backend is not reachable. Start/restart npm run dev:backend.');
+          setUnavailable('Backend is not reachable. Start/restart the backend.');
         } else {
           setUnavailable(res.error || 'Could not load Danger Zone status.');
         }
         return;
       }
       if (!isStatusResponse(res.data)) {
-        setUnavailable(
-          'Danger Zone API did not return a valid status. Restart the backend with ALLOW_DANGEROUS_ADMIN_TOOLS=true.',
-        );
+        setUnavailable('Danger Zone API did not return a valid status.');
         return;
       }
       setStatus(res.data);
     } catch {
-      setUnavailable('Backend is not reachable. Start/restart npm run dev:backend.');
+      setUnavailable('Backend is not reachable. Start/restart the backend.');
     } finally {
       setLoading(false);
     }

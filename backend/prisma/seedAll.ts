@@ -52,7 +52,7 @@ async function main() {
   console.log('  manager1@wudox.ca             sales_manager');
   console.log('  associate1@wudox.ca           sales_associate');
   console.log('  associate2@wudox.ca           sales_associate');
-  console.log('  marketing@wudox.ca            marketing');
+  console.log('  marketing@wudox.ca            marketing (Sales & Marketing Executive)');
   console.log('  recruiter1@wudox.ca           recruiter');
   console.log('  pakistan@wudox.ca             recruiter');
   console.log('  recruitment.manager@wudox.ca  recruitment_manager');

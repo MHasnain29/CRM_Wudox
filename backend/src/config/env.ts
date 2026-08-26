@@ -91,17 +91,6 @@ const envSchema = z.object({
    * Example: [{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]
    */
   INTERNAL_CALL_ICE_SERVERS: z.string().optional(),
-
-  /**
-   * Temporary Danger Zone (Settings wipe tools). Must be exactly "true" to enable.
-   * HANDOVER: remove before client delivery. Default off.
-   */
-  ALLOW_DANGEROUS_ADMIN_TOOLS: z
-    .string()
-    .optional()
-    .transform((v) => v === 'true' || v === '1'),
-  /** Email of the only user allowed to run Danger Zone + the user kept after wipe. */
-  DANGEROUS_ADMIN_KEEP_EMAIL: z.string().email().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

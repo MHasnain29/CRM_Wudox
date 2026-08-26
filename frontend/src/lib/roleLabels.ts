@@ -1,5 +1,5 @@
 import type { AssignableRoleOption } from '@/lib/rbacApi';
-import { ASSOCIATE_LEVEL_ROLES, ROLE_OPTIONS, SALES_ROLES, SUPER_USERS_SCREEN_ROLES, DATABASE_MANAGER_SCREEN_ROLES } from '@/lib/roleOptions';
+import { ASSOCIATE_LEVEL_ROLES, ROLE_OPTIONS, SALES_ROLES, SUPER_USERS_SCREEN_ROLES, DATABASE_MANAGER_SCREEN_ROLES, MARKETING_ROLE_LABEL, isLegacyMarketingTitle } from '@/lib/roleOptions';
 
 const SUPER_USERS_SCREEN_ROLE_SET = new Set<string>(SUPER_USERS_SCREEN_ROLES);
 const DATABASE_MANAGER_SCREEN_ROLE_SET = new Set<string>(DATABASE_MANAGER_SCREEN_ROLES);
@@ -19,9 +19,9 @@ export function getUserRoleTitle(
   assignableRoles?: AssignableRoleOption[],
 ): string {
   const trimmed = user.userType?.trim();
-  if (trimmed) return trimmed;
+  if (trimmed && !isLegacyMarketingTitle(user.role, trimmed)) return trimmed;
   const fromApi = user.roleLabel?.trim();
-  if (fromApi) return fromApi;
+  if (fromApi && !isLegacyMarketingTitle(user.role, fromApi)) return fromApi;
   return getRoleLabel(user.role, assignableRoles);
 }
 
@@ -31,7 +31,10 @@ export function getRoleLabel(
   assignableRoles?: AssignableRoleOption[],
 ): string {
   const fromRbac = assignableRoles?.find((r) => r.key === roleKey);
-  if (fromRbac) return fromRbac.name;
+  if (fromRbac) {
+    if (isLegacyMarketingTitle(roleKey, fromRbac.name)) return MARKETING_ROLE_LABEL;
+    return fromRbac.name;
+  }
   const fromStatic = ROLE_OPTIONS.find((r) => r.role === roleKey);
   if (fromStatic) return fromStatic.label;
   return roleKey
@@ -56,7 +59,8 @@ export function buildRoleOptionsForSelect(
     byKey.set(opt.role, opt);
   }
   for (const r of assignableRoles) {
-    byKey.set(r.key, { role: r.key, label: r.name });
+    const label = isLegacyMarketingTitle(r.key, r.name) ? MARKETING_ROLE_LABEL : r.name;
+    byKey.set(r.key, { role: r.key, label });
   }
   return Array.from(byKey.values()).sort(
     (a, b) =>
@@ -74,7 +78,10 @@ export function buildPerformanceTargetRoleOptions(
   const options = buildRoleOptionsForSelect(assignableRoles).filter((o) => salesSet.has(o.role));
   for (const r of custom) {
     if (!options.some((o) => o.role === r.key)) {
-      options.push({ role: r.key, label: r.name });
+      options.push({
+        role: r.key,
+        label: isLegacyMarketingTitle(r.key, r.name) ? MARKETING_ROLE_LABEL : r.name,
+      });
     }
   }
   return options;
