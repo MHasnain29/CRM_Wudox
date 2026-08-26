@@ -191,7 +191,8 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
   const { assignableRoles } = useAssignableRoles();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  // Missing agencyId = unselected own (not All Agencies). Deselect writes `me`.
+  // Missing agencyId: multi-agency elevated (or agency-only picker) defaults to All Agencies.
+  // Deselect writes `me` and is not overwritten. SAL / manager / single-agency still force home.
   const urlAgencyId = searchParams.get('agencyId') ?? '';
   // Missing hierarchy params = unselected; string `all` only when param is present.
   const selectedLeaderId = searchParams.get('leaderId') ?? 'all';
@@ -201,11 +202,22 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
   const managerParamInUrl = searchParams.has('managerId');
   const userParamInUrl = searchParams.has('userId');
 
+  const shouldDefaultAllAgencies =
+    (isElevated || showAgencyFilterOnly) &&
+    !isSingleAgencyLead &&
+    !isPureManager &&
+    !linkedOwnsScope &&
+    !agenciesLoading &&
+    agencies.length > 1 &&
+    !urlAgencyId;
+
   const selectedAgencyId = isPureManager
     ? (currentSubCompany?.id ?? urlAgencyId)
     : isSingleAgencyLead
       ? (currentSubCompany?.id ?? urlAgencyId)
-      : urlAgencyId;
+      : shouldDefaultAllAgencies
+        ? 'all'
+        : urlAgencyId;
 
   const onlyMe = isViewingOwnDataOnly({
     isSingleAgencyLead,
@@ -265,6 +277,19 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
       );
     }
   }, [isAgencyScopedElevated, agencies, agenciesLoading, urlAgencyId, setSearchParams, linkedOwnsScope]);
+
+  useEffect(() => {
+    if (!shouldDefaultAllAgencies) return;
+    setSearchParams(
+      (prev) => {
+        if (prev.get('agencyId')) return prev;
+        const next = new URLSearchParams(prev);
+        next.set('agencyId', 'all');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [shouldDefaultAllAgencies, setSearchParams]);
 
   const filterAgencies: Agency[] = isPureManager
     ? currentSubCompany
