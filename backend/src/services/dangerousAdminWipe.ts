@@ -1,15 +1,11 @@
 /**
- * Dangerous admin wipe — keep one super-admin user + system scaffolding.
- * Used by CLI script and by Settings → Danger Zone (env-gated).
- *
- * HANDOVER: remove this module, routes/dangerousAdmin.ts, Settings_DangerZoneTab.tsx,
- * and ALLOW_DANGEROUS_ADMIN_TOOLS from env before client handover.
+ * CRM wipe used by `scripts/wipe-crm-keep-hassan.ts`.
+ * Keeps one super-admin user + system scaffolding (agencies, RBAC, settings).
  */
 
 import prisma from '../config/database';
 
 export const DEFAULT_KEEP_EMAIL = 'hassan@wudox.ca';
-export const WIPE_CONFIRM_PHRASE = 'DELETE ALL DATA';
 
 /** Tables that must stay so login / agencies / RBAC still work. */
 export const WIPE_KEEP_TABLES = new Set([

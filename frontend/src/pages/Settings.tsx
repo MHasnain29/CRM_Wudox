@@ -93,7 +93,6 @@ import {
   Star,
   MoreVertical,
   Timer,
-  AlertTriangle,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { getBackupPercentagePreference, setBackupPercentagePreference } from '@/lib/jobsApi';
@@ -121,7 +120,6 @@ import { EmailTemplatesSection, AutoSignatureCard } from './Settings_EmailTempla
 import { NotificationsSection } from './Settings_Notifications';
 import { PhoneSystemTab } from './Settings_PhoneSystemTab';
 import { HubstaffTab } from './Settings_HubstaffTab';
-import { SettingsDangerZoneTab } from './Settings_DangerZoneTab';
 import { SignatureCreatorWidget } from '@/components/SignatureCreatorWidget';
 import { AvailabilitySettings } from '@/components/AvailabilitySettings';
 import {
@@ -439,8 +437,6 @@ export default function Settings() {
     hasRolesRead || (hasSettingsWrite && canAccessMultipleAgencies);
   const canConfigureClientNotes = hasClientNotesConfigure;
   const isSuperAdmin = canManageAgencies;
-  const authUser = useAuthStore((s) => s.user);
-  const showDangerZone = authUser?.role === 'super_admin';
   const canApprove = hasSettingsWrite;
   const canManageLoginBrandingTab =
     hasSettingsWrite && (canManageAgencies || hasAgenciesCrossOrg);
@@ -1601,12 +1597,6 @@ export default function Settings() {
                 <TabsTrigger value="hubstaff">
                   <Timer className="h-4 w-4 mr-1" />
                   Hubstaff
-                </TabsTrigger>
-              )}
-              {showDangerZone && (
-                <TabsTrigger value="danger-zone" className="text-destructive data-[state=active]:text-destructive">
-                  <AlertTriangle className="h-4 w-4 mr-1" />
-                  Danger Zone
                 </TabsTrigger>
               )}
             </TabsList>
@@ -4590,12 +4580,6 @@ export default function Settings() {
         {canLinkAgencies && (
           <TabsContent value="linked-accounts" className="space-y-4">
             <AgencyLinkTab />
-          </TabsContent>
-        )}
-
-        {showDangerZone && (
-          <TabsContent value="danger-zone" className="space-y-4">
-            <SettingsDangerZoneTab isActive={tabFromUrl === 'danger-zone'} />
           </TabsContent>
         )}
       </Tabs>
