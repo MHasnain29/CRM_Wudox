@@ -73,6 +73,7 @@ import { leaveRouter } from './routes/leave';
 import noticesRouter from './routes/notices';
 import { attendanceRouter } from './routes/attendance';
 import { hubstaffRouter } from './routes/hubstaff';
+import { dangerousAdminRouter } from './routes/dangerousAdmin';
 import { startHubstaffSync, stopHubstaffSync } from './jobs/hubstaffSyncJob';
 import { DEFAULT_BRAND_NAME } from './config/branding';
 
@@ -289,6 +290,7 @@ app.use(`${prefix}/leave`, leaveRouter);
 app.use(`${prefix}/notices`, noticesRouter);
 app.use(`${prefix}/attendance`, attendanceRouter);
 app.use(`${prefix}/hubstaff`, hubstaffRouter);
+app.use(`${prefix}/dangerous-admin`, dangerousAdminRouter);
 
 // Serve frontend build from backend/client (copy frontend/dist contents into backend/client)
 const clientDir = path.join(__dirname, '..', 'client');

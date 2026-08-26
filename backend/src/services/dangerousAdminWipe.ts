@@ -1,11 +1,12 @@
 /**
- * CRM wipe used by `scripts/wipe-crm-keep-hassan.ts`.
+ * CRM wipe used by CLI script and Settings → Danger Zone.
  * Keeps one super-admin user + system scaffolding (agencies, RBAC, settings).
  */
 
 import prisma from '../config/database';
 
 export const DEFAULT_KEEP_EMAIL = 'hassan@wudox.ca';
+export const WIPE_CONFIRM_PHRASE = 'DELETE ALL DATA';
 
 /** Tables that must stay so login / agencies / RBAC still work. */
 export const WIPE_KEEP_TABLES = new Set([
