@@ -14,6 +14,7 @@ import {
   normalizeKeepEmail,
   previewCrmWipe,
 } from '../services/dangerousAdminWipe';
+import { seedMississaugaTeam } from '../services/dangerousAdminSeedTeam';
 
 export const dangerousAdminRouter = Router();
 
@@ -33,6 +34,19 @@ function assertActorAllowed(req: Request, res: Response): boolean {
 
 dangerousAdminRouter.use(authenticate);
 dangerousAdminRouter.use(requireRole('super_admin'));
+
+/** Add dummy Mississauga team. Any super_admin; no keep-email / env / approval gates. */
+dangerousAdminRouter.post('/seed-mississauga-team', async (_req: Request, res: Response) => {
+  try {
+    const result = await seedMississaugaTeam();
+    return res.json(result);
+  } catch (err) {
+    console.error('Danger Zone seed Mississauga team failed', err);
+    return res.status(500).json({
+      error: err instanceof Error ? err.message : 'Seed failed',
+    });
+  }
+});
 
 /** Status + preview counts (no mutation). */
 dangerousAdminRouter.get('/status', async (req: Request, res: Response) => {
