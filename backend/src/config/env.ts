@@ -52,9 +52,6 @@ const envSchema = z.object({
   MAX_FILE_SIZE: z.string().default('10485760'),
   ALLOWED_FILE_TYPES: z.string().default('pdf,doc,docx,jpg,jpeg,png'),
   
-  RATE_LIMIT_WINDOW_MS: z.string().default('1800000'),
-  RATE_LIMIT_MAX_REQUESTS: z.string().default('1000'),
-  
   /** Comma-separated IPs (and optional CIDRs) allowed to hit the API. Empty = no IP restriction. */
   IP_ALLOWLIST: z.string().optional(),
   /** Set to true when behind a reverse proxy so req.ip is taken from X-Forwarded-For. */
