@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
+import { DangerZoneSeedTeamCard } from '@/components/settings/DangerZoneSeedTeamCard';
 
 type WipePreview = {
   keepEmail: string;
@@ -148,6 +149,7 @@ export function SettingsDangerZoneTab({ isActive }: { isActive: boolean }) {
 
   return (
     <div className="space-y-4 max-w-2xl">
+      <DangerZoneSeedTeamCard />
       <Card className="border-destructive/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-destructive">

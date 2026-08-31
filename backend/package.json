@@ -31,6 +31,7 @@
     "db:sync-live": "tsx scripts/sync-live.ts",
     "scripts:clear-leads": "tsx scripts/clear-leads.ts",
     "scripts:wipe-keep-hassan": "tsx scripts/wipe-crm-keep-hassan.ts",
+    "scripts:add-mississauga-team": "tsx scripts/add-mississauga-team.ts",
     "seed:filter-test": "tsx prisma/seed-filter-test.ts",
     "test": "jest",
     "test:watch": "jest --watch",
