@@ -7,7 +7,6 @@ import helmet from 'helmet';
 import { attachSocketIO } from './socket';
 import cors from 'cors';
 import { corsOriginDelegate } from './config/corsOrigins';
-import rateLimit from 'express-rate-limit';
 import { env } from './config/env';
 import prisma from './config/database';
 import { connectRedis, disconnectRedis } from './config/redis';
@@ -83,25 +82,7 @@ if (env.TRUST_PROXY === 'true' || env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
 
-/** Rate-limit key: some proxies set X-Forwarded-For / req.ip to "ipv4:port", which breaks express-rate-limit's IP check. */
-function rateLimitClientKey(req: Request): string {
-  const xff = req.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim() ?? '';
-    const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/;
-    const m = first.match(v4WithPort);
-    if (m) return m[1];
-    if (first) return first;
-  }
-  const raw = req.ip || req.socket?.remoteAddress || 'unknown';
-  if (typeof raw !== 'string') return 'unknown';
-  const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/;
-  const m2 = raw.match(v4WithPort);
-  if (m2) return m2[1];
-  return raw;
-}
-
-// Security: IP allowlist (optional), helmet, cors, rate-limit
+// Security: IP allowlist (optional), helmet, cors
 app.use(ipAllowlist);
 app.use(
   helmet({
@@ -129,19 +110,6 @@ app.use(cors({
   origin: corsOriginDelegate,
   credentials: true,
 }));
-if (env.NODE_ENV !== 'development') {
-  app.use(
-    rateLimit({
-      windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS),
-      limit: parseInt(env.RATE_LIMIT_MAX_REQUESTS),
-      standardHeaders: true,
-      legacyHeaders: false,
-      // Disable all built-in checks: proxies often set req.ip to "a.b.c.d:port", which fails net.isIP() inside the default key path in some versions/setups.
-      validate: false,
-      keyGenerator: (req) => rateLimitClientKey(req),
-    })
-  );
-}
 // Allow larger payloads for document uploads (base64 in JSON). Default is ~100kb.
 const jsonLimit = process.env.BODY_LIMIT ?? '50mb';
 app.use(express.json({
