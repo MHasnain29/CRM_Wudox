@@ -15,7 +15,7 @@ import { Plus, Building2, MapPin, ArrowUpDown, ArrowUp, ArrowDown, Users, Filter
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { getUserRoleTitle } from '@/lib/roleLabels';
-import { fetchClients, fetchMailingLists, createMailingList, updateMailingList, deleteMailingList, addMembersToList, fetchMailingListMembers, fetchAssignableUsers, addListAssignees, removeListAssignee, archiveMailingList, type ApiUser, type ApiMailingList, type ApiAssignableUser } from '@/lib/api';
+import { apiFetch, fetchClients, fetchMailingLists, createMailingList, updateMailingList, deleteMailingList, addMembersToList, fetchMailingListMembers, fetchAssignableUsers, addListAssignees, removeListAssignee, archiveMailingList, type ApiUser, type ApiMailingList, type ApiAssignableUser } from '@/lib/api';
 import { onListChanged } from '@/lib/socket';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -734,6 +734,14 @@ export default function Lists() {
     });
   }, []);
 
+  useEffect(() => {
+    apiFetch<{ industries: string[] }>('/clients/facets').then((res) => {
+      if (res.ok && res.data?.industries) {
+        setFacetIndustries(res.data.industries);
+      }
+    });
+  }, []);
+
   // Sync localStorage lists → DB (runs once after clients are loaded)
   const syncedRef = useRef(false);
   useEffect(() => {
@@ -823,6 +831,7 @@ export default function Lists() {
   const [locationFilters, setLocationFilters] = useState<string[]>([]);
   const [industrySearch, setIndustrySearch] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
+  const [facetIndustries, setFacetIndustries] = useState<string[]>([]);
   const [companySizeFilters, setCompanySizeFilters] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<string[]>(['contacted', 'active', 'lost', 'ex', 'none']);
   const [rangeType, setRangeType] = useState<'all' | 'custom'>('all');
@@ -948,8 +957,10 @@ export default function Lists() {
     return enrichedLists.filter(l => l.createdBy.id === selectedUserId || isAssignedToUser(l, selectedUserId));
   }, [isElevated, isPureManager, selectedAgencyId, selectedUserId, enrichedLists, currentUser.id]);
 
-  // Extract unique values for filters
-  const allIndustries = Array.from(new Set(clients.map(c => c.industry).filter(Boolean))).sort();
+  // Extract unique values for filters — industries come from /clients/facets so newly-added industries always appear
+  const allIndustries = facetIndustries.length > 0
+    ? facetIndustries
+    : Array.from(new Set(clients.map(c => c.industry).filter(Boolean))).sort();
   const allLocations = Array.from(new Set(clients.map(c => c.location).filter(Boolean))).sort();
   const allTags = Array.from(new Set(clients.flatMap(c => c.tags))).sort();
   const allCompanySizes = Array.from(new Set(clients.map(c => c.companySize).filter(Boolean))).sort();

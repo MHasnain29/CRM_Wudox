@@ -1213,8 +1213,8 @@ userRouter.post('/super', requirePermission('users:write', 'agencies:cross_org')
     console.error('[users/super] Failed to assign staff extension for', user.email, err);
   });
 
-  // For roles with no subCompanyId (director, operations_manager), fall back to first managed agency branding
-  const agencySubId = user.subCompanyId ?? managedAgencies?.[0]?.subCompanyId ?? null;
+  // For roles with no subCompanyId (director, operations_manager), fall back to first managed agency branding, then first agency in the system
+  const agencySubId = user.subCompanyId ?? managedAgencies?.[0]?.subCompanyId ?? firstSub?.id ?? null;
   const agency = await getAgencyBranding(agencySubId);
   sendWelcomeWithPassword(user.email, user.firstName, tempPassword, agency).catch((err) => {
     console.error('Failed to send welcome email to', user.email, err);
