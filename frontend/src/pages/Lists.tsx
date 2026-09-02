@@ -15,7 +15,7 @@ import { Plus, Building2, MapPin, ArrowUpDown, ArrowUp, ArrowDown, Users, Filter
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { getUserRoleTitle } from '@/lib/roleLabels';
-import { apiFetch, fetchClients, fetchMailingLists, createMailingList, updateMailingList, deleteMailingList, addMembersToList, fetchMailingListMembers, fetchAssignableUsers, addListAssignees, removeListAssignee, archiveMailingList, type ApiUser, type ApiMailingList, type ApiAssignableUser } from '@/lib/api';
+import { fetchClients, fetchClientFacets, fetchMailingLists, createMailingList, updateMailingList, deleteMailingList, addMembersToList, fetchMailingListMembers, fetchAssignableUsers, addListAssignees, removeListAssignee, archiveMailingList, type ApiUser, type ApiMailingList, type ApiAssignableUser } from '@/lib/api';
 import { onListChanged } from '@/lib/socket';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -31,6 +31,8 @@ import { StickyHeader } from '@/components/StickyHeader';
 import { PersonSectionHeader, PersonCardIdentity } from '@/components/PersonSectionHeader';
 import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
 import { useScopeQueryParams } from '@/hooks/useScopeQueryParams';
+import { useListClientPreview } from '@/hooks/useListClientPreview';
+import { mapApiClientToListClient, matchesAnyFilter } from '@/lib/listClientPreview';
 
 interface SavedList {
   id: string;
@@ -705,42 +707,16 @@ export default function Lists() {
   const filteredAgencyLists = agencyListsRaw;
 
   useEffect(() => {
-    fetchClients({ limit: 500 }).then(({ data }) => {
-      setClients(data.map((c) => ({
-        id: c.id,
-        name: c.name,
-        industry: c.industry ?? '',
-        location: c.location ?? '',
-        address: c.address ?? '',
-        companySize: c.companySize ?? '',
-        tags: c.tags ?? [],
-        contacts: (c.contacts ?? []).map((ct) => ({
-          id: ct.id,
-          clientId: c.id,
-          name: ct.name,
-          title: ct.title ?? '',
-          email: ct.email ?? '',
-          phone: ct.phone ?? '',
-          phoneExtension: ct.phoneExtension ?? undefined,
-          linkedin: ct.linkedin ?? undefined,
-          website: ct.website ?? undefined,
-          isPrimary: ct.isPrimary,
-        })),
-        lastActivity: c.lastActivity ? new Date(c.lastActivity) : undefined,
-        status: c.status as Client['status'],
-        createdAt: new Date(c.createdAt),
-        notes: [],
-      })));
+    fetchClients({ limit: 500, subCompanyId: listWriteAgencyId }).then(({ data }) => {
+      setClients(data.map(mapApiClientToListClient));
     });
-  }, []);
+  }, [listWriteAgencyId, setClients]);
 
   useEffect(() => {
-    apiFetch<{ industries: string[] }>('/clients/facets').then((res) => {
-      if (res.ok && res.data?.industries) {
-        setFacetIndustries(res.data.industries);
-      }
+    fetchClientFacets({ subCompanyId: listWriteAgencyId }).then((res) => {
+      if (res.industries) setFacetIndustries(res.industries);
     });
-  }, []);
+  }, [listWriteAgencyId]);
 
   // Sync localStorage lists → DB (runs once after clients are loaded)
   const syncedRef = useRef(false);
@@ -760,10 +736,10 @@ export default function Lists() {
       const activeStatusFilters = list.filters.statusFilters ?? ['contacted', 'active', 'lost', 'ex', 'none'];
       let filtered = clients.filter((c) => {
         if (!matchesStatusFilters(c.status, activeStatusFilters)) return false;
-        if (list.filters.industryFilters?.length && !list.filters.industryFilters.includes(c.industry)) return false;
-        if (list.filters.locationFilters?.length && !list.filters.locationFilters.includes(c.location)) return false;
+        if (list.filters.industryFilters?.length && !matchesAnyFilter(c.industry, list.filters.industryFilters)) return false;
+        if (list.filters.locationFilters?.length && !matchesAnyFilter(c.location, list.filters.locationFilters)) return false;
         if (list.filters.tagFilters?.length && !c.tags.some((t) => list.filters.tagFilters!.includes(t))) return false;
-        if (list.filters.companySizeFilters?.length && !list.filters.companySizeFilters.includes(c.companySize)) return false;
+        if (list.filters.companySizeFilters?.length && !matchesAnyFilter(c.companySize, list.filters.companySizeFilters)) return false;
         return true;
       });
       if (list.filters.rangeType === 'custom' && list.filters.rangeStart != null && list.filters.rangeEnd != null) {
@@ -862,6 +838,20 @@ export default function Lists() {
   const [viewingListId, setViewingListId] = useState<string | null>(null);
   const [isNewListDialogOpen, setIsNewListDialogOpen] = useState(false);
   const [isEditListDialogOpen, setIsEditListDialogOpen] = useState(false);
+  const {
+    clients: serverPreviewClients,
+    isFetching: previewFetching,
+    usingServerPreview,
+  } = useListClientPreview(
+    {
+      industryFilters,
+      locationFilters,
+      tagFilters,
+      companySizeFilters,
+      subCompanyId: listWriteAgencyId,
+    },
+    isNewListDialogOpen || isEditListDialogOpen,
+  );
   const [editingList, setEditingList] = useState<SavedList | null>(null);
   const [newListName, setNewListName] = useState('');
   const canAssignLists = useHasPermission('lists:assign');
@@ -1285,25 +1275,29 @@ export default function Lists() {
     return false;
   };
 
-  // Apply filters for preview and viewing
+  // Apply filters for preview and viewing.
+  // When industry/location/tags/size are set, matching clients come from the API
+  // (full agency), not the 500-client snapshot used for the rest of this page.
   const getFilteredClients = () => {
-    return clients.filter(client => {
+    const source = usingServerPreview ? serverPreviewClients : clients;
+    return source.filter(client => {
       if (statusFilters.length > 0 && !matchesStatusFilters(client.status, statusFilters)) {
         return false;
       }
       if (searchTerm && !client.name.toLowerCase().includes(searchTerm.toLowerCase()) && !client.address.toLowerCase().includes(searchTerm.toLowerCase())) {
         return false;
       }
-      if (industryFilters.length > 0 && !industryFilters.includes(client.industry)) {
+      if (usingServerPreview) return true;
+      if (industryFilters.length > 0 && !matchesAnyFilter(client.industry, industryFilters)) {
         return false;
       }
-      if (locationFilters.length > 0 && !locationFilters.includes(client.location)) {
+      if (locationFilters.length > 0 && !matchesAnyFilter(client.location, locationFilters)) {
         return false;
       }
       if (tagFilters.length > 0 && !client.tags.some(tag => tagFilters.includes(tag))) {
         return false;
       }
-      if (companySizeFilters.length > 0 && !companySizeFilters.includes(client.companySize)) {
+      if (companySizeFilters.length > 0 && !matchesAnyFilter(client.companySize, companySizeFilters)) {
         return false;
       }
       return true;
@@ -1366,16 +1360,16 @@ export default function Lists() {
         return false;
       }
 
-      if (viewingList.filters.industryFilters && viewingList.filters.industryFilters.length > 0 && !viewingList.filters.industryFilters.includes(client.industry)) {
+      if (viewingList.filters.industryFilters && viewingList.filters.industryFilters.length > 0 && !matchesAnyFilter(client.industry, viewingList.filters.industryFilters)) {
         return false;
       }
-      if (viewingList.filters.locationFilters && viewingList.filters.locationFilters.length > 0 && !viewingList.filters.locationFilters.includes(client.location)) {
+      if (viewingList.filters.locationFilters && viewingList.filters.locationFilters.length > 0 && !matchesAnyFilter(client.location, viewingList.filters.locationFilters)) {
         return false;
       }
       if (viewingList.filters.tagFilters && viewingList.filters.tagFilters.length > 0 && !client.tags.some(tag => viewingList.filters.tagFilters!.includes(tag))) {
         return false;
       }
-      if (viewingList.filters.companySizeFilters && viewingList.filters.companySizeFilters.length > 0 && !viewingList.filters.companySizeFilters.includes(client.companySize)) {
+      if (viewingList.filters.companySizeFilters && viewingList.filters.companySizeFilters.length > 0 && !matchesAnyFilter(client.companySize, viewingList.filters.companySizeFilters)) {
         return false;
       }
       return true;
@@ -1690,9 +1684,18 @@ export default function Lists() {
                 <div className="space-y-2 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <Label>Preview</Label>
-                    <Badge variant="secondary">{rangedCount} {rangedCount === 1 ? 'client' : 'clients'}</Badge>
+                    <Badge variant="secondary">
+                      {previewFetching && usingServerPreview
+                        ? 'Loading…'
+                        : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
+                    </Badge>
                   </div>
-                  {previewClients.length === 0 ? (
+                  {previewFetching && usingServerPreview ? (
+                    <p className="text-sm text-muted-foreground text-center py-3 flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Finding matching clients…
+                    </p>
+                  ) : previewClients.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-3">No clients match these filters</p>
                   ) : (
                     <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -1763,11 +1766,11 @@ export default function Lists() {
                 }}>
                   Cancel
                 </Button>
-                <Button variant="secondary" onClick={() => setShowPreview(true)}>
+                <Button variant="secondary" onClick={() => setShowPreview(true)} disabled={previewFetching && usingServerPreview}>
                   <Eye className="h-4 w-4 mr-2" />
                   Show Preview
                 </Button>
-                <Button onClick={saveCurrentList}>
+                <Button onClick={saveCurrentList} disabled={previewFetching && usingServerPreview}>
                   <Save className="h-4 w-4 mr-2" />
                   Save List
                 </Button>
@@ -2009,9 +2012,18 @@ export default function Lists() {
                 <div className="space-y-2 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <Label>Preview</Label>
-                    <Badge variant="secondary">{rangedCount} {rangedCount === 1 ? 'client' : 'clients'}</Badge>
+                    <Badge variant="secondary">
+                      {previewFetching && usingServerPreview
+                        ? 'Loading…'
+                        : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
+                    </Badge>
                   </div>
-                  {previewClients.length === 0 ? (
+                  {previewFetching && usingServerPreview ? (
+                    <p className="text-sm text-muted-foreground text-center py-3 flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Finding matching clients…
+                    </p>
+                  ) : previewClients.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-3">No clients match these filters</p>
                   ) : (
                     <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -2083,11 +2095,11 @@ export default function Lists() {
                 }}>
                   Cancel
                 </Button>
-                <Button variant="secondary" onClick={() => setShowPreview(true)}>
+                <Button variant="secondary" onClick={() => setShowPreview(true)} disabled={previewFetching && usingServerPreview}>
                   <Eye className="h-4 w-4 mr-2" />
                   Show Preview
                 </Button>
-                <Button onClick={updateList}>
+                <Button onClick={updateList} disabled={previewFetching && usingServerPreview}>
                   <Save className="h-4 w-4 mr-2" />
                   Save Changes
                 </Button>
