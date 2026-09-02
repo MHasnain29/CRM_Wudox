@@ -11,6 +11,8 @@ export function useListClientPreview(filters: ListPreviewFilters, enabled: boole
     filters.tagFilters.length > 0 ||
     filters.companySizeFilters.length > 0;
 
+  const canQuery = enabled && hasAttributeFilters;
+
   const query = useQuery({
     queryKey: [
       'list-preview-clients',
@@ -20,14 +22,31 @@ export function useListClientPreview(filters: ListPreviewFilters, enabled: boole
       filters.tagFilters.slice().sort().join('\0'),
       filters.companySizeFilters.slice().sort().join('\0'),
     ],
-    queryFn: () => fetchListPreviewClients(filters),
-    enabled: enabled && hasAttributeFilters,
-    staleTime: 30_000,
+    queryFn: ({ queryKey }) => {
+      const [, subCompanyId, industry, location, tags, size] = queryKey as [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+      ];
+      return fetchListPreviewClients({
+        subCompanyId: subCompanyId || undefined,
+        industryFilters: industry ? industry.split('\0') : [],
+        locationFilters: location ? location.split('\0') : [],
+        tagFilters: tags ? tags.split('\0') : [],
+        companySizeFilters: size ? size.split('\0') : [],
+      });
+    },
+    enabled: canQuery,
+    staleTime: 0,
   });
 
   return {
     clients: query.data ?? [],
     isFetching: query.isFetching,
-    usingServerPreview: enabled && hasAttributeFilters,
+    isError: query.isError,
+    usingServerPreview: canQuery,
   };
 }
