@@ -4,6 +4,8 @@ import type { Client } from '@/lib/types';
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 10;
 
+export const DEFAULT_LIST_STATUS_FILTERS = ['contacted', 'active', 'lost', 'ex', 'none'] as const;
+
 export type ListPreviewFilters = {
   industryFilters: string[];
   locationFilters: string[];
@@ -20,6 +22,26 @@ export function matchesAnyFilter(value: string | null | undefined, filters: stri
   const needle = (value ?? '').trim().toLowerCase();
   if (!needle) return false;
   return filters.some((f) => f.trim().toLowerCase() === needle);
+}
+
+/** True when the user left the default status set (not narrowing the list). */
+export function isDefaultListStatusSelection(filters: string[]): boolean {
+  if (filters.length !== DEFAULT_LIST_STATUS_FILTERS.length) return false;
+  return DEFAULT_LIST_STATUS_FILTERS.every((s) => filters.includes(s));
+}
+
+/** Keep only clients that match the selected industry / location / tags / size. */
+export function applyListAttributeFilters(
+  clients: Client[],
+  filters: Pick<ListPreviewFilters, 'industryFilters' | 'locationFilters' | 'tagFilters' | 'companySizeFilters'>,
+): Client[] {
+  return clients.filter((client) => {
+    if (!matchesAnyFilter(client.industry, filters.industryFilters)) return false;
+    if (!matchesAnyFilter(client.location, filters.locationFilters)) return false;
+    if (filters.tagFilters.length > 0 && !client.tags.some((tag) => filters.tagFilters.includes(tag))) return false;
+    if (!matchesAnyFilter(client.companySize, filters.companySizeFilters)) return false;
+    return true;
+  });
 }
 
 export function mapApiClientToListClient(c: ApiListClient): Client {
@@ -51,9 +73,8 @@ export function mapApiClientToListClient(c: ApiListClient): Client {
 }
 
 /**
- * Load every client matching list attribute filters from the API.
- * Industry matching is case-insensitive on the server and is not limited
- * to the first page of an unfiltered client list.
+ * Load every client matching list attribute filters from the API for this agency.
+ * Empty result means the agency has no clients for those filters.
  */
 export async function fetchListPreviewClients(filters: ListPreviewFilters): Promise<Client[]> {
   const params = {
@@ -76,5 +97,9 @@ export async function fetchListPreviewClients(filters: ListPreviewFilters): Prom
         )
       : [];
 
-  return [first, ...rest].flatMap((r) => r.data.map(mapApiClientToListClient));
+  return applyListAttributeFilters(
+    [first, ...rest].flatMap((r) => r.data.map(mapApiClientToListClient)),
+    filters,
+  );
 }
+

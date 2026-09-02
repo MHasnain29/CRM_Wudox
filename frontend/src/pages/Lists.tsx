@@ -32,7 +32,7 @@ import { PersonSectionHeader, PersonCardIdentity } from '@/components/PersonSect
 import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
 import { useScopeQueryParams } from '@/hooks/useScopeQueryParams';
 import { useListClientPreview } from '@/hooks/useListClientPreview';
-import { mapApiClientToListClient, matchesAnyFilter } from '@/lib/listClientPreview';
+import { mapApiClientToListClient, matchesAnyFilter, isDefaultListStatusSelection, DEFAULT_LIST_STATUS_FILTERS, applyListAttributeFilters } from '@/lib/listClientPreview';
 
 interface SavedList {
   id: string;
@@ -650,6 +650,10 @@ export default function Lists() {
       ? selectedAgencyId
       : currentSubCompany?.id,
   );
+  const previewAgencyId =
+    selectedAgencyId && selectedAgencyId !== 'all' && selectedAgencyId !== 'me'
+      ? selectedAgencyId
+      : listWriteAgencyId ?? currentSubCompany?.id;
   const { ownerIds: scopeOwnerIds, scopeKey } = useScopeQueryParams(scopeFilter);
   const [listsSearchParams] = useSearchParams();
   const linkedUserIdParam = listsSearchParams.get('linkedUserId') ?? '';
@@ -707,16 +711,16 @@ export default function Lists() {
   const filteredAgencyLists = agencyListsRaw;
 
   useEffect(() => {
-    fetchClients({ limit: 500, subCompanyId: listWriteAgencyId }).then(({ data }) => {
+    fetchClients({ limit: 500, subCompanyId: previewAgencyId }).then(({ data }) => {
       setClients(data.map(mapApiClientToListClient));
     });
-  }, [listWriteAgencyId, setClients]);
+  }, [previewAgencyId, setClients]);
 
   useEffect(() => {
-    fetchClientFacets({ subCompanyId: listWriteAgencyId }).then((res) => {
+    fetchClientFacets({ subCompanyId: previewAgencyId }).then((res) => {
       if (res.industries) setFacetIndustries(res.industries);
     });
-  }, [listWriteAgencyId]);
+  }, [previewAgencyId]);
 
   // Sync localStorage lists → DB (runs once after clients are loaded)
   const syncedRef = useRef(false);
@@ -809,7 +813,7 @@ export default function Lists() {
   const [locationSearch, setLocationSearch] = useState('');
   const [facetIndustries, setFacetIndustries] = useState<string[]>([]);
   const [companySizeFilters, setCompanySizeFilters] = useState<string[]>([]);
-  const [statusFilters, setStatusFilters] = useState<string[]>(['contacted', 'active', 'lost', 'ex', 'none']);
+  const [statusFilters, setStatusFilters] = useState<string[]>([...DEFAULT_LIST_STATUS_FILTERS]);
   const [rangeType, setRangeType] = useState<'all' | 'custom'>('all');
   const [rangeStart, setRangeStart] = useState<string>('1');
   const [rangeEnd, setRangeEnd] = useState<string>('10');
@@ -841,6 +845,7 @@ export default function Lists() {
   const {
     clients: serverPreviewClients,
     isFetching: previewFetching,
+    isError: previewError,
     usingServerPreview,
   } = useListClientPreview(
     {
@@ -848,7 +853,12 @@ export default function Lists() {
       locationFilters,
       tagFilters,
       companySizeFilters,
-      subCompanyId: listWriteAgencyId,
+      subCompanyId:
+        selectedAgencyId && selectedAgencyId !== 'all' && selectedAgencyId !== 'me'
+          ? selectedAgencyId
+          : selectedAgencyId === 'all'
+            ? undefined
+            : previewAgencyId,
     },
     isNewListDialogOpen || isEditListDialogOpen,
   );
@@ -981,7 +991,7 @@ export default function Lists() {
     setLocationFilters([]);
     setTagFilters([]);
     setCompanySizeFilters([]);
-    setStatusFilters(['contacted', 'active', 'lost', 'ex', 'none']);
+    setStatusFilters([...DEFAULT_LIST_STATUS_FILTERS]);
     setRangeType('all');
     setRangeStart('1');
     setRangeEnd('10');
@@ -1280,24 +1290,17 @@ export default function Lists() {
   // (full agency), not the 500-client snapshot used for the rest of this page.
   const getFilteredClients = () => {
     const source = usingServerPreview ? serverPreviewClients : clients;
-    return source.filter(client => {
-      if (statusFilters.length > 0 && !matchesStatusFilters(client.status, statusFilters)) {
+    const applyStatus = !usingServerPreview || !isDefaultListStatusSelection(statusFilters);
+    return applyListAttributeFilters(source, {
+      industryFilters,
+      locationFilters,
+      tagFilters,
+      companySizeFilters,
+    }).filter((client) => {
+      if (applyStatus && statusFilters.length > 0 && !matchesStatusFilters(client.status, statusFilters)) {
         return false;
       }
       if (searchTerm && !client.name.toLowerCase().includes(searchTerm.toLowerCase()) && !client.address.toLowerCase().includes(searchTerm.toLowerCase())) {
-        return false;
-      }
-      if (usingServerPreview) return true;
-      if (industryFilters.length > 0 && !matchesAnyFilter(client.industry, industryFilters)) {
-        return false;
-      }
-      if (locationFilters.length > 0 && !matchesAnyFilter(client.location, locationFilters)) {
-        return false;
-      }
-      if (tagFilters.length > 0 && !client.tags.some(tag => tagFilters.includes(tag))) {
-        return false;
-      }
-      if (companySizeFilters.length > 0 && !matchesAnyFilter(client.companySize, companySizeFilters)) {
         return false;
       }
       return true;
@@ -1687,7 +1690,9 @@ export default function Lists() {
                     <Badge variant="secondary">
                       {previewFetching && usingServerPreview
                         ? 'Loading…'
-                        : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
+                        : previewError
+                          ? 'Error'
+                          : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
                     </Badge>
                   </div>
                   {previewFetching && usingServerPreview ? (
@@ -1695,6 +1700,8 @@ export default function Lists() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Finding matching clients…
                     </p>
+                  ) : previewError ? (
+                    <p className="text-sm text-muted-foreground text-center py-3">Could not load clients for this agency. Try again.</p>
                   ) : previewClients.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-3">No clients match these filters</p>
                   ) : (
@@ -1770,7 +1777,7 @@ export default function Lists() {
                   <Eye className="h-4 w-4 mr-2" />
                   Show Preview
                 </Button>
-                <Button onClick={saveCurrentList} disabled={previewFetching && usingServerPreview}>
+                <Button onClick={saveCurrentList} disabled={(previewFetching && usingServerPreview) || previewError}>
                   <Save className="h-4 w-4 mr-2" />
                   Save List
                 </Button>
@@ -2015,7 +2022,9 @@ export default function Lists() {
                     <Badge variant="secondary">
                       {previewFetching && usingServerPreview
                         ? 'Loading…'
-                        : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
+                        : previewError
+                          ? 'Error'
+                          : `${rangedCount} ${rangedCount === 1 ? 'client' : 'clients'}`}
                     </Badge>
                   </div>
                   {previewFetching && usingServerPreview ? (
@@ -2023,6 +2032,8 @@ export default function Lists() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Finding matching clients…
                     </p>
+                  ) : previewError ? (
+                    <p className="text-sm text-muted-foreground text-center py-3">Could not load clients for this agency. Try again.</p>
                   ) : previewClients.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-3">No clients match these filters</p>
                   ) : (
@@ -2099,7 +2110,7 @@ export default function Lists() {
                   <Eye className="h-4 w-4 mr-2" />
                   Show Preview
                 </Button>
-                <Button onClick={updateList} disabled={previewFetching && usingServerPreview}>
+                <Button onClick={updateList} disabled={(previewFetching && usingServerPreview) || previewError}>
                   <Save className="h-4 w-4 mr-2" />
                   Save Changes
                 </Button>

@@ -1,43 +1,7 @@
 import { PrismaClient } from '@prisma/client';
-import * as fs from 'fs';
-import * as path from 'path';
-import { getSeedLoginPassword, seedUsers, seedWorkflowDemos } from './seedDemoData';
+import { getSeedLoginPassword, seedUsers } from './seedDemoData';
 
 const prisma = new PrismaClient();
-
-/** Parse a CSV line respecting quoted fields (e.g. "a, b", c) */
-function parseCsvLine(line: string): string[] {
-  const result: string[] = [];
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] === '"') {
-      i++;
-      const end = line.indexOf('"', i);
-      const value = end === -1 ? line.slice(i) : line.slice(i, end);
-      result.push(value.trim());
-      i = end === -1 ? line.length : end + 1;
-      if (line[i] === ',') i++;
-    } else {
-      const end = line.indexOf(',', i);
-      const value = end === -1 ? line.slice(i) : line.slice(i, end);
-      result.push(value.trim());
-      i = end === -1 ? line.length : end + 1;
-    }
-  }
-  return result;
-}
-
-/** Parse full address string to extract region and postal (e.g. "... Brampton, ON L6S 6C6, Canada") */
-function parseAddressParts(fullAddress: string, cityColumn: string): { street: string; city: string; region: string; postalCode: string } {
-  const parts = fullAddress.split(',').map((s) => s.trim());
-  const street = parts[0] || fullAddress;
-  const city = cityColumn || (parts[1] ?? '');
-  const lastPart = parts[parts.length - 2] ?? '';
-  const sp = lastPart.split(/\s+/).filter(Boolean);
-  const region = sp[0] ?? '';
-  const postalCode = sp.slice(1).join(' ') ?? '';
-  return { street, city, region, postalCode };
-}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const seedNow = new Date('2026-05-26T12:00:00.000Z');
@@ -113,11 +77,6 @@ async function main() {
     salesManager1,
     salesAssociate1,
     salesAssociate2,
-    recruiter1,
-    pakistanUser,
-    recruitmentManager,
-    srRecruiter,
-    databaseManager,
     allSeedUsers,
   } = await seedUsers(prisma, {
     subCompanyId: subCompany.id,
@@ -468,155 +427,10 @@ ${emailFooter()}`),
     agencyEmailTemplates.set(agency.subCompany.id, template);
   }
 
-  // Create Clients from Sample Data -- CRM.csv (ID = corporateCode; Concerned Person = contact name, Designation = title, Phone, Extension, Email, Linkedin Profile, Website; first contact primary; no tags)
-  console.log('🏢 Creating clients from CRM sample data...');
-  const possibleCsvPaths = [
-    path.join(__dirname, '..', '..', 'Sample Data -- CRM.csv'),
-    path.join(process.cwd(), 'Sample Data -- CRM.csv'),
-    path.join(process.cwd(), '..', 'Sample Data -- CRM.csv'),
-  ];
-  let csvContent: string = '';
-  for (const csvPath of possibleCsvPaths) {
-    try {
-      csvContent = fs.readFileSync(csvPath, 'utf-8');
-      console.log('   Using CSV at:', csvPath);
-      break;
-    } catch {
-      continue;
-    }
-  }
-  if (!csvContent) {
-    console.warn('⚠️ Sample Data -- CRM.csv not found at any of:', possibleCsvPaths.map((p) => path.resolve(p)).join(', '));
-  }
-
+  // Sales CRM clients are imported in-app and approved — do not seed Amazon / AMJ Campbell / Alstom / Air Canada etc.
+  console.log('🏢 Skipping mock CRM clients (import + approve instead of seed).');
   const createdClients: SeedClient[] = [];
   const subCompanyId = subCompany.id;
-  const statuses = ['contacted', 'active', 'lost', 'ex'] as const;
-
-  const rememberClient = (client: SeedClient) => {
-    createdClients.push(client);
-  };
-
-  if (csvContent) {
-    const lines = csvContent.split(/\r?\n/).filter((l) => l.trim());
-    const header = parseCsvLine(lines[0]);
-    const col = (name: string) => {
-      const i = header.indexOf(name);
-      return i >= 0 ? i : -1;
-    };
-    const idx = {
-      sr: col('Sr #'),
-      id: col('ID'),
-      industry: col('Industry'),
-      companyName: col('Company Name'),
-      concernedPerson: col('Concerned Person'),
-      designation: col('Designation'),
-      phone: col('Phone'),
-      extension: col('Extension'),
-      email: col('Email'),
-      linkedin: col('Linkedin Profile'),
-      address: col('Address'),
-      city: col('City'),
-      website: col('Website'),
-    };
-    if (idx.id < 0 || idx.companyName < 0) {
-      console.warn('⚠️ CSV missing ID or Company Name column, skipping client seed');
-    } else {
-      const rows = lines.slice(1).map((line) => parseCsvLine(line));
-      const byId = new Map<string, typeof rows>();
-      for (const row of rows) {
-        const id = row[idx.id]?.trim();
-        if (!id) continue;
-        if (!byId.has(id)) byId.set(id, []);
-        byId.get(id)!.push(row);
-      }
-
-      for (const [clientIndex, [corporateCode, groupRows]] of Array.from(byId.entries()).entries()) {
-        const first = groupRows[0];
-        const companyName = (first[idx.companyName] ?? '').trim() || corporateCode;
-        const industry = (first[idx.industry] ?? '').trim() || null;
-        const city = (first[idx.city] ?? '').trim();
-        const fullAddress = (first[idx.address] ?? '').trim();
-        const { street, region, postalCode } = parseAddressParts(fullAddress, city);
-        const locationSummary = city && region ? `${city}, ${region}` : city || region || null;
-        const isGlobal = clientIndex % 3 === 0;
-
-        const client = await prisma.client.create({
-          data: {
-            corporateCode,
-            name: companyName,
-            industry,
-            location: locationSummary,
-            address: fullAddress || null,
-            companySize: null,
-            status: 'contacted',
-            lastActivity: new Date(),
-            visibility: isGlobal ? 'global' : 'agency',
-            createdByRole: isGlobal ? 'director' : 'sales_associate',
-            contacts: {
-              create: groupRows.map((row, i) => ({
-                name: (row[idx.concernedPerson] ?? '').trim() || 'Unknown',
-                title: (row[idx.designation] ?? '').trim() || null,
-                email: (row[idx.email] ?? '').trim() || null,
-                phone: (row[idx.phone] ?? '').trim() || null,
-                phoneExtension: (row[idx.extension] ?? '').trim() || null,
-                linkedin: (row[idx.linkedin] ?? '').trim() || null,
-                website: (row[idx.website] ?? '').trim() || null,
-                isPrimary: i === 0,
-              })),
-            },
-            locations: {
-              create: [
-                {
-                  name: city ? `${companyName} - ${city}` : companyName,
-                  address: street || fullAddress || null,
-                  city: city || null,
-                  region: region || null,
-                  postalCode: postalCode || null,
-                  country: 'Canada',
-                  isPrimary: true,
-                },
-              ],
-            },
-          },
-        });
-        rememberClient(client);
-
-        await prisma.clientSubCompany.create({
-          data: {
-            clientId: client.id,
-            subCompanyId,
-            status: statuses[clientIndex % statuses.length],
-            lastActivity: daysFromSeed(-(clientIndex % 15)),
-          },
-        });
-      }
-      console.log(`   Created ${createdClients.length} clients from CSV for Wudox - Mississauga.`);
-    }
-  }
-
-  if (createdClients.length === 0) {
-    console.warn('⚠️ No clients created; creating one placeholder for leads/calls.');
-    const placeholder = await prisma.client.create({
-      data: {
-        corporateCode: 'SEED_PLACEHOLDER',
-        name: 'Placeholder Client',
-        industry: 'Other',
-        location: 'Toronto, ON',
-        address: '123 Seed St',
-        companySize: null,
-        status: 'contacted',
-        lastActivity: new Date(),
-        visibility: 'global',
-        createdByRole: 'director',
-        contacts: { create: [{ name: 'Placeholder Contact', title: 'HR', email: 'placeholder@example.com', isPrimary: true }] },
-      },
-    });
-    rememberClient(placeholder);
-    await prisma.clientSubCompany.create({
-      data: { clientId: placeholder.id, subCompanyId, status: 'contacted' },
-    });
-  }
 
   // Seed allowed industries from current clients + defaults (per subcompany)
   console.log('🏭 Seeding allowed industries and tags...');
@@ -747,7 +561,6 @@ ${emailFooter()}`),
       subCompany,
       manager: salesManager1,
       associates: [salesAssociate1, salesAssociate2],
-      recruiter: recruiter1,
       clients: createdClients.slice(0, 14),
       meetingBaseUrl: 'https://meet.wudox.test/mississauga',
     },
@@ -808,6 +621,7 @@ ${emailFooter()}`),
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
     const agencyClients = agency.clients.length ? agency.clients : createdClients;
+    if (agencyClients.length === 0) continue;
     for (let i = 0; i < 10; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -834,6 +648,7 @@ ${emailFooter()}`),
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
     const agencyClients = agency.clients.length ? agency.clients : createdClients;
+    if (agencyClients.length === 0) continue;
     for (let i = 0; i < 8; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -874,6 +689,7 @@ ${emailFooter()}`),
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
     const agencyClients = agency.clients.length ? agency.clients : createdClients;
+    if (agencyClients.length === 0) continue;
     for (let i = 0; i < 8; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -904,6 +720,7 @@ ${emailFooter()}`),
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
     const agencyClients = agency.clients.length ? agency.clients : createdClients;
+    if (agencyClients.length === 0) continue;
     for (let i = 0; i < 5; i++) {
       const client = agencyClients[i % agencyClients.length];
       const lead = agencyLeads.find((l) => l.clientId === client.id);
@@ -932,7 +749,7 @@ ${emailFooter()}`),
     }
   }
 
-  // Jobs / employees / assignments: seedRecruitmentDemo (after approval policies).
+  // Recruitment jobs / employees / active clients are not auto-seeded.
   let jobCount = 0;
   let employeeCount = 0;
   let jobAssignmentCount = 0;
@@ -954,6 +771,7 @@ ${emailFooter()}`),
   for (const agency of agencyDatasets) {
     const agencyLeads = leadsByAgency.get(agency.subCompany.id) ?? [];
     const agencyClients = agency.clients.length ? agency.clients : createdClients;
+    if (agencyClients.length === 0) continue;
     const users = [agency.manager, ...agency.associates];
     for (let i = 0; i < 16; i++) {
       const user = users[i % users.length];
@@ -1005,7 +823,7 @@ ${emailFooter()}`),
     }
   }
 
-  // Lead requests and reassignment requests are seeded in seedWorkflowDemos (after approval policies).
+  // Lead requests / reassignment / pending-client demos are not auto-seeded.
 
   // Create proposal settings, mailing lists, and campaigns per agency
   console.log('📨 Creating proposal defaults, mailing lists, and campaigns...');
@@ -1286,30 +1104,7 @@ ${emailFooter()}`),
   });
   console.log('  ✓ Org approval policy (global database destination)');
 
-  const workflowDemoCounts = await seedWorkflowDemos(prisma, {
-    subCompany,
-    salesAssociate1,
-    salesAssociate2,
-    salesManager1,
-    databaseManager,
-    clients: createdClients,
-    leadsByAgency,
-    daysFromSeed,
-  });
-
-  const { seedRecruitmentDemo } = await import('./seedRecruitmentDemo');
-  const recruitmentDemoCounts = await seedRecruitmentDemo(prisma, {
-    recruiter1,
-    srRecruiter,
-    pakistanUser,
-    recruitmentManager,
-    subCompanyTorontoId: subCompany.id,
-    daysFromSeed,
-  });
-  jobCount = recruitmentDemoCounts.jobCount;
-  employeeCount = recruitmentDemoCounts.employeeCount;
-  jobAssignmentCount = recruitmentDemoCounts.jobAssignmentCount;
-  employeeAssignmentCount = recruitmentDemoCounts.employeeAssignmentCount;
+  console.log('⏭ Skipping mock clients, pending-client demos, and recruitment demo data (import + approve instead).');
 
   console.log('✅ Database seed completed successfully!');
   console.log('\n📊 Summary:');
@@ -1322,26 +1117,12 @@ ${emailFooter()}`),
   console.log(`   - Follow-ups: ${followUpCount}`);
   console.log(`   - Tasks: ${taskCount}`);
   console.log(`   - Meetings: ${meetingCount}`);
-  console.log(`   - Active Clients (recruitment): ${recruitmentDemoCounts.activeClientCount}`);
   console.log(`   - Jobs: ${jobCount}`);
   console.log(`   - Employees: ${employeeCount}`);
   console.log(`   - Job Assignments: ${jobAssignmentCount}`);
   console.log(`   - Pending Employee Assignments: ${employeeAssignmentCount}`);
   console.log(`   - Activity Logs: ${activityLogCount}`);
   console.log(`   - Client Notes: ${clientNoteCount}`);
-  console.log(`   - Lead Requests: ${workflowDemoCounts.leadRequestCount}`);
-  console.log(`   - Lead Reassignment Requests: ${workflowDemoCounts.leadReassignmentCount}`);
-  console.log(`   - Pending Client Adds: ${workflowDemoCounts.pendingClientAddCount}`);
-  console.log(`   - Pending Client Edits: ${workflowDemoCounts.pendingClientEditCount}`);
-  console.log(`   - Pending Client Imports: ${workflowDemoCounts.pendingClientImportCount}`);
-  console.log(`   - Pending Database Adds: ${workflowDemoCounts.pendingDatabaseClientAddCount}`);
-  console.log(`   - Pending Database Imports: ${workflowDemoCounts.pendingDatabaseClientImportCount}`);
-  console.log(`   - Lead Extension Requests: ${workflowDemoCounts.leadExtensionCount}`);
-  console.log(`   - Proposals Pending Review: ${workflowDemoCounts.proposalReviewCount}`);
-  console.log(`   - Proposal Extension Requests: ${workflowDemoCounts.proposalExtensionCount}`);
-  console.log(`   - Offboarding Demo Clients: ${workflowDemoCounts.offboardingClientCount}`);
-  console.log(`   - Offboarding Demo Leads: ${workflowDemoCounts.offboardingLeadCount}`);
-  console.log(`   - Offboarding Demo Tasks: ${workflowDemoCounts.offboardingTaskCount}`);
   console.log(`   - Proposal Default Files: ${proposalDefaultFileCount}`);
   console.log(`   - Mailing Lists: ${mailingListCount}`);
   console.log(`   - Campaigns: ${campaignCount}`);
