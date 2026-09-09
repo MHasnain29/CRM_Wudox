@@ -6,16 +6,23 @@
 import prisma from '../config/database';
 
 export async function recomputeCampaignStats(campaignId: string): Promise<void> {
-  const recipients = await prisma.emailCampaignRecipient.findMany({
-    where: { campaignId },
-    select: {
-      status: true,
-      sentAt: true,
-      deliveredAt: true,
-      openedAt: true,
-      clickedAt: true,
-    },
-  });
+  const [recipients, campaign] = await Promise.all([
+    prisma.emailCampaignRecipient.findMany({
+      where: { campaignId },
+      select: {
+        status: true,
+        sentAt: true,
+        deliveredAt: true,
+        openedAt: true,
+        clickedAt: true,
+      },
+    }),
+    prisma.emailCampaign.findUnique({
+      where: { id: campaignId },
+      select: { statsDelivered: true, statsOpened: true, statsClicked: true, statsBounced: true },
+    }),
+  ]);
+  if (!campaign) return;
 
   let sent = 0;
   let delivered = 0;
@@ -36,12 +43,17 @@ export async function recomputeCampaignStats(campaignId: string): Promise<void> 
   await prisma.emailCampaign.update({
     where: { id: campaignId },
     data: {
+      // sent/failed reflect our own send outcome — the recipient table is authoritative.
       statsSent: sent,
-      statsDelivered: delivered,
-      statsOpened: opened,
-      statsClicked: clicked,
-      statsBounced: bounced,
       statsFailed: failed,
+      // Engagement metrics are also written by the SendGrid Category-Stats poller
+      // (aggregate source) and only ever grow. Take the max so neither source
+      // regresses the other — e.g. a poller-backfilled value survives this recompute
+      // for campaigns whose per-recipient events predate the Event Webhook.
+      statsDelivered: Math.max(delivered, campaign.statsDelivered),
+      statsOpened: Math.max(opened, campaign.statsOpened),
+      statsClicked: Math.max(clicked, campaign.statsClicked),
+      statsBounced: Math.max(bounced, campaign.statsBounced),
     },
   });
 }
