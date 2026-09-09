@@ -48,6 +48,7 @@ import { startActivityTimeoutEvaluator, stopActivityTimeoutEvaluator } from './j
 import { startCampaignScheduler, stopCampaignScheduler } from './jobs/campaignScheduler';
 import { startSendGridSync, stopSendGridSync } from './jobs/sendgridSyncJob';
 import { startCampaignStatsRefresher, stopCampaignStatsRefresher } from './jobs/campaignStatsRefresher';
+import { startCampaignStatsPoll, stopCampaignStatsPoll } from './jobs/campaignStatsPollJob';
 import { startOutboundEmailQueueProcessor, stopOutboundEmailQueueProcessor } from './jobs/outboundEmailQueueProcessor';
 import { activityRouter } from './routes/activity';
 import { campaignsRouter } from './routes/campaigns';
@@ -301,6 +302,7 @@ const start = async () => {
     startCampaignScheduler();
     startSendGridSync();
     startCampaignStatsRefresher();
+    startCampaignStatsPoll();
     startOutboundEmailQueueProcessor();
     startHubstaffSync();
 
@@ -329,6 +331,7 @@ const shutdown = async () => {
   stopCampaignScheduler();
   stopSendGridSync();
   stopCampaignStatsRefresher();
+  stopCampaignStatsPoll();
   stopOutboundEmailQueueProcessor();
   stopHubstaffSync();
   await prisma.$disconnect();
