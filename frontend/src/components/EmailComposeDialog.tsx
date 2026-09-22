@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/popover';
 import { Send, FileText, Calendar, ChevronDown, ChevronUp, Loader2, PenLine, Paperclip, X, Image as ImageIcon, Film, Mail } from 'lucide-react';
 import { applyAgencyFooter } from '@/lib/emailStarterTemplates';
-import { recoverPastedEmailHtml } from '@/lib/recoverPastedEmailHtml';
+import { looksLikeEmailMarkup, recoverPastedEmailHtml } from '@/lib/recoverPastedEmailHtml';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useStore } from '@/lib/store';
 import { useActAs } from '@/hooks/useActAs';
@@ -490,8 +490,11 @@ export function EmailComposeDialog({
           )
         : undefined;
 
-      const bodyHtml = body.trim()
-        ? (body.trim().startsWith('<') ? body.trim() : `<p>${body.trim().replace(/\n/g, '</p><p>')}</p>`)
+      const recoveredBody = recoverPastedEmailHtml(body.trim());
+      const bodyHtml = recoveredBody
+        ? (recoveredBody.startsWith('<') || looksLikeEmailMarkup(recoveredBody)
+          ? recoveredBody
+          : `<p>${recoveredBody.replace(/\n/g, '</p><p>')}</p>`)
         : '<p></p>';
 
       const payload = {

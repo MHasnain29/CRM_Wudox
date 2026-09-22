@@ -40,7 +40,9 @@ import {
   type ApiUser,
 } from '@/lib/api';
 import { useStore } from '@/lib/store';
-import { cn, repairLegacyEmailBody } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { EmailHtmlBody } from '@/components/email/EmailHtmlBody';
+import { emailBodyPlainPreview } from '@/lib/recoverPastedEmailHtml';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { StickyHeader } from '@/components/StickyHeader';
 import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
@@ -192,10 +194,7 @@ function AgencyEmailsSection({
     }
   };
 
-  const bodyPreview = (body: string) => {
-    const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    return stripped.slice(0, 120) + (stripped.length > 120 ? '…' : '');
-  };
+  const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
     <>
@@ -384,14 +383,7 @@ function AgencyEmailsSection({
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <div
-                        className="prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{
-                          __html: selectedEmail.body?.startsWith('<')
-                            ? repairLegacyEmailBody(selectedEmail.body)
-                            : `<p class="whitespace-pre-wrap">${(selectedEmail.body || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`,
-                        }}
-                      />
+                      <EmailHtmlBody html={selectedEmail.body} />
                     </ScrollArea>
                     <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
@@ -505,10 +497,7 @@ function AllAgenciesEmailsSection({
     }
   };
 
-  const bodyPreview = (body: string) => {
-    const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    return stripped.slice(0, 120) + (stripped.length > 120 ? '…' : '');
-  };
+  const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
     <>
@@ -672,14 +661,7 @@ function AllAgenciesEmailsSection({
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <div
-                        className="prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{
-                          __html: selectedEmail.body?.startsWith('<')
-                            ? repairLegacyEmailBody(selectedEmail.body)
-                            : `<p class="whitespace-pre-wrap">${(selectedEmail.body || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`,
-                        }}
-                      />
+                      <EmailHtmlBody html={selectedEmail.body} />
                     </ScrollArea>
                     <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
@@ -801,10 +783,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
     }
   };
 
-  const bodyPreview = (body: string) => {
-    const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    return stripped.slice(0, 120) + (stripped.length > 120 ? '…' : '');
-  };
+  const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
     <>
@@ -1024,14 +1003,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <div
-                        className="prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{
-                          __html: selectedEmail.body?.startsWith('<')
-                            ? repairLegacyEmailBody(selectedEmail.body)
-                            : `<p class="whitespace-pre-wrap">${(selectedEmail.body || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`,
-                        }}
-                      />
+                      <EmailHtmlBody html={selectedEmail.body} />
                     </ScrollArea>
                     <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
@@ -1332,10 +1304,7 @@ export default function Emails() {
     }
   };
 
-  const bodyPreview = (body: string) => {
-    const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    return stripped.slice(0, 120) + (stripped.length > 120 ? '…' : '');
-  };
+  const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
     <div className="space-y-6 h-[calc(100vh-8rem)]">
@@ -1812,15 +1781,7 @@ export default function Emails() {
                 <Separator />
 
                 <ScrollArea className="flex-1 my-6">
-                  <div
-                    className="prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{
-                      __html:
-                        selectedEmail.body?.startsWith('<') ?
-                          repairLegacyEmailBody(selectedEmail.body)
-                          : `<p class="whitespace-pre-wrap">${(selectedEmail.body || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`,
-                    }}
-                  />
+                  <EmailHtmlBody html={selectedEmail.body} />
                 </ScrollArea>
 
                 <EmailAttachmentBar email={selectedEmail} />

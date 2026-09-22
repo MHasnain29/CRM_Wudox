@@ -9,6 +9,7 @@ import { isGlobalSendAsUser } from './globalSendAsEligibility';
 import { getSendGridAuthenticatedDomains } from './sendgridAuthenticatedDomains';
 import { SenderDomainVerificationUnavailableError } from './senderDomainErrors';
 import { DEFAULT_BRAND_NAME } from '../config/branding';
+import { prepareOutboundEmailHtml } from './emailHtmlCompat';
 
 function isSendGridConfigured(): boolean {
   return Boolean(env.SENDGRID_API_KEY);
@@ -769,7 +770,7 @@ export async function sendClientEmail(options: SendClientEmailOptions): Promise<
     replyTo: sendReplyTo,
     subject,
     text: text ?? (html ? html.replace(/<[^>]*>/g, '') : ''),
-    html: html ?? undefined,
+    html: html ? prepareOutboundEmailHtml(html) : undefined,
     attachments: attachments?.length ? attachments.map((a) => ({
       content: a.content,
       filename: a.filename,

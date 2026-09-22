@@ -31,11 +31,16 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emailTemplateFillFields } from '@/lib/emailStarterTemplates';
+import {
+  emailPreviewSrcDoc,
+  isStructuredEmailHtml,
+  looksLikeEmailMarkup,
+  recoverPastedEmailHtml,
+} from '@/lib/recoverPastedEmailHtml';
 
 /** Normalize HTML for storage: keep real markup, wrap plain text in paragraphs. */
 function looksLikeHtml(html: string): boolean {
-  const t = html.trim();
-  return /^<!doctype/i.test(t) || /^<html[\s>]/i.test(t) || /^<[a-z]/i.test(t);
+  return looksLikeEmailMarkup(html);
 }
 
 function normalizeHtml(html: string): string {
@@ -95,6 +100,7 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   showInsertFields = false,
 }, ref) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const lastEmittedRef = useRef<string | null>(null);
   const [mode, setMode] = useState<'visual' | 'html'>('visual');
   const [htmlSource, setHtmlSource] = useState(value);
@@ -160,8 +166,18 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     return () => document.removeEventListener('selectionchange', onSelChange);
   }, [mode, refreshActiveFormats]);
 
+  const structuredPreview = isStructuredEmailHtml(recoverPastedEmailHtml(value));
+
   useEffect(() => {
     if (mode !== 'visual') return;
+    const recovered = recoverPastedEmailHtml(value);
+    // Table/full emails must not go through contenteditable — the browser
+    // drops <html>/<body> and flattens tables into unstyled text.
+    if (isStructuredEmailHtml(recovered)) {
+      lastEmittedRef.current = recovered;
+      setShowPlaceholder(false);
+      return;
+    }
     const normalized = normalizeHtml(value);
     if (lastEmittedRef.current === null || normalized !== lastEmittedRef.current) {
       lastEmittedRef.current = normalized;
@@ -170,6 +186,30 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       setShowPlaceholder(stripped === '');
     }
   }, [value, mode, setEditorHtml]);
+
+  useEffect(() => {
+    if (mode === 'html') return;
+    setHtmlSource(recoverPastedEmailHtml(value));
+  }, [value, mode]);
+
+  useEffect(() => {
+    if (mode !== 'visual' || !structuredPreview) return;
+    const iframe = previewIframeRef.current;
+    if (!iframe) return;
+    const src = emailPreviewSrcDoc(value);
+    const syncHeight = () => {
+      try {
+        const doc = iframe.contentDocument;
+        const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
+        iframe.style.height = `${Math.max(h || 0, 320)}px`;
+      } catch {
+        iframe.style.height = '480px';
+      }
+    };
+    iframe.addEventListener('load', syncHeight);
+    iframe.srcdoc = src;
+    return () => iframe.removeEventListener('load', syncHeight);
+  }, [value, mode, structuredPreview]);
 
   const emitChange = useCallback(
     (raw: string) => {
@@ -183,19 +223,34 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
 
   const handleInput = useCallback(() => {
     if (mode !== 'visual') return;
+    if (isStructuredEmailHtml(recoverPastedEmailHtml(value))) return;
     const html = getEditorHtml();
     emitChange(html);
     refreshActiveFormats();
-  }, [mode, getEditorHtml, emitChange, refreshActiveFormats]);
+  }, [mode, getEditorHtml, emitChange, refreshActiveFormats, value]);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       e.preventDefault();
-      const text = e.clipboardData.getData('text/plain');
+      const text = e.clipboardData.getData('text/plain') || '';
+      const recovered = recoverPastedEmailHtml(text);
+      const markup = looksLikeHtml(recovered) ? recovered : looksLikeHtml(text) ? text : '';
+      if (markup) {
+        if (isStructuredEmailHtml(markup)) {
+          const recovered = recoverPastedEmailHtml(markup);
+          lastEmittedRef.current = recovered;
+          setHtmlSource(recovered);
+          onChange(recovered);
+          return;
+        }
+        document.execCommand('insertHTML', false, markup);
+        setTimeout(handleInput, 0);
+        return;
+      }
       document.execCommand('insertText', false, text);
       setTimeout(handleInput, 0);
     },
-    [handleInput]
+    [handleInput, onChange]
   );
 
   const exec = useCallback((cmd: string, value?: string) => {
@@ -251,16 +306,23 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   }, [exec]);
 
   const insertField = useCallback((token: string) => {
+    const recovered = recoverPastedEmailHtml(mode === 'html' ? htmlSource : value);
+    if (mode === 'html' || isStructuredEmailHtml(recovered)) {
+      const next = `${recovered}${token}`;
+      setHtmlSource(next);
+      lastEmittedRef.current = next;
+      onChange(next);
+      return;
+    }
     editorRef.current?.focus();
     // Prefer insertText so {{tokens}} stay as plain fillable text
     const ok = document.execCommand('insertText', false, token);
     if (!ok) {
-      // Fallback for browsers that reject insertText
       document.execCommand('insertHTML', false, token);
     }
     handleInput();
     refreshActiveFormats();
-  }, [handleInput, refreshActiveFormats]);
+  }, [handleInput, htmlSource, mode, onChange, refreshActiveFormats, value]);
 
   useImperativeHandle(ref, () => ({
     insertField,
@@ -268,21 +330,28 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   }), [insertField]);
 
   const switchToHtml = useCallback(() => {
-    setHtmlSource(normalizeHtml(getEditorHtml()) || '');
+    const recovered = recoverPastedEmailHtml(value);
+    if (isStructuredEmailHtml(recovered)) {
+      setHtmlSource(recovered);
+    } else {
+      setHtmlSource(normalizeHtml(getEditorHtml() || recovered) || '');
+    }
     setMode('html');
-  }, [getEditorHtml]);
+  }, [getEditorHtml, value]);
 
   const switchToVisual = useCallback(() => {
-    const raw = (htmlSource || '').trim();
-    const normalized = normalizeHtml(raw);
-    // The contenteditable is UNMOUNTED while in html mode, so setEditorHtml is a no-op here.
-    // Reset lastEmittedRef to null so the useEffect re-populates after the div mounts.
-    lastEmittedRef.current = null;
-    onChange(normalized);
-    const stripped = raw.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    const recovered = recoverPastedEmailHtml(htmlSource || value);
+    if (isStructuredEmailHtml(recovered)) {
+      lastEmittedRef.current = recovered;
+    } else {
+      // Contenteditable remounts; force a write from value.
+      lastEmittedRef.current = null;
+    }
+    onChange(recovered);
+    const stripped = recovered.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     setShowPlaceholder(stripped === '');
     setMode('visual');
-  }, [htmlSource, onChange]);
+  }, [htmlSource, onChange, value]);
 
   const styleMinHeight = typeof minHeight === 'number' ? `${minHeight}px` : minHeight;
 
@@ -364,6 +433,28 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       )}
 
       {mode === 'visual' ? (
+        structuredPreview ? (
+        <div
+          className={cn(
+            'rounded-lg border border-border bg-background overflow-hidden shadow-sm',
+            stretch && 'flex flex-col flex-1 min-h-0',
+          )}
+        >
+          <div className="px-3 py-2 border-b border-border bg-muted/40 text-xs text-muted-foreground shrink-0">
+            Full HTML email — shown as the client will see it.
+            {!hideModeTabs ? ' Switch to HTML to edit the source.' : ' Use the HTML tab to edit the source.'}
+          </div>
+          <div className={cn('overflow-auto bg-muted/40', stretch && 'flex-1')}>
+            <iframe
+              ref={previewIframeRef}
+              sandbox="allow-same-origin"
+              title="Email preview"
+              className="w-full border-0 bg-white"
+              style={{ minHeight: stretch ? 320 : styleMinHeight }}
+            />
+          </div>
+        </div>
+        ) : (
         <div
           className={cn(
             'rounded-lg border border-border bg-background overflow-hidden shadow-sm',
@@ -545,25 +636,23 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
             onKeyUp={refreshActiveFormats}
             onMouseUp={refreshActiveFormats}
             onPaste={handlePaste}
-            onBlur={handleInput}
             suppressContentEditableWarning
           />
         </div>
+        )
       ) : (
-        <div className="space-y-1">
+        <div className={cn('space-y-1', stretch && 'flex flex-col flex-1 min-h-0')}>
           <p className="text-xs text-muted-foreground">Edit raw HTML. Switch back to Visual to see formatting.</p>
           <Textarea
             value={htmlSource}
-            onChange={(e) => setHtmlSource(e.target.value)}
-            onBlur={() => {
-              const normalized = normalizeHtml(htmlSource);
-              if (normalized !== lastEmittedRef.current) {
-                lastEmittedRef.current = normalized;
-                onChange(normalized);
-              }
+            onChange={(e) => {
+              const next = e.target.value;
+              setHtmlSource(next);
+              lastEmittedRef.current = next;
+              onChange(next);
             }}
             placeholder="<p>Your HTML here...</p>"
-            className="font-mono text-sm min-h-[120px]"
+            className={cn('font-mono text-sm min-h-[120px]', stretch && 'flex-1')}
             rows={10}
           />
         </div>
