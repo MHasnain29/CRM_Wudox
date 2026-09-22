@@ -56,6 +56,7 @@ import {
   type StarterTemplate,
 } from '@/lib/emailStarterTemplates';
 import { cn } from '@/lib/utils';
+import { isStructuredEmailHtml, recoverPastedEmailHtml } from '@/lib/recoverPastedEmailHtml';
 import { SignatureBuilder } from '@/components/SignatureBuilder';
 import {
   DEFAULT_SIGNATURE_CONFIG,
@@ -208,7 +209,7 @@ function TemplateEditor({
   const [form, setForm] = useState<EditorForm>(initialForm);
   const [fullHtml, setFullHtml] = useState(initialHtml);
   // Full HTML documents (starter templates) should open in HTML mode; simple body content in visual
-  const isFullHtmlDoc = initialHtml.trim().startsWith('<!DOCTYPE') || initialHtml.trim().startsWith('<html');
+  const isFullHtmlDoc = isStructuredEmailHtml(recoverPastedEmailHtml(initialHtml));
   const [editorMode, setEditorMode] = useState<EditorMode>(isFullHtmlDoc ? 'html' : 'visual');
   const [htmlSource, setHtmlSource] = useState(initialHtml);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);

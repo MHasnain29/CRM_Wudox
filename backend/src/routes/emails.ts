@@ -8,6 +8,7 @@ import prisma from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { actAsMiddleware, effectiveActorId } from '../middleware/actAs';
 import { sendClientEmail, buildCrmReplyToAddress, resolveOutboundUserSender } from '../services/email';
+import { prepareOutboundEmailHtml } from '../services/emailHtmlCompat';
 import { senderUserSelect, injectSenderSignature, resolveSenderSignatureBlock } from '../services/sender';
 import { isSenderDomainError } from '../services/senderDomainErrors';
 import { env } from '../config/env';
@@ -1112,16 +1113,21 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
       date: formatEmailTemplateDate(),
       agency_footer: [subCompany?.emailFooterText?.trim(), subCompany?.emailTagline?.trim()].filter(Boolean).join(' · '),
     });
-    storedBody = renderTemplate(body, {
-      contact_name: escapeHtml(contactName),
-      company_name: escapeHtml(companyName),
-      user_name: escapeHtml(replyToName),
-      user_email: escapeHtml(fromUser.email),
-      sender_name: escapeHtml(replyToName),
-      agency_name: escapeHtml(subCompany?.name ?? ''),
-      date: escapeHtml(formatEmailTemplateDate()),
-      agency_footer: agencyFooterText,
-    });
+    storedBody = prepareOutboundEmailHtml(
+      injectSenderSignature(
+        renderTemplate(body, {
+          contact_name: escapeHtml(contactName),
+          company_name: escapeHtml(companyName),
+          user_name: escapeHtml(replyToName),
+          user_email: escapeHtml(fromUser.email),
+          sender_name: escapeHtml(replyToName),
+          agency_name: escapeHtml(subCompany?.name ?? ''),
+          date: escapeHtml(formatEmailTemplateDate()),
+          agency_footer: agencyFooterText,
+        }),
+        signatureFooterHtml,
+      ),
+    );
   }
 
   // Create the email record first so we can embed its id in Reply-To for proper threading in inbound parse.
