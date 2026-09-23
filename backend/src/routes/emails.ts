@@ -3,7 +3,9 @@
  * Agency-scoped (subCompanyId). Inbox = toUserId = current user; Sent/Drafts = fromUserId = current user.
  */
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { actAsMiddleware, effectiveActorId } from '../middleware/actAs';
@@ -14,6 +16,7 @@ import { isSenderDomainError } from '../services/senderDomainErrors';
 import { env } from '../config/env';
 import multer from 'multer';
 import { createActivityLog } from '../services/activityLog';
+import { createNotification } from '../services/notifications';
 import { emitToUsers } from '../socket';
 import {
   resolveAllowedSubCompanyIds,
@@ -389,6 +392,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
     clientId: e.clientId ?? undefined,
     leadId: e.leadId ?? undefined,
     inReplyTo: e.inReplyTo ?? undefined,
+    threadId: e.threadId ?? undefined,
     subCompanyId: e.subCompanyId,
     attachmentCount: e._count?.attachments ?? 0,
     forwardedFromUserId: e.forwardedFromUserId ?? undefined,
@@ -490,6 +494,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           clientId: p.lead.clientId,
           leadId: p.lead.id,
           inReplyTo: undefined,
+          threadId: undefined,
           subCompanyId,
           attachmentCount: 0,
           forwardedFromUserId: undefined,
@@ -556,6 +561,100 @@ emailsRouter.get('/reply-as/eligible-users', authenticate, async (req: Request, 
   });
 
   return res.json({ users });
+});
+
+/** GET /emails/thread/:threadId — all messages in a conversation, oldest first (same access scope as detail). */
+emailsRouter.get('/thread/:threadId', authenticate, actAsMiddleware, async (req: Request, res: Response) => {
+  const threadId = req.params.threadId;
+  const allowedIds = await emailAccessAgencyIds(req);
+  const subCompanyId = (await resolveEmailAgencyId(req)) ?? allowedIds[0] ?? null;
+  const elevated = await isElevatedRoleForRequest(req);
+  const ctx = await ensureAccessContext(req);
+  const isTeamManager = ctx ? canViewTeamData(ctx) && !canAccessMultipleAgencies(ctx) : false;
+
+  let where: Prisma.EmailWhereInput;
+  if (elevated) {
+    where = { threadId, subCompanyId: { in: allowedIds } };
+  } else if (isTeamManager && subCompanyId) {
+    const teamMembers = await prisma.user.findMany({
+      where: { subCompanyId, reportingManagerIds: { has: req.user!.sub } },
+      select: { id: true },
+    });
+    const allowedUserIds = [req.user!.sub, ...teamMembers.map((u) => u.id)];
+    where = {
+      threadId,
+      subCompanyId,
+      OR: [
+        { fromUserId: { in: allowedUserIds } },
+        { toUserId: { in: allowedUserIds } },
+        { forwardedToUserId: { in: allowedUserIds } },
+      ],
+    };
+  } else {
+    const actorId = effectiveActorId(req);
+    const linkedAccounts = await getLinkedAccounts(req.user!.sub);
+    const linkedUserIds = linkedAccounts.map((a) => a.userId);
+    const linkedSubCoIds = linkedAccounts.map((a) => a.subCompanyId).filter(Boolean) as string[];
+    const allUserIds = [actorId, ...linkedUserIds];
+    const baseSubCoIds = subCompanyId ? [subCompanyId] : allowedIds.length > 0 ? allowedIds : [];
+    const allSubCoIds = [...new Set([...baseSubCoIds, ...linkedSubCoIds])];
+    where = {
+      threadId,
+      ...(allSubCoIds.length > 0 ? { subCompanyId: { in: allSubCoIds } } : {}),
+      OR: [
+        { fromUserId: { in: allUserIds } },
+        { toUserId: { in: allUserIds } },
+        { forwardedToUserId: { in: allUserIds } },
+      ],
+    };
+  }
+
+  const emails = await prisma.email.findMany({
+    where,
+    orderBy: { timestamp: 'asc' },
+    include: {
+      recipients: true,
+      attachments: true,
+      sentByUser: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+
+  const messages = emails.map((email) => ({
+    id: email.id,
+    from: { name: email.fromName, email: email.fromEmail, userId: email.fromUserId ?? undefined },
+    to: email.recipients.filter((r) => r.recipientType === 'to').map((r) => ({
+      name: r.name ?? r.emailAddress,
+      email: r.emailAddress,
+      clientId: r.clientId ?? undefined,
+      contactId: r.contactId ?? undefined,
+    })),
+    cc: email.recipients.filter((r) => r.recipientType === 'cc').map((r) => ({
+      name: r.name ?? r.emailAddress,
+      email: r.emailAddress,
+    })),
+    subject: email.subject,
+    body: email.body,
+    timestamp: email.timestamp,
+    isRead: email.isRead,
+    folder: email.folder,
+    clientId: email.clientId ?? undefined,
+    leadId: email.leadId ?? undefined,
+    inReplyTo: email.inReplyTo ?? undefined,
+    threadId: email.threadId ?? undefined,
+    subCompanyId: email.subCompanyId,
+    attachments: (email.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      fileKey: a.fileKey,
+      mimeType: a.mimeType,
+      size: a.size ?? undefined,
+    })),
+    sentBy: email.sentByUser
+      ? { id: email.sentByUser.id, name: [email.sentByUser.firstName, email.sentByUser.lastName].filter(Boolean).join(' ') }
+      : undefined,
+  }));
+
+  return res.json({ threadId, messages });
 });
 
 /** GET /emails/:id — get one email */
@@ -748,6 +847,7 @@ emailsRouter.get('/:id', authenticate, actAsMiddleware, async (req: Request, res
     clientId: email.clientId ?? undefined,
     leadId: email.leadId ?? undefined,
     inReplyTo: email.inReplyTo ?? undefined,
+    threadId: email.threadId ?? undefined,
     subCompanyId: email.subCompanyId,
     attachments: (email.attachments ?? []).map((a) => ({
       id: a.id,
@@ -1130,6 +1230,15 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
     );
   }
 
+  // Thread id: a reply inherits its parent's conversation; a new email starts its own.
+  let threadId: string;
+  if (inReplyTo) {
+    const parent = await prisma.email.findUnique({ where: { id: inReplyTo }, select: { threadId: true } });
+    threadId = parent?.threadId ?? inReplyTo;
+  } else {
+    threadId = randomUUID();
+  }
+
   // Create the email record first so we can embed its id in Reply-To for proper threading in inbound parse.
   const emailRecord = await prisma.email.create({
     data: {
@@ -1144,6 +1253,7 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
       clientId: clientId ?? null,
       leadId: leadId ?? null,
       inReplyTo: inReplyTo ?? null,
+      threadId,
       isRead: true,
       recipients: {
         create: [
@@ -1440,126 +1550,250 @@ emailsRouter.put('/draft/:id', authenticate, actAsMiddleware, async (req: Reques
   return res.json({ ok: true });
 });
 
-/** POST /emails/inbound — SendGrid Inbound Parse webhook (no auth; validate by checking payload) */
+/** Extract a clean lowercase email address from a header fragment like `Name <a@b.com>` or `a@b.com`. */
+function extractEmailAddress(raw: string): string {
+  const angle = raw.match(/<([^>]+)>/);
+  return (angle ? angle[1] : raw).trim().toLowerCase();
+}
+
+/**
+ * Resolve the recipient addresses of an inbound message. Prefers SendGrid's `envelope`
+ * (the true RCPT-TO list — clean addresses, includes Bcc) and falls back to parsing the
+ * To/Cc headers while stripping display names. Deduped, lowercased.
+ */
+function extractRecipientAddresses(body: Record<string, string>): string[] {
+  const addresses: string[] = [];
+  const envelopeRaw = body.envelope ?? body.Envelope;
+  if (envelopeRaw) {
+    try {
+      const envelope = JSON.parse(envelopeRaw) as { to?: unknown };
+      if (Array.isArray(envelope.to)) {
+        for (const entry of envelope.to) {
+          const clean = extractEmailAddress(String(entry));
+          if (clean) addresses.push(clean);
+        }
+      }
+    } catch {
+      // Malformed envelope — fall through to header parsing.
+    }
+  }
+  if (addresses.length === 0) {
+    const headers = [body.to ?? body.To ?? '', body.cc ?? body.Cc ?? ''];
+    for (const header of headers) {
+      for (const part of header.split(',')) {
+        const clean = extractEmailAddress(part);
+        if (clean) addresses.push(clean);
+      }
+    }
+  }
+  return Array.from(new Set(addresses));
+}
+
+/**
+ * Detect auto-generated mail (out-of-office replies, bounces, mailing-list blasts) so we can
+ * still store it but suppress the bell/toast notification — avoids notification spam and any
+ * risk of auto-responder ping-pong. Based on RFC 3834 / common provider headers + sender shape.
+ */
+function isAutomatedMessage(body: Record<string, string>, fromEmail: string): boolean {
+  const rawHeaders = (body.headers ?? body.Headers ?? '').toLowerCase();
+  const autoSubmitted = rawHeaders.match(/^auto-submitted:[ \t]*([^\r\n]+)/m);
+  if (autoSubmitted && autoSubmitted[1].trim() !== 'no') return true; // RFC 3834: anything but "no" is automated
+  const precedence = rawHeaders.match(/^precedence:[ \t]*([^\r\n]+)/m);
+  if (precedence && /^(bulk|junk|auto_reply|list)/.test(precedence[1].trim())) return true;
+  if (/^x-(autoreply|autorespond|auto-response-suppress):/m.test(rawHeaders)) return true;
+  const sender = fromEmail.toLowerCase();
+  if (!sender) return true; // null return-path (<>) — a bounce
+  return /^(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounce)[@+]/.test(sender);
+}
+
+/** SendGrid posts the raw Message-Id in the `headers` blob; used to dedupe webhook retries. */
+function extractInboundMessageId(body: Record<string, string>): string | null {
+  const rawHeaders = body.headers ?? body.Headers ?? '';
+  const match = rawHeaders.match(/^message-id:\s*(.+)$/im);
+  return match ? match[1].trim().slice(0, 512) : null;
+}
+
+type InboundUser = { id: string; subCompanyId: string | null; emailForwardingToUserId: string | null };
+type InboundThread = { id: string; clientId: string | null; leadId: string | null; subCompanyId: string; threadId: string | null };
+type InboundTarget = { user: InboundUser; subCompanyId: string; threadEmail: InboundThread | null; toAddress: string };
+
+/**
+ * POST /emails/inbound — SendGrid Inbound Parse webhook.
+ * Optional shared-secret guard: if INBOUND_WEBHOOK_SECRET is set, the SendGrid destination URL
+ * must include `?key=<secret>`. Off by default so existing setups keep working.
+ */
 emailsRouter.post('/inbound', inboundForm.any(), async (req: Request, res: Response) => {
+  if (env.INBOUND_WEBHOOK_SECRET && req.query.key !== env.INBOUND_WEBHOOK_SECRET) {
+    console.warn('📨 [INBOUND] ⚠️ Rejected webhook — missing/invalid secret');
+    return res.status(403).send('Forbidden');
+  }
   const body = req.body as Record<string, string>;
   const files = ((req as Request & { files?: InboundUploadFile[] }).files) ?? [];
   const from = body.from ?? body.From ?? '';
-  const to = body.to ?? body.To ?? '';
-  const subject = body.subject ?? body.Subject ?? '(No subject)';
+  // Truncate to the Email.subject column limit (VarChar(500)) — a longer subject would throw on insert.
+  const subject = (body.subject ?? body.Subject ?? '(No subject)').slice(0, 500);
   const text = body.text ?? body.Text ?? '';
   const html = body.html ?? body.Html ?? text;
 
+  const recipientAddresses = extractRecipientAddresses(body);
   console.log('📨 [INBOUND] Webhook received ─────────────────');
-  console.log('📨 [INBOUND] From   :', from);
-  console.log('📨 [INBOUND] To     :', to);
-  console.log('📨 [INBOUND] Subject:', subject);
+  console.log('📨 [INBOUND] From      :', from);
+  console.log('📨 [INBOUND] Recipients:', recipientAddresses.join(', ') || '(none)');
+  console.log('📨 [INBOUND] Subject   :', subject);
 
-  const toAddress = (typeof to === 'string' ? to : '').split(',')[0]?.trim().toLowerCase();
-  if (!toAddress) {
-    console.log('📨 [INBOUND] ❌ Missing to address — rejected');
+  if (recipientAddresses.length === 0) {
+    console.log('📨 [INBOUND] ❌ Missing recipient address — rejected');
     return res.status(400).send('Missing to');
   }
 
-  // 1) Prefer CRM reply-to addresses (plus addressing) so we can match thread + user.
-  // Format: local+crmreply-<emailId>.<userId>@domain
-  const crmReplyMatch = toAddress.match(/\+crmreply-([0-9a-f-]{36})\.([0-9a-f-]{36})@/i);
+  // Resolve each recipient to a CRM user inbox. A message may be addressed to several
+  // internal users (To/Cc/Bcc) — deliver a copy to each, like a real mailbox. For each
+  // address we first try the CRM reply-to plus-address (thread + user), then fall back to
+  // matching the address to a user's login email.
+  const targets = new Map<string, InboundTarget>();
+  for (const address of recipientAddresses) {
+    const crmReplyMatch = address.match(/\+crmreply-([0-9a-f-]{36})\.([0-9a-f-]{36})@/i);
+    let user: InboundUser | null = null;
+    let threadEmail: InboundThread | null = null;
 
-  let user: { id: string; subCompanyId: string | null; emailForwardingToUserId: string | null } | null = null;
-  let threadEmail: { id: string; clientId: string | null; leadId: string | null; subCompanyId: string } | null = null;
-
-  if (crmReplyMatch) {
-    const [, emailId, userId] = crmReplyMatch;
-    console.log('📨 [INBOUND] CRM reply match — emailId:', emailId, 'userId:', userId);
-    user = await (prisma.user as any).findFirst({
-      where: { id: userId },
-      select: { id: true, subCompanyId: true, emailForwardingToUserId: true },
-    });
-    if (user) {
-      threadEmail = await prisma.email.findFirst({
-        where: { id: emailId, subCompanyId: user.subCompanyId ?? undefined, fromUserId: user.id },
-        select: { id: true, clientId: true, leadId: true, subCompanyId: true },
+    if (crmReplyMatch) {
+      const [, emailId, userId] = crmReplyMatch;
+      user = await (prisma.user as any).findFirst({
+        where: { id: userId },
+        select: { id: true, subCompanyId: true, emailForwardingToUserId: true },
       });
-      console.log('📨 [INBOUND] Thread match:', threadEmail ? `✅ emailId=${threadEmail.id}` : '❌ not found');
-    } else {
-      console.log('📨 [INBOUND] ❌ User not found for userId:', userId);
+      if (user) {
+        threadEmail = await prisma.email.findFirst({
+          where: { id: emailId, subCompanyId: user.subCompanyId ?? undefined, fromUserId: user.id },
+          select: { id: true, clientId: true, leadId: true, subCompanyId: true, threadId: true },
+        });
+      }
     }
-  } else {
-    console.log('📨 [INBOUND] No CRM reply pattern — falling back to direct user lookup');
+
+    if (!user) {
+      user = await (prisma.user as any).findFirst({
+        where: { email: { equals: address, mode: 'insensitive' } },
+        select: { id: true, subCompanyId: true, emailForwardingToUserId: true },
+      });
+    }
+
+    if (!user || !user.subCompanyId) continue;
+
+    // Dedupe by user; prefer the target that resolved a reply thread so threading is preserved.
+    const existing = targets.get(user.id);
+    if (!existing || (!existing.threadEmail && threadEmail)) {
+      targets.set(user.id, { user, subCompanyId: user.subCompanyId, threadEmail, toAddress: address });
+    }
   }
 
-  // 2) Fallback: direct-to-user inbox (old behavior)
-  if (!user) {
-    user = await (prisma.user as any).findFirst({
-      where: { email: { equals: toAddress, mode: 'insensitive' } },
-      select: { id: true, subCompanyId: true, emailForwardingToUserId: true },
-    });
-  }
-  if (!user || !user.subCompanyId) {
-    console.log('📨 [INBOUND] ❌ No user found for address:', toAddress, '— discarded');
+  if (targets.size === 0) {
+    console.warn('📨 [INBOUND] ⚠️ No CRM user matched recipients:', recipientAddresses.join(', '), '— message not delivered');
     return res.status(200).send('OK');
-  }
-
-  // 3) Offboarding forwarding rule: if the resolved user has departed, route to their successor.
-  // toUserId stays as the original addressee; forwardedToUserId points to who actually receives it.
-  let forwardingTargetId: string | null = null;
-  if (user.emailForwardingToUserId) {
-    const target = await prisma.user.findFirst({
-      where: { id: user.emailForwardingToUserId, isActive: true },
-      select: { id: true },
-    });
-    if (target) {
-      console.log(`📨 [INBOUND] Offboarded user ${user.id} — forwarding to ${target.id}`);
-      forwardingTargetId = target.id;
-    }
   }
 
   const fromMatch = from.match(/^(?:(.+?)\s*)?<([^>]+)>$/) || [null, null, from];
   const fromName = (fromMatch[1] ?? fromMatch[2] ?? from).trim() || 'Unknown';
   const fromEmail = (fromMatch[2] ?? from).trim();
 
-  // Best-effort: match sender to a client contact to attach clientId if we didn't resolve a thread.
-  let inferredClientId: string | null = threadEmail?.clientId ?? null;
-  const inferredLeadId: string | null = threadEmail?.leadId ?? null;
-  if (!inferredClientId && fromEmail) {
-    const contact = await prisma.clientContact.findFirst({
-      where: { email: { equals: fromEmail, mode: 'insensitive' } },
-      select: { clientId: true },
+  const messageId = extractInboundMessageId(body);
+  // Auto-replies, bounces and list blasts are still stored, but they must not fire a bell/toast.
+  const automated = isAutomatedMessage(body, fromEmail);
+  const attachmentInfoRaw = body['attachment-info'] ?? body.attachment_info ?? body['attachment_info'];
+
+  for (const target of targets.values()) {
+    const { user, subCompanyId, threadEmail, toAddress } = target;
+
+    // Idempotency: SendGrid re-delivers the whole message on a timeout or non-2xx response.
+    // Skip if this exact message was already stored for this recipient.
+    if (messageId) {
+      const duplicate = await prisma.email.findFirst({
+        where: { inboundMessageId: messageId, toUserId: user.id, folder: 'inbox' },
+        select: { id: true },
+      });
+      if (duplicate) {
+        console.log('📨 [INBOUND] ⏭️  Duplicate delivery skipped — messageId:', messageId, 'userId:', user.id);
+        continue;
+      }
+    }
+
+    // Offboarding forwarding rule: if the resolved user has departed, route to their successor.
+    // toUserId stays as the original addressee; forwardedToUserId points to who actually receives it.
+    let forwardingTargetId: string | null = null;
+    if (user.emailForwardingToUserId) {
+      const successor = await prisma.user.findFirst({
+        where: { id: user.emailForwardingToUserId, isActive: true },
+        select: { id: true },
+      });
+      if (successor) {
+        console.log(`📨 [INBOUND] Offboarded user ${user.id} — forwarding to ${successor.id}`);
+        forwardingTargetId = successor.id;
+      }
+    }
+
+    // Best-effort clientId: prefer the reply thread's client, else match the sender to a
+    // client contact within THIS user's agency (scoped to avoid cross-agency mismatch).
+    let clientId: string | null = threadEmail?.clientId ?? null;
+    if (!clientId && fromEmail) {
+      const contact = await prisma.clientContact.findFirst({
+        where: {
+          email: { equals: fromEmail, mode: 'insensitive' },
+          client: { clientSubCompanies: { some: { subCompanyId } } },
+        },
+        select: { clientId: true },
+      });
+      clientId = contact?.clientId ?? null;
+    }
+
+    const inboundEmail = await prisma.email.create({
+      data: {
+        subCompanyId,
+        toUserId: user.id,
+        forwardedToUserId: forwardingTargetId,
+        forwardedFromUserId: forwardingTargetId ? user.id : null,
+        fromName,
+        fromEmail,
+        subject,
+        body: html || text,
+        folder: 'inbox',
+        clientId,
+        leadId: threadEmail?.leadId ?? null,
+        inReplyTo: threadEmail?.id ?? null,
+        threadId: threadEmail?.threadId ?? threadEmail?.id ?? randomUUID(),
+        inboundMessageId: messageId,
+        isRead: false,
+        recipients: {
+          create: [{ recipientType: 'to', emailAddress: toAddress, name: toAddress }],
+        },
+      },
     });
-    inferredClientId = contact?.clientId ?? null;
+
+    const storedAttachments = await persistInboundEmailAttachments(inboundEmail.id, files, attachmentInfoRaw).catch((err) => {
+      console.error('📨 [INBOUND] ⚠️ Failed to store attachments:', err);
+      return 0;
+    });
+
+    const notifyUserId = forwardingTargetId ?? user.id;
+    console.log('📨 [INBOUND] ✅ Saved to inbox — userId:', notifyUserId, forwardingTargetId ? `(forwarded from ${user.id})` : '', 'thread:', threadEmail?.id ?? 'none', 'automated:', automated, 'attachments:', storedAttachments);
+    emitToUsers([notifyUserId], 'email:refresh', { subCompanyId });
+
+    // Bell/toast notification, mirroring how other events (leads, proposals, tasks) notify.
+    // Suppressed for automated mail (out-of-office, bounces, list blasts) to avoid notification spam.
+    // Never let a notification failure fail the webhook — SendGrid would retry and duplicate the email.
+    if (!automated) {
+      await createNotification({
+        userId: notifyUserId,
+        subCompanyId,
+        type: 'email_received',
+        title: `New email from ${fromName}`,
+        body: subject,
+        link: '/emails',
+        relatedId: inboundEmail.id,
+      }).catch((err) => {
+        console.error('📨 [INBOUND] ⚠️ Failed to create notification:', err);
+      });
+    }
   }
 
-  const inboundEmail = await prisma.email.create({
-    data: {
-      subCompanyId: user.subCompanyId,
-      toUserId: user.id,
-      forwardedToUserId: forwardingTargetId,
-      forwardedFromUserId: forwardingTargetId ? user.id : null,
-      fromName,
-      fromEmail,
-      subject,
-      body: html || text,
-      folder: 'inbox',
-      clientId: inferredClientId,
-      leadId: inferredLeadId,
-      inReplyTo: threadEmail?.id ?? null,
-      isRead: false,
-      recipients: {
-        create: [{ recipientType: 'to', emailAddress: toAddress, name: toAddress }],
-      },
-    },
-  });
-
-  const attachmentInfoRaw = body['attachment-info'] ?? body.attachment_info ?? body['attachment_info'];
-  const storedAttachments = await persistInboundEmailAttachments(inboundEmail.id, files, attachmentInfoRaw).catch((err) => {
-    console.error('📨 [INBOUND] ⚠️ Failed to store attachments:', err);
-    return 0;
-  });
-
-  const notifyUserId = forwardingTargetId ?? user.id;
-  console.log('📨 [INBOUND] ✅ Saved to inbox — userId:', notifyUserId, forwardingTargetId ? `(forwarded from ${user.id})` : '', 'thread:', threadEmail?.id ?? 'none', 'attachments:', storedAttachments);
   console.log('📨 [INBOUND] ────────────────────────────────────');
-  emitToUsers([notifyUserId], 'email:refresh', { subCompanyId: user.subCompanyId });
-
   return res.status(200).send('OK');
 });

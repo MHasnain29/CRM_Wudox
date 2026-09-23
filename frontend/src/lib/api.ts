@@ -1988,6 +1988,7 @@ export interface ApiEmailListItem {
   clientId?: string;
   leadId?: string;
   inReplyTo?: string;
+  threadId?: string;
   subCompanyId?: string;
   attachmentCount?: number;
   forwardedFromUserId?: string;
@@ -2046,6 +2047,13 @@ export async function fetchEmailById(id: string): Promise<ApiEmailDetail | null>
   const res = await apiFetch<ApiEmailDetail>(`/emails/${id}`);
   if (!res.ok) return null;
   return res.data ?? null;
+}
+
+/** All messages in a conversation, oldest first. */
+export async function fetchEmailThread(threadId: string): Promise<ApiEmailDetail[]> {
+  const res = await apiFetch<{ threadId: string; messages: ApiEmailDetail[] }>(`/emails/thread/${threadId}`);
+  if (!res.ok) return [];
+  return res.data?.messages ?? [];
 }
 
 export function getEmailAttachmentUrl(emailId: string, attachmentId: string): string {

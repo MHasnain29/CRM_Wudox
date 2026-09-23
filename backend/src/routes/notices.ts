@@ -26,9 +26,9 @@ router.get('/', async (req: Request, res: Response) => {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
-    res.json({ data: notices });
+    return res.json({ data: notices });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch notices' });
+    return res.status(500).json({ error: 'Failed to fetch notices' });
   }
 });
 
@@ -57,9 +57,9 @@ router.post('/', requirePermission('notices:write'), async (req: Request, res: R
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
-    res.status(201).json({ data: notice });
+    return res.status(201).json({ data: notice });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to create notice' });
+    return res.status(500).json({ error: 'Failed to create notice' });
   }
 });
 
@@ -86,9 +86,9 @@ router.patch('/:id', requirePermission('notices:write'), async (req: Request, re
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
-    res.json({ data: notice });
+    return res.json({ data: notice });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update notice' });
+    return res.status(500).json({ error: 'Failed to update notice' });
   }
 });
 
@@ -102,9 +102,9 @@ router.delete('/:id', requirePermission('notices:write'), async (req: Request, r
     if (!existing) return res.status(404).json({ error: 'Notice not found' });
 
     await prisma.notice.delete({ where: { id } });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete notice' });
+    return res.status(500).json({ error: 'Failed to delete notice' });
   }
 });
 

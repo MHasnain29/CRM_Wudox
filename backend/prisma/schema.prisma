@@ -1687,6 +1687,10 @@ model Email {
   clientId      String?           @map("client_id")
   leadId        String?           @map("lead_id")
   inReplyTo     String?           @map("in_reply_to")
+  /// Conversation id shared by every message in a thread — enables Gmail-style grouping.
+  threadId      String?           @map("thread_id")
+  /// SendGrid inbound Message-Id — dedupes webhook retries so a message isn't stored twice per recipient.
+  inboundMessageId String?        @map("inbound_message_id")
   isRead        Boolean           @default(false) @map("is_read")
   timestamp     DateTime          @default(now())
   createdAt     DateTime          @default(now()) @map("created_at")
@@ -1715,6 +1719,8 @@ model Email {
   @@index([leadId])
   @@index([folder])
   @@index([timestamp])
+  @@index([inboundMessageId])
+  @@index([threadId])
   @@map("emails")
 }
 

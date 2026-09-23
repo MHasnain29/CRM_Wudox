@@ -39,7 +39,7 @@ import {
 import { format } from 'date-fns';
 import { BugReportDialog } from '@/components/BugReportDialog';
 import { DailyActivityModal } from '@/components/DailyActivityModal';
-import { getSocket } from '@/lib/socket';
+import { getSocket, triggerEmailRefresh } from '@/lib/socket';
 import { captureScreenWithFallback } from '@/lib/captureScreen';
 import { toast } from 'sonner';
 import { agencyRecordName, companyBrandingName, showCompanyLogoInAppChrome } from '@/lib/branding';
@@ -426,6 +426,8 @@ export function TopBar() {
           // Proven realtime channel — let pages refresh derived data (e.g. Lists assignment overlay)
           // even when Socket.io is degraded/offline.
           window.dispatchEvent(new Event('notifications:refresh'));
+          // Keep inbox + open thread live even if the socket transport is degraded.
+          triggerEmailRefresh();
         }
       };
       es.onerror = () => {

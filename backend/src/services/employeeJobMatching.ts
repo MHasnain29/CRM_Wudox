@@ -6,7 +6,6 @@
 import type { JobStatus, Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import {
-  employeeHasValidLicensesForJob,
   loadEmployeeLicenseDocs,
   type JobLicenseFields,
   type LicenseDocFields,

@@ -8,10 +8,9 @@ import prisma from '../config/database';
 import { dispatchNotification, dispatchNotificationToUser } from '../services/notificationDispatch';
 import { getApprovalEventKey } from '../services/notificationRegistry';
 import { emitToUsers } from '../socket';
-import { sendProposalSubmittedEmail, sendProposalApprovedEmail, sendProposalRejectedEmail, getAgencyBranding, sendClientEmail, buildClientProposalEmailHtml, sendReviewEmailToClient, htmlToPlainText, buildCrmReplyToAddress, resolveOutboundUserSender, type ClientProposalEmailData } from '../services/email';
+import { sendProposalSubmittedEmail, sendProposalApprovedEmail, sendProposalRejectedEmail, getAgencyBranding, sendClientEmail, buildClientProposalEmailHtml, htmlToPlainText, buildCrmReplyToAddress, resolveOutboundUserSender, type ClientProposalEmailData } from '../services/email';
 import { isSenderDomainError } from '../services/senderDomainErrors';
-import { sendProposalSubmittedEmail, sendProposalApprovedEmail, sendProposalRejectedEmail, getAgencyBranding, sendClientEmail, buildClientProposalEmailHtml, htmlToPlainText, buildCrmReplyToAddress, type ClientProposalEmailData } from '../services/email';
-import { resolveUserSender, senderUserSelect, resolveSenderSignatureBlock, injectSenderSignature } from '../services/sender';
+import { resolveSenderSignatureBlock, injectSenderSignature } from '../services/sender';
 import {
   pandaDocService,
   matchProposalToken,
@@ -2173,14 +2172,12 @@ router.post('/:id/approve-for-review', proposalReview, async (req: Request, res:
   const reviewedAt = new Date();
 
   // Resolve From before approve so domain errors do not leave a stuck approved state.
-  let ownerSender;
-  let agency;
   try {
-    ({ from: ownerSender, agency } = await resolveOutboundUserSender({
+    await resolveOutboundUserSender({
       userId: proposal.lead.owner.id,
       subCompanyId: proposal.lead.subCompanyId,
       applyOmAgencyEmail: false,
-    }));
+    });
   } catch (err) {
     if (isSenderDomainError(err)) {
       return res.status(400).json({ error: err.message, code: err.code });

@@ -122,7 +122,7 @@ export async function applyActiveClientTrainingPandaDocStatusChange(params: {
       where: { id: row.id },
       data: {
         status: 'signed',
-        completedAt: row.status === 'signed' ? undefined : new Date(),
+        completedAt: new Date(),
       },
     });
   }
