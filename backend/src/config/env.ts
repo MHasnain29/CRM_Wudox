@@ -27,6 +27,8 @@ const envSchema = z.object({
   EMAIL_INBOUND_DOMAIN: z.string().optional(),
   /** Optional local-part to use for inbound replies (default = local-part of EMAIL_FROM). */
   EMAIL_INBOUND_LOCALPART: z.string().optional(),
+  /** Optional shared secret for the inbound-parse webhook. If set, requests must include `?key=<secret>`. */
+  INBOUND_WEBHOOK_SECRET: z.string().optional(),
   /** Comma-separated domains for which we may set per-user From (must be SendGrid-authenticated). Empty → universal sender for everything. */
   SEND_AS_ALLOWED_DOMAINS: z.string().optional(),
   /** Dev/staging safety: if set, all per-user From addresses are redirected to this single inbox. */

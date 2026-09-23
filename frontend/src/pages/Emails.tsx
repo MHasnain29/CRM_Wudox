@@ -27,6 +27,7 @@ import {
 import {
   fetchEmails,
   fetchEmailById,
+  fetchEmailThread,
   markEmailRead,
   fetchEmailUnreadCount,
   fetchEmailSignatures,
@@ -51,7 +52,7 @@ import { useActAs } from '@/hooks/useActAs';
 import { useWriteAgencyId } from '@/hooks/useWriteAgencyId';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { onEmailRefresh } from '@/lib/socket';
+import { onEmailRefresh, triggerEmailRefresh } from '@/lib/socket';
 import { useCanAccessMultipleAgencies, useHasPermission, useIsTeamManagerOnly } from '@/lib/access';
 import { EmailAttachmentBar } from '@/components/EmailAttachmentBar';
 import { PersonSectionHeader } from '@/components/PersonSectionHeader';
@@ -115,6 +116,69 @@ function DeleteEmailConfirmDialog({
   );
 }
 
+// ─── Conversation threading — fetch + render a whole thread like Gmail ──
+/** Loads every message in the selected email's conversation (oldest first). */
+function useEmailThread(selected: ApiEmailDetail | null): ApiEmailDetail[] {
+  const [messages, setMessages] = useState<ApiEmailDetail[]>([]);
+  const threadId = selected?.threadId ?? null;
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      if (!selected) { setMessages([]); return; }
+      if (!threadId) { setMessages([selected]); return; }
+      void fetchEmailThread(threadId).then((m) => {
+        if (active) setMessages(m.length ? m : [selected]);
+      });
+    };
+    load();
+    // Live-refresh the open conversation whenever a mail is sent or received.
+    const unsub = threadId ? onEmailRefresh(() => load()) : undefined;
+    return () => { active = false; unsub?.(); };
+  }, [selected, threadId]);
+  return messages;
+}
+
+/** Stacks all messages in a conversation, each with its own header + body + attachments. */
+function EmailThreadBody({ messages, currentUserId }: { messages: ApiEmailDetail[]; currentUserId?: string }) {
+  // Newest first so the latest reply is visible without scrolling.
+  const ordered = [...messages].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+  return (
+    <div className="space-y-4 pr-1">
+      {ordered.map((msg) => {
+        const mine = Boolean(msg.from.userId && msg.from.userId === currentUserId);
+        return (
+          <div key={msg.id} className="border rounded-lg overflow-hidden">
+            <div className={cn('flex items-center gap-3 px-4 py-2.5 border-b', mine ? 'bg-primary/5' : 'bg-muted/40')}>
+              <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-[10px] font-semibold text-primary">
+                  {msg.from.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{msg.from.name}{mine ? ' (you)' : ''}</p>
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {format(new Date(msg.timestamp), 'MMM d, yyyy h:mm a')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {msg.from.email} → {msg.to.map((t) => t.name || t.email).join(', ')}
+                </p>
+              </div>
+            </div>
+            <div className="px-4 py-2">
+              <EmailHtmlBody html={msg.body} minHeight={0} />
+              <EmailAttachmentBar email={msg} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Per-agency email section (full view, rendered for each agency in "All" view) ──
 function AgencyEmailsSection({
   agency,
@@ -131,6 +195,7 @@ function AgencyEmailsSection({
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const threadMessages = useEmailThread(selectedEmail);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
@@ -157,6 +222,9 @@ function AgencyEmailsSection({
     queryFn: () => fetchEmails({ folder: currentFolder, agencyIds: [agency.id], ownerIds, limit: 100 }),
     staleTime: 0,
   });
+
+  // Live-refresh the list when a mail is sent or received.
+  useEffect(() => onEmailRefresh(() => { void refetch(); }), [refetch]);
 
   const emails = data?.data ?? [];
   const unreadCount = currentFolder === 'inbox' ? (data?.unreadCount ?? 0) : 0;
@@ -383,9 +451,8 @@ function AgencyEmailsSection({
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <EmailHtmlBody html={selectedEmail.body} />
+                      <EmailThreadBody messages={threadMessages.length ? threadMessages : [selectedEmail]} currentUserId={currentUser?.id} />
                     </ScrollArea>
-                    <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
                     <div className="shrink-0">
                       <Button onClick={() => setReplyDialogOpen(true)}>
@@ -424,7 +491,7 @@ function AgencyEmailsSection({
             ? selectedEmail.from.userId
             : undefined
         }
-        onSent={() => { setReplyDialogOpen(false); refetch(); }}
+        onSent={() => { setReplyDialogOpen(false); refetch(); triggerEmailRefresh(); }}
       />
     </>
   );
@@ -444,6 +511,7 @@ function AllAgenciesEmailsSection({
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const threadMessages = useEmailThread(selectedEmail);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
@@ -471,6 +539,9 @@ function AllAgenciesEmailsSection({
     staleTime: 0,
     enabled: agencyIds.length > 0,
   });
+
+  // Live-refresh the list when a mail is sent or received.
+  useEffect(() => onEmailRefresh(() => { void refetch(); }), [refetch]);
 
   const emails = data?.data ?? [];
   const unreadCount = currentFolder === 'inbox' ? (data?.unreadCount ?? 0) : 0;
@@ -661,9 +732,8 @@ function AllAgenciesEmailsSection({
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <EmailHtmlBody html={selectedEmail.body} />
+                      <EmailThreadBody messages={threadMessages.length ? threadMessages : [selectedEmail]} currentUserId={currentUser?.id} />
                     </ScrollArea>
-                    <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
                     <div className="shrink-0">
                       <Button onClick={() => setReplyDialogOpen(true)}>
@@ -702,7 +772,7 @@ function AllAgenciesEmailsSection({
             ? selectedEmail.from.userId
             : undefined
         }
-        onSent={() => { setReplyDialogOpen(false); refetch(); }}
+        onSent={() => { setReplyDialogOpen(false); refetch(); triggerEmailRefresh(); }}
       />
     </>
   );
@@ -716,6 +786,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const threadMessages = useEmailThread(selectedEmail);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -748,6 +819,9 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
     staleTime: 0,
     enabled: ownerIds.length > 0,
   });
+
+  // Live-refresh the list when a mail is sent or received.
+  useEffect(() => onEmailRefresh(() => { void refetch(); }), [refetch]);
 
   const emails = data?.data ?? [];
   const unreadCount = currentFolder === 'inbox' ? (data?.unreadCount ?? 0) : 0;
@@ -1003,9 +1077,8 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
                     </div>
                     <Separator />
                     <ScrollArea className="flex-1 my-4">
-                      <EmailHtmlBody html={selectedEmail.body} />
+                      <EmailThreadBody messages={threadMessages.length ? threadMessages : [selectedEmail]} currentUserId={currentUser?.id} />
                     </ScrollArea>
-                    <EmailAttachmentBar email={selectedEmail} />
                     <Separator className="mb-4" />
                     <div className="shrink-0">
                       <Button onClick={() => setReplyDialogOpen(true)}>
@@ -1044,7 +1117,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
             ? selectedEmail.from.userId
             : undefined
         }
-        onSent={() => { setReplyDialogOpen(false); refetch(); }}
+        onSent={() => { setReplyDialogOpen(false); refetch(); triggerEmailRefresh(); }}
       />
     </>
   );
@@ -1053,6 +1126,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 export default function Emails() {
   const { currentSubCompany, setUnreadEmailsCount, currentUser } = useStore();
   const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const threadMessages = useEmailThread(selectedEmail);
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
 
   const canComposeEmail = useHasPermission('clients:write');
@@ -1781,10 +1855,9 @@ export default function Emails() {
                 <Separator />
 
                 <ScrollArea className="flex-1 my-6">
-                  <EmailHtmlBody html={selectedEmail.body} />
+                  <EmailThreadBody messages={threadMessages.length ? threadMessages : [selectedEmail]} currentUserId={currentUser?.id} />
                 </ScrollArea>
 
-                <EmailAttachmentBar email={selectedEmail} />
                 <Separator className="my-4" />
 
                 <div className="flex gap-2">
@@ -1846,6 +1919,7 @@ export default function Emails() {
         }
         onSent={() => {
           loadList();
+          triggerEmailRefresh();
           setReplyDialogOpen(false);
         }}
       />

@@ -522,6 +522,14 @@ export function onEmailRefresh(handler: EmailRefreshHandler): () => void {
   return () => emailRefreshListeners.delete(handler);
 }
 
+/**
+ * Fire the email-refresh listeners manually. Used to piggyback on the SSE notification
+ * stream so inbox/thread views stay live even if the socket transport is unavailable.
+ */
+export function triggerEmailRefresh(payload?: EmailRefreshPayload): void {
+  emailRefreshListeners.forEach((fn) => fn(payload ?? ({} as EmailRefreshPayload)));
+}
+
 /** Subscribe to agency link/unlink changes (refresh linked-accounts query). Returns unsubscribe. */
 export function onAgencyLinkChanged(handler: AgencyLinkChangedHandler): () => void {
   agencyLinkChangedListeners.add(handler);

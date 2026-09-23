@@ -63,7 +63,8 @@ export type NotificationType =
   | 'job_placement_added'
   | 'job_placement_ended'
   | 'leave_approved'
-  | 'leave_rejected';
+  | 'leave_rejected'
+  | 'email_received';
 
 export interface CreateNotificationInput {
   userId: string;

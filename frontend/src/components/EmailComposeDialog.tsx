@@ -342,7 +342,8 @@ export function EmailComposeDialog({
       setSelectedContact(null);
       setSelectedTemplateId('');
     } else if (replyTo) {
-      setSubject(replyTo.subject.startsWith('RE:') ? replyTo.subject : `RE: ${replyTo.subject}`);
+      // Don't stack prefixes: keep an existing Re:/RE:/re: (case-insensitive) instead of adding another.
+      setSubject(/^re:\s/i.test(replyTo.subject) ? replyTo.subject : `Re: ${replyTo.subject}`);
       setBody('');
       setSelectedContact(null);
     } else if (hasFixedRecipient) {

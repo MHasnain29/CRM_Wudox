@@ -14,9 +14,12 @@ import {
 export function EmailHtmlBody({
   html,
   className,
+  minHeight = 280,
 }: {
   html: string | null | undefined;
   className?: string;
+  /** Floor for the iframe height. Keep small (e.g. 0) inside stacked thread views to avoid dead space. */
+  minHeight?: number;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const recovered = recoverPastedEmailHtml(repairLegacyEmailBody(html));
@@ -31,15 +34,15 @@ export function EmailHtmlBody({
       try {
         const doc = iframe.contentDocument;
         const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
-        iframe.style.height = `${Math.max(h || 0, 280)}px`;
+        iframe.style.height = `${Math.max(h || 0, minHeight)}px`;
       } catch {
-        iframe.style.height = '400px';
+        iframe.style.height = `${Math.max(400, minHeight)}px`;
       }
     };
     iframe.addEventListener('load', syncHeight);
     iframe.srcdoc = src;
     return () => iframe.removeEventListener('load', syncHeight);
-  }, [recovered, structured]);
+  }, [recovered, structured, minHeight]);
 
   if (!recovered.trim()) return null;
 
@@ -50,7 +53,7 @@ export function EmailHtmlBody({
         sandbox="allow-same-origin"
         title="Email body"
         className={cn('w-full border-0 bg-white rounded-md', className)}
-        style={{ minHeight: 280 }}
+        style={{ minHeight }}
       />
     );
   }
