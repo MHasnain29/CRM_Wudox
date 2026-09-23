@@ -64,6 +64,8 @@ export type NotificationType =
   | 'job_placement_ended'
   | 'leave_approved'
   | 'leave_rejected'
+  | 'leave_request'
+  | 'leave_cancelled'
   | 'email_received';
 
 export interface CreateNotificationInput {

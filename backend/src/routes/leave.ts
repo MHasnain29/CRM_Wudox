@@ -354,7 +354,7 @@ leaveRouter.post('/requests', requirePermission('leave:write'), async (req: Requ
       approverIds.map((uid) =>
         createNotification({
           userId: uid,
-          subCompanyId: subCompanyId ?? undefined,
+          subCompanyId: subCompanyId ?? '',
           type: 'leave_request',
           title: 'New Leave Request',
           body: `${request.user.firstName} ${request.user.lastName} requested ${request.leaveType.name} (${dateRange}).`,
@@ -544,7 +544,7 @@ leaveRouter.patch('/requests/:id/cancel', requirePermission('leave:write'), asyn
     await Promise.all(approvers.map((a) =>
       createNotification({
         userId: a.id,
-        subCompanyId: subCompanyId ?? undefined,
+        subCompanyId: subCompanyId ?? '',
         type: 'leave_cancelled',
         title: 'Leave Request Cancelled',
         body: `${name} cancelled their ${leaveRequest.leaveType?.name ?? 'leave'} request for ${dateRange}.`,

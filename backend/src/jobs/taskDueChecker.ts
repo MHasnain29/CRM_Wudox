@@ -137,7 +137,7 @@ async function sendFollowUpDueNotification(
       subCompanyId: followUp.subCompanyId,
       eventKey,
       context: {
-        clientName: followUp.client.name,
+        clientName: followUp.client?.name ?? 'Unknown',
         dueTime: fmtTime(dueDate),
         dueDate: fmtDate(dueDate),
       },
@@ -201,7 +201,7 @@ async function sendFollowUpManagerNotification(followUpId: string): Promise<void
 
   const dueDate = new Date(followUp.dueDate);
   const ownerName = `${followUp.owner.firstName} ${followUp.owner.lastName}`;
-  const clientName = followUp.client.name;
+  const clientName = followUp.client?.name ?? 'Unknown';
   const managerType = storeTypeForEvent('follow_up_due_2h_manager');
   const eligibleManagerIds: string[] = [];
 

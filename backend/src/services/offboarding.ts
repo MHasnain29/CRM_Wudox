@@ -266,7 +266,7 @@ export async function getEmployeeData(userId: string): Promise<OffboardingEmploy
     })),
     followUps: followUps.map((f) => ({
       id: f.id,
-      title: f.client.name,
+      title: f.client?.name ?? 'Unknown',
       subtitle: `Due ${new Date(f.dueDate).toLocaleDateString()} · ${f.notes.slice(0, 60)}${f.notes.length > 60 ? '…' : ''}`,
     })),
   };

@@ -572,7 +572,7 @@ async function collectAllItems(ctx: CollectContext): Promise<DailyActivityItem[]
     });
     for (const f of followUps) {
       const ownerName = ctx.nameById.get(f.ownerId) ?? 'Unknown';
-      const title = f.notes?.slice(0, 80) || f.client.name || 'Follow-up';
+      const title = f.notes?.slice(0, 80) || f.client?.name || 'Follow-up';
       if (f.completed) {
         if (!completedWithinToday(f.completedAt, bounds)) {
           continue;
@@ -584,7 +584,7 @@ async function collectAllItems(ctx: CollectContext): Promise<DailyActivityItem[]
             id: `follow_up:${f.id}`,
             kind: 'follow_up',
             title,
-            subtitle: f.client.name,
+            subtitle: f.client?.name,
             ownerId: f.ownerId,
             ownerName,
             status: st,
@@ -603,7 +603,7 @@ async function collectAllItems(ctx: CollectContext): Promise<DailyActivityItem[]
           id: `follow_up:${f.id}`,
           kind: 'follow_up',
           title,
-          subtitle: f.client.name,
+          subtitle: f.client?.name,
           ownerId: f.ownerId,
           ownerName,
           status: st,
@@ -738,7 +738,7 @@ async function collectAllItems(ctx: CollectContext): Promise<DailyActivityItem[]
       items.push({
         id: `call:${c.id}`,
         kind: 'call',
-        title: `Call: ${c.client.name}`,
+        title: `Call: ${c.client?.name ?? 'Unknown'}`,
         ownerId: c.ownerId,
         ownerName: ctx.nameById.get(c.ownerId) ?? 'Unknown',
         status: ctx.filter === 'today' ? 'today' : 'completed_today',

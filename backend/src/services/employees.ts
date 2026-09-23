@@ -83,7 +83,7 @@ export type CreateEmployeeInput = {
   bankTransitNumber?: string | null;
   bankAccountNumber?: string | null;
   /** Form-only extras (no SIN). */
-  uiExtras?: EmployeeUiExtras | null;
+  uiExtras?: Partial<EmployeeUiExtras> | null;
 };
 
 export type UpdateEmployeeInput = Partial<
@@ -105,7 +105,7 @@ export type UpdateEmployeeInput = Partial<
   bankAccountNumber?: string | null;
   tags?: string[];
   workExperiences?: WorkExperienceInput[];
-  uiExtras?: EmployeeUiExtras | null;
+  uiExtras?: Partial<EmployeeUiExtras> | null;
 };
 
 function parseApprovalChain(raw: unknown): string[] {
