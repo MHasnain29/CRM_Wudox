@@ -30,6 +30,8 @@ import { getLinkedAccounts } from '../services/agencyLink';
 import { ensureAccessContext, requestHasPermission } from '../utils/requestPermission';
 import { getFromR2, uploadToR2 } from '../services/r2Storage';
 import { invalidateClientListCache } from '../services/clientListCache';
+import { resolveEmailChipScope, buildEmailChipWhere } from '../services/emailChipScope';
+import { emitIncomingEmailRefresh } from '../services/incomingEmailRefresh';
 
 type InboundUploadFile = {
   fieldname: string;
@@ -68,6 +70,7 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(50),
   agencyIds: z.string().optional(), // elevated roles only, sent folder only
   ownerIds: z.string().optional(),  // multi-user filter: comma-separated UUIDs (sent folder, elevated roles)
+  filterMode: z.literal('chips').optional(), // Emails page only; legacy callers keep their current scope.
 });
 
 const sendBodySchema = z.object({
@@ -237,9 +240,20 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
   if (!parsed.success) return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
   const { folder, page, limit, agencyIds: agencyIdsRaw, ownerIds: ownerIdsRaw } = parsed.data;
 
+  const idsSchema = z.array(z.string().uuid());
+  const chipAgencyIds = agencyIdsRaw === undefined ? undefined : agencyIdsRaw.split(',');
+  const chipOwnerIds = ownerIdsRaw === undefined ? undefined : ownerIdsRaw.split(',');
+  if (parsed.data.filterMode && (
+    (chipAgencyIds && !idsSchema.safeParse(chipAgencyIds).success) ||
+    (chipOwnerIds && !idsSchema.safeParse(chipOwnerIds).success)
+  )) return res.status(400).json({ error: 'Invalid email filter' });
+  const chipScope = parsed.data.filterMode
+    ? await resolveEmailChipScope(req, chipAgencyIds, chipOwnerIds)
+    : undefined;
+
   const agencyScope = await resolveListAgencyScope(req, agencyIdsRaw);
   const subCompanyId = agencyScope?.primarySubCompanyId ?? (await resolveEmailAgencyId(req));
-  if (!subCompanyId && folder !== 'inbox') {
+  if (!subCompanyId && folder !== 'inbox' && !chipScope) {
     return res.status(403).json({ error: 'Agency context required' });
   }
 
@@ -253,7 +267,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
   const ownerIdsList = ownerIdsRaw ? ownerIdsRaw.split(',').filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [];
 
   // Linked anchors: expand each user's normal scope (any role).
-  const linkedScope = ownerIdsList.length > 0
+  const linkedScope = !chipScope && ownerIdsList.length > 0
     ? await expandLinkedOwnerScope(userId, req.user!.subCompanyId, ownerIdsList, { exact: ownerExactFromQuery(req.query) })
     : null;
   const linkedUserFilterIds =
@@ -263,7 +277,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
 
   // Resolve team IDs for managers (self + direct reports) — used as default when no ownerIds filter
   let managerTeamIds: string[] | null = null;
-  if (isTeamManager && ownerIdsList.length === 0 && subCompanyId) {
+  if (!chipScope && isTeamManager && ownerIdsList.length === 0 && subCompanyId) {
     const directReports = await prisma.user.findMany({
       where: { subCompanyId, reportingManagerIds: { has: userId }, isActive: true },
       select: { id: true },
@@ -271,7 +285,9 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
     managerTeamIds = [userId, ...directReports.map((u) => u.id)];
   }
 
-  if (folder === 'inbox') {
+  if (chipScope) {
+    where = buildEmailChipWhere(chipScope, folder);
+  } else if (folder === 'inbox') {
     if (linkedScope) {
       where = {
         subCompanyId: { in: linkedScope.subCompanyIds },
@@ -420,7 +436,12 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
       },
     };
 
-    if (elevated && agencyScope) {
+    if (chipScope) {
+      proposalWhereBase.lead.subCompanyId = { in: chipScope.agencyIds };
+      if (chipScope.ownerIds !== undefined) {
+        proposalWhereBase.lead.ownerId = { in: chipScope.ownerIds };
+      }
+    } else if (elevated && agencyScope) {
       const subCo = agencyScope.scopeFilter.subCompanyId;
       const selectedAgencyIds = typeof subCo === 'string' ? [subCo] : subCo.in;
       proposalWhereBase.lead.subCompanyId = { in: selectedAgencyIds };
@@ -443,6 +464,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           select: {
             id: true,
             ownerId: true,
+            subCompanyId: true,
             owner: { select: { firstName: true, lastName: true, email: true } },
             clientId: true,
             client: { select: { name: true } },
@@ -495,7 +517,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           leadId: p.lead.id,
           inReplyTo: undefined,
           threadId: undefined,
-          subCompanyId,
+          subCompanyId: chipScope ? p.lead.subCompanyId : subCompanyId,
           attachmentCount: 0,
           forwardedFromUserId: undefined,
           forwardedFromName: undefined,
@@ -1774,7 +1796,7 @@ emailsRouter.post('/inbound', inboundForm.any(), async (req: Request, res: Respo
 
     const notifyUserId = forwardingTargetId ?? user.id;
     console.log('📨 [INBOUND] ✅ Saved to inbox — userId:', notifyUserId, forwardingTargetId ? `(forwarded from ${user.id})` : '', 'thread:', threadEmail?.id ?? 'none', 'automated:', automated, 'attachments:', storedAttachments);
-    emitToUsers([notifyUserId], 'email:refresh', { subCompanyId });
+    await emitIncomingEmailRefresh(subCompanyId, [user.id, notifyUserId]);
 
     // Bell/toast notification, mirroring how other events (leads, proposals, tasks) notify.
     // Suppressed for automated mail (out-of-office, bounces, list blasts) to avoid notification spam.

@@ -16,7 +16,7 @@ import {
   useDatabaseManagerAgencyPathEnabled,
 } from '@/lib/access';
 import { useAuthStore } from '@/lib/authStore';
-import { fetchScopeFilterUsers, fetchTeamMembers, type ApiUser } from '@/lib/api';
+import { fetchScopeFilterUsers, fetchTeamMembers, fetchEmailFilterTeamMembers, type ApiUser } from '@/lib/api';
 import { useAgencyFilter, type Agency } from '@/hooks/useAgencyFilter';
 import { useHierarchyFilter } from '@/hooks/useManagerFilter';
 import { buildTeamManagerFilter, type HierarchyFilterTier, type ScopeDomain } from '@/lib/hierarchyFilter';
@@ -41,6 +41,7 @@ export type ScopeFilterState = {
   agencies: Agency[];
   agenciesLoading: boolean;
   agencyUsersLoading: boolean;
+  agencyUsersError?: boolean;
   agencyUsers: ApiUser[];
   selectedAgencyId: string;
   selectedLeaderId: string;
@@ -158,8 +159,9 @@ export function getScopeFilterRowProps(
 /** @deprecated Use getScopeFilterRowProps */
 export const getElevatedFilterRowProps = getScopeFilterRowProps;
 
-export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterState {
+export function useScopeFilter(options?: { domain?: ScopeDomain; emailFilters?: boolean }): ScopeFilterState {
   const domain = options?.domain;
+  const emailFilters = options?.emailFilters === true;
   const isElevated = useCanAccessMultipleAgencies();
   const isSingleAgencyLead = useIsSingleAgencyLead();
   const isPureManager = useIsTeamManagerOnly();
@@ -443,17 +445,17 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
     isElevated && selectedAgencyId === 'all' && filterAgencies.length > 1;
   const allAgenciesKey = filterAgencies.map((a) => a.id).join(',');
 
-  const { data: singleAgencyUsersRaw, isLoading: singleAgencyUsersLoading } = useQuery<ApiUser[]>({
-    queryKey: ['agency-users-scope-filter', scopeFilterAgencyId],
-    queryFn: () => fetchScopeFilterUsers(scopeFilterAgencyId!),
+  const { data: singleAgencyUsersRaw, isLoading: singleAgencyUsersLoading, isError: singleAgencyUsersError } = useQuery<ApiUser[]>({
+    queryKey: [emailFilters ? 'email-agency-users' : 'agency-users-scope-filter', scopeFilterAgencyId],
+    queryFn: () => fetchScopeFilterUsers(scopeFilterAgencyId!, emailFilters),
     enabled: isAgencyHierarchyViewer && !!scopeFilterAgencyId,
-    staleTime: 2 * 60 * 1000,
+    staleTime: emailFilters ? 0 : 2 * 60 * 1000,
   });
 
-  const { data: allAgenciesUsersRaw, isLoading: allAgenciesUsersLoading } = useQuery<ApiUser[]>({
-    queryKey: ['agency-users-scope-filter-all', allAgenciesKey],
+  const { data: allAgenciesUsersRaw, isLoading: allAgenciesUsersLoading, isError: allAgenciesUsersError } = useQuery<ApiUser[]>({
+    queryKey: [emailFilters ? 'email-all-agencies-users' : 'agency-users-scope-filter-all', allAgenciesKey],
     queryFn: async () => {
-      const lists = await Promise.all(filterAgencies.map((a) => fetchScopeFilterUsers(a.id)));
+      const lists = await Promise.all(filterAgencies.map((a) => fetchScopeFilterUsers(a.id, emailFilters)));
       const byId = new Map<string, ApiUser>();
       for (const list of lists) {
         for (const user of list) byId.set(user.id, user);
@@ -461,7 +463,7 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
       return Array.from(byId.values());
     },
     enabled: isAgencyHierarchyViewer && isAllAgenciesElevated,
-    staleTime: 2 * 60 * 1000,
+    staleTime: emailFilters ? 0 : 2 * 60 * 1000,
   });
 
   const agencyUsersRaw = isAllAgenciesElevated ? allAgenciesUsersRaw : singleAgencyUsersRaw;
@@ -469,12 +471,12 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
     ? allAgenciesUsersLoading
     : singleAgencyUsersLoading;
 
-  const { data: teamMembersRaw = [], isLoading: teamMembersLoading } = useQuery<ApiUser[]>({
-    queryKey: ['team-members-scope-filter', viewerUserId],
-    queryFn: () => fetchTeamMembers(),
+  const { data: teamMembersRaw = [], isLoading: teamMembersLoading, isError: teamMembersError } = useQuery<ApiUser[]>({
+    queryKey: [emailFilters ? 'email-team-members' : 'team-members-scope-filter', viewerUserId],
+    queryFn: () => emailFilters ? fetchEmailFilterTeamMembers() : fetchTeamMembers(),
     // Don't fetch (or poison cache) with act-as header while viewing a linked manager's world.
     enabled: isPureManager && !!viewerUserId && !actAsActive,
-    staleTime: 2 * 60 * 1000,
+    staleTime: emailFilters ? 0 : 2 * 60 * 1000,
   });
 
   const agencyUsers = useMemo(
@@ -642,6 +644,7 @@ export function useScopeFilter(options?: { domain?: ScopeDomain }): ScopeFilterS
     agencies: filterAgencies,
     agenciesLoading: isPureManager ? false : agenciesLoading,
     agencyUsersLoading: usersLoading,
+    agencyUsersError: isPureManager ? teamMembersError : isAllAgenciesElevated ? allAgenciesUsersError : singleAgencyUsersError,
     agencyUsers: isPureManager ? teamMembers : agencyUsers,
     selectedAgencyId,
     selectedLeaderId,

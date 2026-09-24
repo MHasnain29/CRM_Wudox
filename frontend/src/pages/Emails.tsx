@@ -46,8 +46,8 @@ import { EmailHtmlBody } from '@/components/email/EmailHtmlBody';
 import { emailBodyPlainPreview } from '@/lib/recoverPastedEmailHtml';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { StickyHeader } from '@/components/StickyHeader';
-import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
-import { useScopeQueryParams } from '@/hooks/useScopeQueryParams';
+import { useEmailScopeFilter } from '@/hooks/useEmailScopeFilter';
+import { useEmailMailbox, type EmailMailboxScope } from '@/hooks/useEmailMailbox';
 import { useActAs } from '@/hooks/useActAs';
 import { useWriteAgencyId } from '@/hooks/useWriteAgencyId';
 import { useSearchParams } from 'react-router-dom';
@@ -119,23 +119,24 @@ function DeleteEmailConfirmDialog({
 // ─── Conversation threading — fetch + render a whole thread like Gmail ──
 /** Loads every message in the selected email's conversation (oldest first). */
 function useEmailThread(selected: ApiEmailDetail | null): ApiEmailDetail[] {
-  const [messages, setMessages] = useState<ApiEmailDetail[]>([]);
+  const [loaded, setLoaded] = useState<{ key: string; messages: ApiEmailDetail[] } | null>(null);
   const threadId = selected?.threadId ?? null;
+  const key = threadId ?? selected?.id;
   useEffect(() => {
     let active = true;
     const load = () => {
-      if (!selected) { setMessages([]); return; }
-      if (!threadId) { setMessages([selected]); return; }
+      if (!selected || !key) { setLoaded(null); return; }
+      if (!threadId) { setLoaded({ key, messages: [selected] }); return; }
       void fetchEmailThread(threadId).then((m) => {
-        if (active) setMessages(m.length ? m : [selected]);
+        if (active) setLoaded({ key, messages: m.length ? m : [selected] });
       });
     };
     load();
     // Live-refresh the open conversation whenever a mail is sent or received.
     const unsub = threadId ? onEmailRefresh(() => load()) : undefined;
     return () => { active = false; unsub?.(); };
-  }, [selected, threadId]);
-  return messages;
+  }, [selected, threadId, key]);
+  return selected ? (loaded?.key === key ? loaded.messages : [selected]) : [];
 }
 
 /** Stacks all messages in a conversation, each with its own header + body + attachments. */
@@ -183,23 +184,25 @@ function EmailThreadBody({ messages, currentUserId }: { messages: ApiEmailDetail
 function AgencyEmailsSection({
   agency,
   onViewAgency,
-  ownerIds,
+  scope,
   scopeKey,
 }: {
   agency: { id: string; name: string };
   onViewAgency: () => void;
-  ownerIds?: string[];
+  scope: EmailMailboxScope;
   scopeKey: string;
 }) {
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const { emails, unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
+    selectedEmail, setSelectedEmail, loadingDetail, selectEmail: handleSelectEmail } = useEmailMailbox(
+      { ...scope, agencyIds: [agency.id] }, scopeKey, currentFolder,
+    );
   const threadMessages = useEmailThread(selectedEmail);
-  const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
+  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey]);
   const canDeleteEmail = useHasPermission('emails:delete');
 
   const handleDeleteEmail = async (id: string) => {
@@ -216,18 +219,6 @@ function AgencyEmailsSection({
       setEmailToDelete(null);
     }
   };
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['agency-emails-full', agency.id, currentFolder, scopeKey],
-    queryFn: () => fetchEmails({ folder: currentFolder, agencyIds: [agency.id], ownerIds, limit: 100 }),
-    staleTime: 0,
-  });
-
-  // Live-refresh the list when a mail is sent or received.
-  useEffect(() => onEmailRefresh(() => { void refetch(); }), [refetch]);
-
-  const emails = data?.data ?? [];
-  const unreadCount = currentFolder === 'inbox' ? (data?.unreadCount ?? 0) : 0;
 
   const filteredEmails = emails.filter(
     e => searchQuery === '' ||
@@ -246,21 +237,6 @@ function AgencyEmailsSection({
     pageSize,
     showPagination,
   } = useClientPagination(filteredEmails, [agency.id, currentFolder, searchQuery]);
-
-  const handleSelectEmail = async (item: ApiEmailListItem) => {
-    setLoadingDetail(true);
-    setSelectedEmail(null);
-    try {
-      const detail = await fetchEmailById(item.id);
-      setSelectedEmail(detail ?? null);
-      if (detail && currentFolder === 'inbox' && !detail.isRead) {
-        await markEmailRead(detail.id);
-        refetch();
-      }
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
 
   const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
@@ -315,7 +291,9 @@ function AgencyEmailsSection({
                 <TabsContent value={currentFolder} className="mt-3">
                   <ScrollArea className="h-[calc(90vh-240px)]">
                     <div className="space-y-2 pr-2">
-                      {isLoading ? (
+                      {error ? (
+                        <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
+                      ) : isLoading ? (
                         <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>
                       ) : filteredEmails.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
@@ -780,19 +758,19 @@ function AllAgenciesEmailsSection({
 
 // ─── Combined All-Team email view (manager "All Team" view) ─────────────────
 // Inbox / sent / drafts all honor ownerIds for elevated + managers (backend).
-function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
+function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[]; scope: EmailMailboxScope; scopeKey: string }) {
   const PAGE_SIZE = 10;
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
+  const { emails, unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
+    selectedEmail, setSelectedEmail, loadingDetail, selectEmail: handleSelectEmail } = useEmailMailbox(scope, scopeKey, currentFolder);
   const threadMessages = useEmailThread(selectedEmail);
-  const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
 
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
+  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey]);
   const canDeleteEmail = useHasPermission('emails:delete');
 
   const handleDeleteEmail = async (id: string) => {
@@ -810,21 +788,7 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
     }
   };
 
-  const ownerIds = useMemo(() => teamUsers.map(u => u.id), [teamUsers]);
-  const ownerKey = ownerIds.join(',');
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['team-emails-full', ownerKey, currentFolder],
-    queryFn: () => fetchEmails({ folder: currentFolder, ownerIds, limit: 100 }),
-    staleTime: 0,
-    enabled: ownerIds.length > 0,
-  });
-
-  // Live-refresh the list when a mail is sent or received.
-  useEffect(() => onEmailRefresh(() => { void refetch(); }), [refetch]);
-
-  const emails = data?.data ?? [];
-  const unreadCount = currentFolder === 'inbox' ? (data?.unreadCount ?? 0) : 0;
+  const ownerKey = teamUsers.map((user) => user.id).join(',');
 
   const filteredEmails = emails.filter(
     e => searchQuery === '' ||
@@ -835,27 +799,12 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 
   useEffect(() => {
     setPage(1);
-  }, [ownerKey, currentFolder, searchQuery]);
+  }, [ownerKey, scopeKey, currentFolder, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredEmails.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
   const pageRows = filteredEmails.slice(startIndex, startIndex + PAGE_SIZE);
-
-  const handleSelectEmail = async (item: ApiEmailListItem) => {
-    setLoadingDetail(true);
-    setSelectedEmail(null);
-    try {
-      const detail = await fetchEmailById(item.id);
-      setSelectedEmail(detail ?? null);
-      if (detail && currentFolder === 'inbox' && !detail.isRead) {
-        await markEmailRead(detail.id);
-        refetch();
-      }
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
 
   const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
@@ -903,7 +852,9 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
                 <TabsContent value={currentFolder} className="mt-3">
                   <ScrollArea className="h-[calc(90vh-240px)]">
                     <div className="space-y-2 pr-2">
-                      {isLoading ? (
+                      {error ? (
+                        <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
+                      ) : isLoading ? (
                         <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>
                       ) : filteredEmails.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
@@ -1125,8 +1076,6 @@ function TeamEmailsSection({ teamUsers }: { teamUsers: ApiUser[] }) {
 
 export default function Emails() {
   const { currentSubCompany, setUnreadEmailsCount, currentUser } = useStore();
-  const [selectedEmail, setSelectedEmail] = useState<ApiEmailDetail | null>(null);
-  const threadMessages = useEmailThread(selectedEmail);
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
 
   const canComposeEmail = useHasPermission('clients:write');
@@ -1135,7 +1084,7 @@ export default function Emails() {
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
 
-  const scopeFilter = useScopeFilter();
+  const scopeFilter = useEmailScopeFilter();
   const {
     isElevated,
     showHierarchyFilters,
@@ -1169,19 +1118,9 @@ export default function Emails() {
       : currentSubCompany?.id,
   );
 
-  const { ownerIds: elevatedOwnerIds } = useScopeQueryParams(scopeFilter);
-  const [emailsSearchParams] = useSearchParams();
-  const linkedUserIdParam = emailsSearchParams.get('linkedUserId') ?? '';
-
-  const [searchQuery, setSearchQuery] = useState('');
   const [composeDialogOpen, setComposeDialogOpen] = useState(false);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [editDraftEmail, setEditDraftEmail] = useState<{ id: string; subject: string; body: string; clientId?: string; fromUserId?: string; subCompanyId?: string } | null>(null);
-  const [emails, setEmails] = useState<ApiEmailListItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-
   // Signatures state
   const [view, setView] = useState<'emails' | 'signatures'>('emails');
   const [customTemplatesOpen, setCustomTemplatesOpen] = useState(false);
@@ -1195,38 +1134,24 @@ export default function Emails() {
   const [sigImgUploading, setSigImgUploading] = useState(false);
   const sigImgInputRef = useRef<HTMLInputElement>(null);
 
-  const loadListCounterRef = useRef(0);
-
-  const loadList = useCallback(async () => {
-    if (!currentSubCompany?.id) return;
-    if (showAgencySections || showAllTeamView) { setLoading(false); return; }
-    if (showAllTeamView) { setLoading(false); return; }
-    const counter = ++loadListCounterRef.current;
-    setLoading(true);
-    try {
-      const agencyIds = isElevated && selectedAgencyId !== 'all' && selectedAgencyId !== 'me' ? [selectedAgencyId] : undefined;
-      const ownerIds = elevatedOwnerIds;
-      if (ownerIds !== undefined && ownerIds.length === 0) {
-        if (counter === loadListCounterRef.current) { setEmails([]); setLoading(false); }
-        return;
-      }
-      const res = await fetchEmails({ folder: currentFolder, limit: 100, ownerIds, agencyIds });
-      if (counter !== loadListCounterRef.current) return;
-      setEmails(res.data);
-      if (currentFolder === 'inbox') {
-        setUnreadCount(res.unreadCount);
-        setUnreadEmailsCount(res.unreadCount);
-      }
-    } finally {
-      if (counter === loadListCounterRef.current) setLoading(false);
-    }
-  }, [currentFolder, currentSubCompany?.id, isElevated, showAllTeamView, selectedAgencyId, setUnreadEmailsCount, elevatedOwnerIds, linkedUserIdParam]);
-
   const loadInboxUnreadCount = useCallback(async () => {
     const count = await fetchEmailUnreadCount();
-    setUnreadCount(count);
+    // Sidebar remains personal; the page's count belongs to the selected scope.
     setUnreadEmailsCount(count);
   }, [setUnreadEmailsCount]);
+
+  const { emails, unreadCount, isLoading: loading, error: mailboxError, refetch: loadList,
+    selectedEmail, setSelectedEmail, loadingDetail, selectEmail, searchQuery, setSearchQuery } = useEmailMailbox(
+      scopeFilter.query, scopeKey, currentFolder,
+      scopeFilter.ready && !showAgencySections && !showAllTeamView,
+      loadInboxUnreadCount,
+    );
+  const threadMessages = useEmailThread(selectedEmail);
+  useEffect(() => {
+    setReplyDialogOpen(false);
+    setEditDraftEmail(null);
+    setEmailToDelete(null);
+  }, [scopeKey]);
 
   const loadSignatures = useCallback(async () => {
     setSigLoading(true);
@@ -1320,19 +1245,9 @@ export default function Emails() {
   };
 
   useEffect(() => {
-    loadList();
-  }, [loadList]);
-
-  useEffect(() => {
-    if (currentFolder === 'inbox') loadInboxUnreadCount();
-  }, [currentFolder, loadInboxUnreadCount]);
-
-  useEffect(() => {
-    return onEmailRefresh(() => {
-      loadList();
-      if (currentFolder === 'inbox') loadInboxUnreadCount();
-    });
-  }, [loadList, loadInboxUnreadCount, currentFolder]);
+    void loadInboxUnreadCount();
+    return onEmailRefresh(() => { void loadInboxUnreadCount(); });
+  }, [loadInboxUnreadCount]);
 
   const filteredEmails = emails.filter(
     (email) =>
@@ -1347,7 +1262,7 @@ export default function Emails() {
     try {
       await deleteEmail(id);
       if (selectedEmail?.id === id) setSelectedEmail(null);
-      setEmails((prev) => prev.filter((e) => e.id !== id));
+      void loadList();
       toast.success('Email deleted');
     } catch {
       toast.error('Failed to delete email');
@@ -1363,19 +1278,7 @@ export default function Emails() {
       setEditDraftEmail({ id: item.id, subject: item.subject, body: item.body, clientId: item.clientId, fromUserId: item.from.userId, subCompanyId: item.subCompanyId });
       return;
     }
-    setLoadingDetail(true);
-    setSelectedEmail(null);
-    try {
-      const detail = await fetchEmailById(item.id);
-      setSelectedEmail(detail ?? null);
-      if (detail && currentFolder === 'inbox' && !detail.isRead) {
-        await markEmailRead(detail.id);
-        setEmails((prev) => prev.map((e) => (e.id === detail.id ? { ...e, isRead: true } : e)));
-        loadInboxUnreadCount();
-      }
-    } finally {
-      setLoadingDetail(false);
-    }
+    await selectEmail(item);
   };
 
   const bodyPreview = (body: string) => emailBodyPlainPreview(body);
@@ -1427,8 +1330,14 @@ export default function Emails() {
       )}
 
 
+      {view === 'emails' && !scopeFilter.ready && (
+        <p role={scopeFilter.error ? 'alert' : 'status'} className="text-center py-12 text-muted-foreground">
+          {scopeFilter.error ? 'Could not load email filters. Please refresh to try again.' : 'Loading…'}
+        </p>
+      )}
+
       {/* All Agencies — one section per agency */}
-      {view === 'emails' && showAgencySections && (
+      {view === 'emails' && scopeFilter.ready && showAgencySections && (
         agencies.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground py-12">No agencies in scope</p>
         ) : (
@@ -1438,8 +1347,8 @@ export default function Emails() {
                 key={agency.id}
                 agency={agency}
                 onViewAgency={() => setSelectedAgencyId(agency.id)}
-                ownerIds={elevatedOwnerIds}
-                scopeKey={`${scopeKey}|${elevatedOwnerIds?.join(',') ?? ''}`}
+                scope={scopeFilter.query}
+                scopeKey={`${scopeKey}|agency=${agency.id}`}
               />
             ))}
           </div>
@@ -1447,7 +1356,7 @@ export default function Emails() {
       )}
 
       {/* Manager / Team — one section per user */}
-      {view === 'emails' && showAllTeamView && (
+      {view === 'emails' && scopeFilter.ready && showAllTeamView && (
         managerTeamUsers.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground py-12">
             {showManagerSections ? 'No managers / team in this agency' : 'No team members in this scope'}
@@ -1463,7 +1372,7 @@ export default function Emails() {
                     showManagerSections ? setSelectedManagerId(user.id) : setSelectedUserId(user.id)
                   }
                 />
-                <TeamEmailsSection teamUsers={[user]} />
+                <TeamEmailsSection teamUsers={[user]} scope={{ ...scopeFilter.query, ownerIds: [user.id] }} scopeKey={`${scopeKey}|person=${user.id}`} />
               </div>
             ))}
           </div>
@@ -1640,7 +1549,7 @@ export default function Emails() {
         </div>
       )}
 
-      {view === 'emails' && !showAgencySections && !showAllTeamView && <div className="grid grid-cols-12 gap-6 h-[calc(100%-80px)]">
+      {view === 'emails' && scopeFilter.ready && !showAgencySections && !showAllTeamView && <div className="grid grid-cols-12 gap-6 h-[calc(100%-80px)]">
         <div className="col-span-4 space-y-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1678,7 +1587,9 @@ export default function Emails() {
             <TabsContent value={currentFolder} className="mt-4">
               <ScrollArea className="h-[calc(100vh-20rem)]">
                 <div className="space-y-2">
-                  {loading ? (
+                  {mailboxError ? (
+                    <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
+                  ) : loading ? (
                     <div className="text-center py-12 text-muted-foreground">Loading…</div>
                   ) : filteredEmails.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
