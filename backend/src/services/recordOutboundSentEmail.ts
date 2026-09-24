@@ -26,6 +26,10 @@ export type RecordOutboundSentEmailParams = {
   to: OutboundSentRecipient[];
   clientId?: string | null;
   leadId?: string | null;
+  /** Only supply when the caller has observed provider acceptance (not queue acceptance). */
+  providerAcceptedAt?: Date;
+  /** Transactional business-flow emails are distinct from personal outreach. */
+  sendingKind?: 'personal' | 'campaign' | 'system';
   /** Log label only — not persisted (no schema change). */
   source?: string;
 };
@@ -63,6 +67,10 @@ export async function recordOutboundSentEmail(
       data: {
         fromUserId: params.fromUserId,
         sentByUserId: params.sentByUserId ?? null,
+        activityActorId: params.sentByUserId ?? params.fromUserId,
+        sendingKind: params.sendingKind ?? 'system',
+        sendStatus: params.providerAcceptedAt ? 'accepted' : null,
+        sentAt: params.providerAcceptedAt ?? null,
         fromName,
         fromEmail,
         subject,
@@ -75,6 +83,8 @@ export async function recordOutboundSentEmail(
         recipients: {
           create: to.map((r) => ({
             recipientType: 'to' as const,
+            sendStatus: params.providerAcceptedAt ? 'accepted' : null,
+            sentAt: params.providerAcceptedAt ?? null,
             name: r.name,
             emailAddress: r.email,
             clientId: r.clientId,

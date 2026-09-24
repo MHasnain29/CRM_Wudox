@@ -12,6 +12,7 @@ import { actAsMiddleware, effectiveActorId } from '../middleware/actAs';
 import { requirePermission } from '../middleware/requirePermission';
 import { dispatchNotificationToUser, notifyTaskAssigned } from '../services/notificationDispatch';
 import { createActivityLog } from '../services/activityLog';
+import { updateTaskWithCompletionEvidence } from '../services/workCompletionEvidence';
 import { emitToUsers } from '../socket';
 import { resolveAgencyScope, resolveListAgencyScope } from '../config/agencyScope';
 import {
@@ -411,21 +412,15 @@ tasksRouter.patch('/:id', requirePermission('tasks:write'), async (req: Request,
   if (data.description !== undefined) update.description = data.description;
   if (data.dueDate !== undefined) update.dueDate = new Date(data.dueDate);
   if (data.priority !== undefined) update.priority = data.priority;
-  if (data.status !== undefined) {
-    update.status = data.status;
-    if (data.status === 'done') update.completedAt = new Date();
-  }
   if (data.ownerId !== undefined) update.owner = { connect: { id: data.ownerId } };
   if (data.linkType !== undefined) update.linkType = data.linkType;
   if (data.linkId !== undefined) update.linkId = data.linkId;
 
-  const task = await prisma.task.update({
-    where: { id: req.params.id },
+  const { task, previousStatus, transition } = await updateTaskWithCompletionEvidence({
+    id: req.params.id,
+    actorId: req.user!.sub,
     data: update,
-    include: {
-      owner: { select: { id: true, firstName: true, lastName: true, email: true } },
-      assignedBy: { select: { id: true, firstName: true, lastName: true } },
-    },
+    requestedStatus: data.status,
   });
 
   const newOwnerId = task.ownerId;
@@ -450,7 +445,7 @@ tasksRouter.patch('/:id', requirePermission('tasks:write'), async (req: Request,
   }
 
   // Notify relevant parties when task is marked done (fire-and-forget, never block response)
-  if (data.status === 'done') {
+  if (transition === 'completed') {
     const actorId = effectiveActorId(req);
     const taskRef = { id: task.id, title: task.title, ownerId: task.ownerId, assignedById: task.assignedById, owner: task.owner, assignedBy: task.assignedBy };
     void (async () => {
@@ -499,8 +494,8 @@ tasksRouter.patch('/:id', requirePermission('tasks:write'), async (req: Request,
   }
 
   const taskActorId = effectiveActorId(req);
-  if (data.status !== undefined) {
-    const isCompleted = data.status === 'done' && existing.status !== 'done';
+  if (data.status !== undefined && data.status !== previousStatus) {
+    const isCompleted = transition === 'completed';
     let actorNameForLog: string;
     if (taskActorId === task.ownerId) {
       actorNameForLog = `${task.owner.firstName} ${task.owner.lastName}`.trim() || 'User';
@@ -520,7 +515,7 @@ tasksRouter.patch('/:id', requirePermission('tasks:write'), async (req: Request,
       metadata: {
         taskId: task.id,
         title: task.title,
-        oldStatus: existing.status,
+        oldStatus: previousStatus,
         newStatus: task.status,
         clientId: task.linkType === 'client' && task.linkId ? task.linkId : undefined,
       },

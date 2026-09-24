@@ -19,6 +19,8 @@ interface Props {
   onSelectTier: (paramKey: 'leaderId' | 'managerId' | 'userId', id: string) => void;
   onClearTier: (paramKey: 'leaderId' | 'managerId' | 'userId') => void;
   usersLoading?: boolean;
+  /** A page may own stale-selection recovery instead of clearing one tier here. */
+  validateSelections?: boolean;
   hideUserRows?: boolean;
   /** When linked-account row already lists agencies, skip the hierarchy agency chips. */
   hideAgencyRow?: boolean;
@@ -87,6 +89,7 @@ export function AgencyManagerUserFilterRows({
   onSelectTier,
   onClearTier,
   usersLoading = false,
+  validateSelections = true,
   hideUserRows = false,
   hideAgencyRow = false,
   leaderParamInUrl = false,
@@ -134,7 +137,7 @@ export function AgencyManagerUserFilterRows({
   }, [agencies, agenciesLoading, selectedAgencyId, onSelectAgency]);
 
   useEffect(() => {
-    if (usersLoading) return;
+    if (usersLoading || !validateSelections) return;
     for (const tier of tiers) {
       const selected = tierSelections[tier.paramKey];
       if (selected === 'all' || selected === 'me') continue;
@@ -142,7 +145,7 @@ export function AgencyManagerUserFilterRows({
       const isStale = !tier.visibleUsers.some((u) => u.id === selected);
       if (isStale) onClearTier(tier.paramKey);
     }
-  }, [tiers, tierSelections, usersLoading, onClearTier]);
+  }, [tiers, tierSelections, usersLoading, onClearTier, validateSelections]);
 
   const agencyDrilledIn =
     selectedAgencyId !== 'all' && selectedAgencyId !== 'me' && selectedAgencyId.length > 0;

@@ -309,6 +309,11 @@ function connect(): Socket | null {
     emailRefreshListeners.forEach((fn) => fn(payload));
   });
 
+  // Catch up on mail that arrived before connection or during a network interruption.
+  socket.on('connect', () => {
+    triggerEmailRefresh();
+  });
+
   socket.on('reassignment:refresh', (payload: ReassignmentRefreshPayload) => {
     reassignmentRefreshListeners.forEach((fn) => fn(payload));
   });

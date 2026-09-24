@@ -28,6 +28,7 @@ import FollowUps from "./pages/FollowUps";
 import Meetings from "./pages/Meetings";
 import Messages from "./pages/Messages";
 import Reports from "./pages/Reports";
+import DailyReportDetail from "./pages/DailyReportDetail";
 import Approvals from "./pages/Approvals";
 import Proposals from "./pages/Proposals";
 import Settings from "./pages/Settings";
@@ -107,6 +108,7 @@ const App = () => (
               <Route path="/meetings" element={<PermissionRoute permission="meetings:read"><Meetings /></PermissionRoute>} />
               <Route path="/messages" element={<PermissionRoute permission="users:read"><Messages /></PermissionRoute>} />
               <Route path="/reports" element={<PermissionRoute permission={['analytics:read', 'jobs:read']}><Reports /></PermissionRoute>} />
+              <Route path="/daily-reports/:id" element={<PermissionRoute permission={['analytics:read', 'settings:write', 'jobs:read']}><DailyReportDetail /></PermissionRoute>} />
               <Route path="/approvals" element={<PermissionRoute permission="clients:approve"><Approvals /></PermissionRoute>} />
               <Route
                 path="/proposals"

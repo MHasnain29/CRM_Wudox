@@ -10,6 +10,7 @@ import { getSendGridAuthenticatedDomains } from './sendgridAuthenticatedDomains'
 import { SenderDomainVerificationUnavailableError } from './senderDomainErrors';
 import { DEFAULT_BRAND_NAME } from '../config/branding';
 import { prepareOutboundEmailHtml } from './emailHtmlCompat';
+import { recordEmailSendOutcomeBestEffort } from './emailSendEvidence';
 
 function isSendGridConfigured(): boolean {
   return Boolean(env.SENDGRID_API_KEY);
@@ -730,6 +731,8 @@ export interface SendClientEmailOptions {
   subCompanyId?: string;
   requestedSendAt?: Date;
   dedupeKey?: string;
+  /** Canonical CRM compose message for reliable provider-acceptance reporting. */
+  crmEmailId?: string;
   /** Optional file attachments (base64-encoded content) */
   attachments?: {
     content: string;
@@ -743,16 +746,22 @@ export interface SendClientEmailOptions {
 
 /**
  * Send an email to client contacts via SendGrid.
- * Returns true if sent, false if SendGrid not configured.
+ * Returns true if accepted or queued, false if unavailable. CRM send evidence
+ * distinguishes queued from provider-accepted; this boolean remains compatible.
  */
 export async function sendClientEmail(options: SendClientEmailOptions): Promise<boolean> {
   const { to, cc, from, replyTo, subject, text, html, attachments, subCompanyId, requestedSendAt, dedupeKey } = options;
+  const recipientEmails = [...to, ...(cc ?? [])].map((r) => r.email);
+  const recordOutcome = (status: 'queued' | 'accepted' | 'failed', at?: Date) => options.crmEmailId
+    ? recordEmailSendOutcomeBestEffort({ emailId: options.crmEmailId, recipientEmails, status, ...(at ? { at } : {}) })
+    : Promise.resolve();
   if (!to.length) return false;
 
   if (!isSendGridConfigured()) {
     if (process.env.NODE_ENV === 'development') {
       console.log(`[dev] Email would send to ${to.map((t) => t.email).join(', ')}: ${subject}`);
     }
+    await recordOutcome('failed');
     return false;
   }
 
@@ -786,15 +795,30 @@ export async function sendClientEmail(options: SendClientEmailOptions): Promise<
       const queued = await enqueueOutboundEmail({
         subCompanyId,
         kind: 'sendgrid_single',
-        payload: { message },
+        payload: { message, ...(options.crmEmailId ? { crmEmailId: options.crmEmailId, recipientEmails } : {}) },
         requestedSendAt: requestedSendAt ?? null,
         dedupeKey,
       });
+      if (!queued.queued && options.crmEmailId && dedupeKey) {
+        // Duplicate recipient addresses can share a queue key. A deduped insert
+        // must not erase the first recipient's queued/accepted evidence.
+        const existing = await prisma.outboundEmailQueue.findUnique({
+          where: { dedupeKey }, select: { status: true, sentAt: true },
+        });
+        if (existing?.status === 'sent' && existing.sentAt) await recordOutcome('accepted', existing.sentAt);
+        else await recordOutcome(existing && ['queued', 'sending'].includes(existing.status) ? 'queued' : 'failed');
+      } else await recordOutcome(queued.queued ? 'queued' : 'failed');
       return queued.queued;
     }
   }
 
-  await sgMail.send(message as any);
+  try {
+    await sgMail.send(message as any);
+  } catch (err) {
+    await recordOutcome('failed');
+    throw err;
+  }
+  await recordOutcome('accepted');
   return true;
 }
 

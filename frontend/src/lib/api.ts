@@ -342,11 +342,14 @@ export async function fetchUsers(params?: { subCompanyId?: string }): Promise<Ap
 }
 
 /** GET /users/scope-filter — agency users for elevated filter chips (includes company_director, etc.). */
-export async function fetchScopeFilterUsers(subCompanyId: string): Promise<ApiUser[]> {
+export async function fetchScopeFilterUsers(subCompanyId: string, strict = false): Promise<ApiUser[]> {
   const res = await apiFetch<{ data: ApiUser[] }>(
     `/users/scope-filter?subCompanyId=${encodeURIComponent(subCompanyId)}`,
   );
-  if (!res.ok) return [];
+  if (res.ok === false) {
+    if (strict) throw new Error(res.error || 'Could not load filter users');
+    return [];
+  }
   return res.data?.data ?? [];
 }
 
@@ -401,9 +404,20 @@ export async function fetchAgencyManagers(): Promise<{ id: string; firstName: st
 }
 
 /** GET /users/team-members — returns active direct reports for the requesting manager (sales_manager / recruitment_manager only). */
-export async function fetchTeamMembers(): Promise<ApiUser[]> {
+export function fetchTeamMembers(): Promise<ApiUser[]> {
+  return fetchTeamMemberList(false);
+}
+
+export function fetchEmailFilterTeamMembers(): Promise<ApiUser[]> {
+  return fetchTeamMemberList(true);
+}
+
+async function fetchTeamMemberList(strict: boolean): Promise<ApiUser[]> {
   const res = await apiFetch<{ data: ApiUser[] }>('/users/team-members');
-  if (!res.ok) return [];
+  if (res.ok === false) {
+    if (strict) throw new Error(res.error || 'Could not load team members');
+    return [];
+  }
   return res.data?.data ?? [];
 }
 
@@ -2016,6 +2030,7 @@ export async function fetchEmails(params: {
   limit?: number;
   agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
+  filterMode?: 'chips';
 }): Promise<{
   data: ApiEmailListItem[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
@@ -2028,12 +2043,16 @@ export async function fetchEmails(params: {
   });
   if (params.agencyIds?.length) q.set('agencyIds', params.agencyIds.join(','));
   appendOwnerIds(q, params.ownerIds, params.ownerExact);
+  if (params.filterMode) q.set('filterMode', params.filterMode);
   const res = await apiFetch<{
     data: ApiEmailListItem[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
     unreadCount: number;
   }>(`/emails?${q.toString()}`);
-  if (!res.ok) return { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }, unreadCount: 0 };
+  if (res.ok === false) {
+    if (params.filterMode) throw new Error(res.error || 'Could not load emails');
+    return { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }, unreadCount: 0 };
+  }
   return res.data ?? { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }, unreadCount: 0 };
 }
 

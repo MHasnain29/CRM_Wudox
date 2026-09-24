@@ -11,6 +11,7 @@ import { authenticate } from '../middleware/auth';
 import { actAsMiddleware, effectiveActorId } from '../middleware/actAs';
 import { requirePermission } from '../middleware/requirePermission';
 import { createActivityLog } from '../services/activityLog';
+import { updateFollowUpWithCompletionEvidence } from '../services/workCompletionEvidence';
 import { dispatchNotificationToUser } from '../services/notificationDispatch';
 import { emitToUsers } from '../socket';
 import { resolveAgencyScope, resolveListAgencyScope } from '../config/agencyScope';
@@ -302,21 +303,13 @@ followUpsRouter.patch('/:id', requirePermission('clients:write', 'employees:writ
   const update: Prisma.FollowUpUpdateInput = {};
   if (data.dueDate !== undefined) update.dueDate = new Date(data.dueDate);
   if (data.notes !== undefined) update.notes = data.notes;
-  if (data.completed !== undefined) {
-    update.completed = data.completed;
-    if (data.completed) update.completedAt = new Date();
-  }
   if (data.outcome !== undefined) update.outcome = data.outcome;
 
-  const updated = await prisma.followUp.update({
-    where: { id: req.params.id },
+  const { followUp: updated, transition } = await updateFollowUpWithCompletionEvidence({
+    id: req.params.id,
+    actorId: req.user!.sub,
     data: update,
-    include: {
-      owner: { select: { id: true, firstName: true, lastName: true } },
-      client: { select: { id: true, name: true } },
-      employee: { select: { id: true, firstName: true, lastName: true } },
-      comments: true,
-    },
+    requestedCompleted: data.completed,
   });
 
   const partyLabel =
@@ -346,7 +339,7 @@ followUpsRouter.patch('/:id', requirePermission('clients:write', 'employees:writ
     });
   }
 
-  if (data.completed !== undefined) {
+  if (transition) {
     void createActivityLog({
       userId: effectiveActorId(req),
       userName: actorName,
