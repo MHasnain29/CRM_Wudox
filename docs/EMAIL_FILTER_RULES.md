@@ -1,8 +1,11 @@
 # Emails filter rules
 
-These rules apply to the **Emails page only**, as agreed in the scenario review.
+These are the user-approved filter rules, implemented on the **Emails page**.
+The user also approved this behavior as the reference for fixing other pages later.
+Reuse these decisions when a page is requested; do not change other pages in advance.
 Shared filters on other pages, linked-account workflows, composing, sending,
-signatures, templates, and existing permissions keep their current behavior.
+signatures, templates, and existing permissions keep their current behavior until
+the user requests a change to the relevant page.
 
 ## Default and agency selection
 
@@ -30,6 +33,9 @@ signatures, templates, and existing permissions keep their current behavior.
 The lowest explicitly selected people row determines whose records appear.
 Higher selections restrict that row. A member who reports to multiple managers
 appears once. Empty groups stay empty; they never become an unrestricted query.
+Resolve the hierarchy from actual reporting relationships. Having the same role
+does not put managers under the same authority. Never include another authority's
+managers merely because the authorities share a role.
 
 ## Changing and clearing filters
 
@@ -50,6 +56,17 @@ appears once. Empty groups stay empty; they never become an unrestricted query.
 - Incoming email refreshes the selected mailbox and its unread count for recipients
   and connected viewers with existing agency/team access. Filters, search, and the
   open email stay selected. Reconnecting also refreshes emails missed while offline.
+
+## Applying the reference to another page later
+
+- Preserve the defaults, exact-person selection, hierarchy, empty-state behavior,
+  and parent/child resets above. Do not ask the user to decide these again.
+- Map record ownership, tabs, search, details, and counts to the requested page;
+  Inbox/Sent/Drafts and incoming-mail events are Email-specific examples.
+- Keep server-side access checks. Filters must never grant additional access.
+- Hard rule: the requested fix must not affect unrelated pages or functionality.
+- For genuinely new page-specific cases, ask one simple question at a time with
+  a recommendation explained from the user's point of view.
 
 ## Regression checks
 

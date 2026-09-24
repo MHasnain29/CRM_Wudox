@@ -120,6 +120,7 @@ import { EmailTemplatesSection, AutoSignatureCard } from './Settings_EmailTempla
 import { NotificationsSection } from './Settings_Notifications';
 import { PhoneSystemTab } from './Settings_PhoneSystemTab';
 import { HubstaffTab } from './Settings_HubstaffTab';
+import { DailyReportsTab } from './Settings_DailyReportsTab';
 import { SignatureCreatorWidget } from '@/components/SignatureCreatorWidget';
 import { AvailabilitySettings } from '@/components/AvailabilitySettings';
 import {
@@ -167,14 +168,11 @@ import {
   fetchActivityLogs,
   fetchClientVisibilitySetting,
   updateClientVisibilitySetting,
-  fetchDailyReportSettings,
-  updateDailyReportSettings,
   fetchEmailSendWindowSettings,
   updateEmailSendWindowSettings,
   disableEmailSendWindowSettings,
   fetchIdleTimeSetting,
   updateIdleTimeSetting,
-  type DailyReportSettings,
   type EmailSendWindowSettings,
   fetchCallScripts as fetchCallScriptsApi,
   createCallScript as createCallScriptApi,
@@ -558,13 +556,6 @@ export default function Settings() {
   const [clientVisibilitySaving, setClientVisibilitySaving] = useState(false);
   const clientVisibilityDaysStorageKey = `client-visibility-last-days:${currentSubCompany?.id ?? ''}`;
 
-  // Daily report email settings
-  const [dailyReportSettings, setDailyReportSettings] = useState<DailyReportSettings>({
-    enabled: false, sendHour: 18, sendMinute: 0, timezone: 'America/Toronto', shiftHours: 8,
-  });
-  const [dailyReportLoading, setDailyReportLoading] = useState(false);
-  const [dailyReportSaving, setDailyReportSaving] = useState(false);
-
   // Email send window settings (cutoff/start)
   const [emailSendWindowSettings, setEmailSendWindowSettings] = useState<EmailSendWindowSettings>({
     enabled: false,
@@ -680,17 +671,6 @@ export default function Settings() {
       .catch(() => toast.error('Failed to load client visibility setting'))
       .finally(() => setClientVisibilityLoading(false));
   }, [canSeeClientVisibilityTab, clientVisibilityDaysStorageKey, tabFromUrl]);
-
-  // Fetch daily report settings when tab is active
-  useEffect(() => {
-    if (!canSeeClientVisibilityTab) return; // same director/super_admin check
-    if (tabFromUrl !== 'daily-reports') return;
-    setDailyReportLoading(true);
-    fetchDailyReportSettings()
-      .then(setDailyReportSettings)
-      .catch(() => toast.error('Failed to load daily report settings'))
-      .finally(() => setDailyReportLoading(false));
-  }, [canSeeClientVisibilityTab, tabFromUrl]);
 
   // Fetch idle time threshold when tab is active
   useEffect(() => {
@@ -4032,140 +4012,7 @@ export default function Settings() {
         {/* Daily Reports Tab */}
         {canSeeClientVisibilityTab && (
           <TabsContent value="daily-reports" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Report Email</CardTitle>
-                <CardDescription>
-                  Send automated daily performance reports to managers at end of business. Reports include calls, emails, meetings, tasks, pipeline, break time, and idle time for each team member.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {dailyReportLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="daily-report-enabled"
-                        checked={dailyReportSettings.enabled}
-                        onCheckedChange={(checked) =>
-                          setDailyReportSettings((prev) => ({ ...prev, enabled: !!checked }))
-                        }
-                        disabled={dailyReportSaving}
-                      />
-                      <Label htmlFor="daily-report-enabled" className="text-sm font-medium">
-                        Enable daily report emails
-                      </Label>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="daily-report-time">Send Time</Label>
-                        <Select
-                          value={`${dailyReportSettings.sendHour}:${String(dailyReportSettings.sendMinute).padStart(2, '0')}`}
-                          onValueChange={(v) => {
-                            const [h, m] = v.split(':').map(Number);
-                            setDailyReportSettings((prev) => ({ ...prev, sendHour: h, sendMinute: m }));
-                          }}
-                          disabled={dailyReportSaving || !dailyReportSettings.enabled}
-                        >
-                          <SelectTrigger id="daily-report-time">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 48 }, (_, i) => {
-                              const hour = Math.floor(i / 2);
-                              const minute = (i % 2) * 30;
-                              const value = `${hour}:${String(minute).padStart(2, '0')}`;
-                              const ampm = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                              const suffix = hour < 12 ? 'AM' : 'PM';
-                              const label = `${ampm}:${String(minute).padStart(2, '0')} ${suffix}`;
-                              return <SelectItem key={value} value={value}>{label}</SelectItem>;
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="daily-report-timezone">Timezone</Label>
-                        <Select
-                          value={dailyReportSettings.timezone}
-                          onValueChange={(v) =>
-                            setDailyReportSettings((prev) => ({ ...prev, timezone: v }))
-                          }
-                          disabled={dailyReportSaving || !dailyReportSettings.enabled}
-                        >
-                          <SelectTrigger id="daily-report-timezone">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="America/Toronto">Eastern Time (Toronto)</SelectItem>
-                            <SelectItem value="America/New_York">Eastern Time (New York)</SelectItem>
-                            <SelectItem value="America/Chicago">Central Time (Chicago)</SelectItem>
-                            <SelectItem value="America/Denver">Mountain Time (Denver)</SelectItem>
-                            <SelectItem value="America/Los_Angeles">Pacific Time (Los Angeles)</SelectItem>
-                            <SelectItem value="America/Vancouver">Pacific Time (Vancouver)</SelectItem>
-                            <SelectItem value="America/Edmonton">Mountain Time (Edmonton)</SelectItem>
-                            <SelectItem value="America/Winnipeg">Central Time (Winnipeg)</SelectItem>
-                            <SelectItem value="America/Halifax">Atlantic Time (Halifax)</SelectItem>
-                            <SelectItem value="America/St_Johns">Newfoundland (St. John&apos;s)</SelectItem>
-                            <SelectItem value="UTC">UTC</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 max-w-[200px]">
-                      <Label htmlFor="daily-report-shift">Shift Duration (hours)</Label>
-                      <Input
-                        id="daily-report-shift"
-                        type="number"
-                        min={1}
-                        max={24}
-                        value={dailyReportSettings.shiftHours}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value, 10);
-                          if (!isNaN(v) && v >= 1 && v <= 24) {
-                            setDailyReportSettings((prev) => ({ ...prev, shiftHours: v }));
-                          }
-                        }}
-                        disabled={dailyReportSaving || !dailyReportSettings.enabled}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Used to calculate productivity percentage in the report.
-                      </p>
-                    </div>
-
-                    <Button
-                      disabled={dailyReportSaving}
-                      onClick={async () => {
-                        setDailyReportSaving(true);
-                        try {
-                          const updated = await updateDailyReportSettings(dailyReportSettings);
-                          if (updated) {
-                            setDailyReportSettings(updated);
-                            toast.success('Daily report settings saved');
-                          } else {
-                            toast.error('Failed to save settings');
-                          }
-                        } catch {
-                          toast.error('Failed to save settings');
-                        } finally {
-                          setDailyReportSaving(false);
-                        }
-                      }}
-                    >
-                      {dailyReportSaving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-                      Save Changes
-                    </Button>
-
-                    <p className="text-xs text-muted-foreground">
-                      Reports are sent to all managers who have direct reports assigned via Reporting Manager.
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            {tabFromUrl === 'daily-reports' && <DailyReportsTab />}
           </TabsContent>
         )}
 

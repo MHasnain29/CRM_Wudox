@@ -44,6 +44,7 @@ import {
 import { getRegistryEntry } from '../services/notificationRegistry';
 import { fetchAllAgencyIds, resolveAgencyScope } from '../config/agencyScope';
 import { DEFAULT_BRAND_NAME } from '../config/branding';
+import { canConfigureReportDelivery, resolveReportDeliveryTarget } from '../services/dailyReportRecipients';
 import {
   buildSignatureHtmlFromConfig,
   migrateSignatureConfigToV2,
@@ -1207,10 +1208,17 @@ const dailyReportSchema = z.object({
 settingsRouter.patch('/daily-report', requireSettingsWrite, async (req: Request, res: Response) => {
   const subCompanyId = await getEffectiveSubCompanyId(req);
   if (!subCompanyId) return res.status(403).json({ error: 'Agency context required' });
+  const reportAccess = await ensureAccessContext(req);
+  if (!reportAccess || !canConfigureReportDelivery(reportAccess)) return res.status(403).json({ error: 'Combined report settings require access to all CRM and Hubstaff work in this agency' });
 
   const parsed = dailyReportSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  if (parsed.data.enabled) {
+    const policy = await prisma.dailyReportPolicy.findUnique({ where: { scope_scopeId: { scope: 'agency', scopeId: subCompanyId } } });
+    if (!policy || !await resolveReportDeliveryTarget(policy)) return res.status(400).json({ error: 'Save a recipient email in Daily reports before enabling delivery' });
   }
 
   // Validate timezone is a real IANA timezone
@@ -1222,7 +1230,8 @@ settingsRouter.patch('/daily-report', requireSettingsWrite, async (req: Request,
     }
   }
 
-  const updated = await prisma.dailyReportSetting.upsert({
+  const updated = await prisma.$transaction(async tx => {
+    const setting = await tx.dailyReportSetting.upsert({
     where: { subCompanyId },
     create: {
       subCompanyId,
@@ -1233,6 +1242,15 @@ settingsRouter.patch('/daily-report', requireSettingsWrite, async (req: Request,
       shiftHours: parsed.data.shiftHours ?? 8,
     },
     update: parsed.data,
+    });
+    // Keep existing API clients in sync with the report scheduler's policy.
+    const schedule = { enabled: setting.enabled, sendHour: setting.sendHour, sendMinute: setting.sendMinute, timezone: setting.timezone, shiftHours: setting.shiftHours };
+    await tx.dailyReportPolicy.upsert({
+      where: { scope_scopeId: { scope: 'agency', scopeId: subCompanyId } },
+      create: { scope: 'agency', scopeId: subCompanyId, ...schedule, period: 'today', agencyIds: [subCompanyId], sendToManagers: false },
+      update: schedule,
+    });
+    return setting;
   });
 
   return res.json({

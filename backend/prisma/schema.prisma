@@ -635,6 +635,80 @@ model DailyReportSetting {
   @@map("daily_report_settings")
 }
 
+/// Scheduled reports; agency settings are migrated without adding new recipients until saved.
+model DailyReportPolicy {
+  id                    String   @id @default(uuid())
+  scope                 String
+  scopeId               String   @map("scope_id")
+  enabled               Boolean  @default(false)
+  sendHour              Int      @default(8) @map("send_hour")
+  sendMinute            Int      @default(0) @map("send_minute")
+  timezone              String   @default("America/Toronto")
+  shiftHours            Int      @default(8) @map("shift_hours")
+  period                String   @default("previous_day")
+  recipientUserIds      String[] @default([]) @map("recipient_user_ids")
+  recipientEmail        String?  @map("recipient_email")
+  authorizedById        String?  @map("authorized_by_id")
+  recipientsConfigured Boolean  @default(false) @map("recipients_configured")
+  sendToManagers        Boolean  @default(false) @map("send_to_managers")
+  profiles              String[] @default(["software", "marketing_sales", "recruitment", "general"])
+  agencyIds             String[] @default([]) @map("agency_ids")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  snapshots             DailyReportSnapshot[]
+  @@unique([scope, scopeId])
+  @@map("daily_report_policies")
+}
+
+/// Effective-dated defaults and individual overrides, independent of RBAC permissions.
+model ReportProfileAssignment {
+  id            String   @id @default(uuid())
+  mainOrgId     String   @map("main_org_id")
+  subjectType   String   @map("subject_type")
+  subjectId     String   @map("subject_id")
+  profile       String
+  effectiveFrom DateTime @default(now()) @map("effective_from")
+  changedById   String   @map("changed_by_id")
+  @@index([mainOrgId, subjectType, subjectId, effectiveFrom], map: "report_profile_assignments_scope_idx")
+  @@map("report_profile_assignments")
+}
+
+/// Immutable rendered input: the screen and email use the same source snapshot.
+model DailyReportSnapshot {
+  id              String   @id @default(uuid())
+  policyId        String   @map("policy_id")
+  recipientId     String   @map("recipient_id")
+  reportDate      String   @map("report_date")
+  preview         Boolean  @default(false)
+  payload         Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  policy          DailyReportPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  delivery        DailyReportDelivery?
+  @@index([policyId, reportDate])
+  @@map("daily_report_snapshots")
+}
+
+model DailyReportDelivery {
+  id              String   @id @default(uuid())
+  deliveryKey     String   @unique @map("delivery_key")
+  snapshotId      String   @unique @map("snapshot_id")
+  recipientId     String   @map("recipient_id")
+  recipientEmail  String   @map("recipient_email")
+  status          String   @default("pending")
+  attempts        Int      @default(0)
+  nextAttemptAt   DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil      DateTime? @map("lease_until")
+  lastError       String?  @map("last_error")
+  providerId      String?  @map("provider_id")
+  acceptedAt      DateTime? @map("accepted_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  snapshot        DailyReportSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  @@index([status, nextAttemptAt])
+  @@map("daily_report_deliveries")
+
+}
+
 model IdleTimeSetting {
   id               String     @id @default(uuid())
   subCompanyId     String     @unique @map("sub_company_id")
@@ -1679,6 +1753,12 @@ model Email {
   id            String            @id @default(uuid())
   fromUserId    String?           @map("from_user_id")
   sentByUserId  String?           @map("sent_by_user_id")
+  /// Null means legacy/unknown; provider acceptance is distinct from delivery.
+  sendStatus    String?           @map("send_status")
+  sentAt        DateTime?         @map("sent_at")
+  activityActorId String?         @map("activity_actor_id")
+  /// personal | campaign | system; null for unclassified legacy records.
+  sendingKind   String?           @map("sending_kind")
   fromName      String            @map("from_name")
   fromEmail     String            @map("from_email")
   subject       String            @db.VarChar(500)
@@ -1721,6 +1801,7 @@ model Email {
   @@index([timestamp])
   @@index([inboundMessageId])
   @@index([threadId])
+  @@index([subCompanyId, activityActorId, sentAt])
   @@map("emails")
 }
 
@@ -1744,6 +1825,8 @@ model EmailRecipient {
   recipientType String         @map("recipient_type")
   name          String?
   emailAddress  String         @map("email")
+  sendStatus    String?        @map("send_status")
+  sentAt        DateTime?      @map("sent_at")
   clientId      String?        @map("client_id")
   contactId     String?        @map("contact_id")
   client        Client?        @relation(fields: [clientId], references: [id])
@@ -1915,6 +1998,25 @@ model ActivityLog {
   @@index([timestamp])
   @@index([subCompanyId])
   @@map("activity_logs")
+}
+
+/// Immutable completion history. Snapshot IDs retain attribution after reassignment/deletion.
+model WorkCompletionEvent {
+  id           String   @id @default(uuid())
+  kind         String
+  entityId     String   @map("entity_id")
+  userId       String   @map("user_id")
+  actorId      String   @map("actor_id")
+  subCompanyId String   @map("sub_company_id")
+  type         String
+  occurredAt   DateTime @default(now()) @map("occurred_at")
+  fromStatus   String   @map("from_status")
+  toStatus     String   @map("to_status")
+  dueAt        DateTime? @map("due_at")
+
+  @@index([subCompanyId, userId, occurredAt])
+  @@index([kind, entityId, occurredAt])
+  @@map("work_completion_events")
 }
 
 model BugReport {
@@ -3361,7 +3463,7 @@ model Attendance {
 model HubstaffConfig {
   id                   String    @id @default(uuid())
   subCompanyId         String    @unique @map("sub_company_id")
-  hubstaffOrgId        Int       @map("hubstaff_org_id")
+  hubstaffOrgId        Int       @unique @map("hubstaff_org_id")
   orgName              String?   @map("org_name")
   refreshToken         String    @map("refresh_token") @db.Text
   accessToken          String?   @map("access_token") @db.Text
@@ -3372,9 +3474,23 @@ model HubstaffConfig {
   connectedById        String?   @map("connected_by_id")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
+  syncLeaseOwner       String?   @map("sync_lease_owner")
+  syncLeaseUntil       DateTime? @map("sync_lease_until")
+  lastTaskSyncAt       DateTime? @map("last_task_sync_at")
+  taskSyncStatus       String    @default("unknown") @map("task_sync_status")
+  taskSyncError        String?   @map("task_sync_error") @db.Text
+  tasksOrganizationId String?   @map("tasks_organization_id")
+  tasksIntegrationId  Int?      @map("tasks_integration_id")
+  orgTimezone         String?   @map("org_timezone")
+  lastHistoryReconciledAt DateTime? @map("last_history_reconciled_at")
 
   subCompany SubCompany         @relation(fields: [subCompanyId], references: [id], onDelete: Cascade)
   userLinks  HubstaffUserLink[]
+  tasks      HubstaffTask[]
+  taskEvents HubstaffTaskEvent[]
+  taskActivities HubstaffTaskActivity[]
+  projectMappings HubstaffProjectMapping[]
+  syncRuns HubstaffSyncRun[]
 
   @@map("hubstaff_configs")
 }
@@ -3429,4 +3545,122 @@ model HubstaffDailyActivity {
   @@index([subCompanyId, date])
   @@index([userId, date])
   @@map("hubstaff_daily_activities")
+}
+
+/// Read-only provider task snapshots. Completion timestamps are never inferred from tracked time.
+model HubstaffTask {
+  id                    String   @id @default(uuid())
+  configId              String   @map("config_id")
+  hubstaffOrgId         Int      @map("hubstaff_org_id")
+  taskKey               String   @map("task_key")
+  hubstaffTaskId        String?  @map("hubstaff_task_id")
+  globalTodoId          String?  @map("global_todo_id")
+  projectManagementId   String?  @map("project_management_id")
+  hubstaffProjectId     Int?     @map("hubstaff_project_id")
+  name                  String
+  status                String?
+  completedAt           DateTime? @map("completed_at")
+  completionObservedAt  DateTime? @map("completion_observed_at")
+  estimateSeconds       Int?     @map("estimate_seconds")
+  assigneeIds           Int[]    @default([]) @map("assignee_ids")
+  dueAt                 DateTime? @map("due_at")
+  providerUpdatedAt     DateTime? @map("provider_updated_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  source                String   @default("hubstaff_time")
+  isDeleted             Boolean  @default(false) @map("is_deleted")
+  firstSeenAt           DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt            DateTime @default(now()) @map("last_seen_at")
+  rawJson               Json?    @map("raw_json")
+  sourceUrl             String?  @map("source_url")
+  config                HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, taskKey])
+  @@index([configId, completedAt])
+  @@index([configId, globalTodoId])
+  @@map("hubstaff_tasks")
+}
+
+/// Observed provider transitions. occurredAt is set only when supplied by the source.
+model HubstaffTaskEvent {
+  id             String   @id @default(uuid())
+  configId       String   @map("config_id")
+  hubstaffOrgId  Int      @map("hubstaff_org_id")
+  taskKey        String   @map("task_key")
+  type           String
+  fromStatus     String?  @map("from_status")
+  toStatus       String   @map("to_status")
+  assigneeIds    Int[]    @default([]) @map("assignee_ids")
+  observedAt     DateTime @default(now()) @map("observed_at")
+  occurredAt     DateTime? @map("occurred_at")
+  config         HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId, taskKey, observedAt])
+  @@index([configId, type, observedAt])
+  @@map("hubstaff_task_events")
+}
+
+/// Canonical provider activity rows, retained at the source's daily granularity.
+model HubstaffTaskActivity {
+  id                  String   @id @default(uuid())
+  configId            String   @map("config_id")
+  hubstaffOrgId       Int      @map("hubstaff_org_id")
+  sourceActivityId    String   @map("source_activity_id")
+  subCompanyId        String   @map("sub_company_id")
+  hubstaffUserId      Int      @map("hubstaff_user_id")
+  userId              String?  @map("user_id")
+  date                DateTime @db.Date
+  hubstaffProjectId   Int      @default(0) @map("hubstaff_project_id")
+  taskKey             String?  @map("task_key")
+  hubstaffTaskId      String?  @map("hubstaff_task_id")
+  globalTodoId        String?  @map("global_todo_id")
+  trackedSeconds     Int      @default(0) @map("tracked_seconds")
+  keyboardSeconds    Int      @default(0) @map("keyboard_seconds")
+  mouseSeconds       Int      @default(0) @map("mouse_seconds")
+  overallSeconds     Int      @default(0) @map("overall_seconds")
+  inputTrackedSeconds Int     @default(0) @map("input_tracked_seconds")
+  manualSeconds      Int      @default(0) @map("manual_seconds")
+  idleSeconds        Int      @default(0) @map("idle_seconds")
+  billableSeconds    Int      @default(0) @map("billable_seconds")
+  syncedAt           DateTime @default(now()) @map("synced_at")
+  config             HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, sourceActivityId])
+  @@index([configId, date])
+  @@index([userId, date])
+  @@index([configId, taskKey])
+  @@index([subCompanyId, date])
+  @@map("hubstaff_task_activities")
+}
+
+model HubstaffProjectMapping {
+  id                  String   @id @default(uuid())
+  configId            String   @map("config_id")
+  hubstaffProjectId   Int      @map("hubstaff_project_id")
+  projectName         String   @map("project_name")
+  subCompanyId        String   @map("sub_company_id")
+  workProfile         String?  @map("work_profile")
+  internal            Boolean  @default(false)
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  config              HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, hubstaffProjectId])
+  @@index([subCompanyId])
+  @@map("hubstaff_project_mappings")
+}
+
+model HubstaffSyncRun {
+  id                  String   @id @default(uuid())
+  configId            String   @map("config_id")
+  startDate           DateTime @db.Date @map("start_date")
+  endDate             DateTime @db.Date @map("end_date")
+  status              String   @default("running")
+  taskStatus          String   @default("unknown") @map("task_status")
+  activityRows        Int      @default(0) @map("activity_rows")
+  startedAt           DateTime @default(now()) @map("started_at")
+  completedAt         DateTime? @map("completed_at")
+  error               String?  @db.Text
+  config              HubstaffConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId, startedAt])
+  @@map("hubstaff_sync_runs")
 }

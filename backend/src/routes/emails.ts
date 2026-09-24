@@ -10,6 +10,7 @@ import prisma from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { actAsMiddleware, effectiveActorId } from '../middleware/actAs';
 import { sendClientEmail, buildCrmReplyToAddress, resolveOutboundUserSender } from '../services/email';
+import { recordEmailSendOutcomeBestEffort } from '../services/emailSendEvidence';
 import { prepareOutboundEmailHtml } from '../services/emailHtmlCompat';
 import { senderUserSelect, injectSenderSignature, resolveSenderSignatureBlock } from '../services/sender';
 import { isSenderDomainError } from '../services/senderDomainErrors';
@@ -1267,6 +1268,9 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
       subCompanyId,
       fromUserId: senderUserId,
       sentByUserId: replyAsUserId ? req.user!.sub : null,
+      activityActorId: req.user!.sub,
+      sendingKind: 'personal',
+      sendStatus: 'pending',
       fromName,
       fromEmail,
       subject: storedSubject,
@@ -1281,6 +1285,7 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
         create: [
           ...recipients.map((r) => ({
             recipientType: 'to' as const,
+            sendStatus: 'pending',
             name: r.name,
             emailAddress: r.email,
             clientId: r.clientId ?? clientId ?? null,
@@ -1288,6 +1293,7 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
           })),
           ...(cc ?? []).map((c) => ({
             recipientType: 'cc' as const,
+            sendStatus: 'pending',
             name: c.name ?? null,
             emailAddress: c.email,
             clientId: null,
@@ -1363,10 +1369,17 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
           : undefined,
         subCompanyId,
         dedupeKey: `email:${emailRecord.id}:to:${r.email.toLowerCase()}`,
+        crmEmailId: emailRecord.id,
       });
       sent = sent || ok;
     }
   } catch (e) {
+    await recordEmailSendOutcomeBestEffort({
+      emailId: emailRecord.id,
+      recipientEmails: [...recipients.map((r) => r.email), ...(cc ?? []).map((r) => r.email)],
+      status: 'failed',
+      onlyPending: true,
+    });
     const msg = e instanceof Error ? e.message : 'Unknown provider error';
     const sgErrors = (e as any)?.response?.body?.errors ?? null;
     return res.status(502).json({
@@ -1379,7 +1392,14 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
     });
   }
 
-  // Activity log uses the actual caller's identity for auditability.
+  const sendEvidence = await prisma.email.findUnique({
+    where: { id: emailRecord.id },
+    select: { sendStatus: true, sentAt: true },
+  });
+  const activityType = sendEvidence?.sendStatus === 'accepted' ? 'email_sent' : 'email_queued';
+  const activityVerb = activityType === 'email_sent' ? 'Sent' : 'Queued';
+
+  // Client timeline logs are contextual; canonical Email evidence is the counting source.
   let actorName = replyToName;
   if (replyAsUserId) {
     const callerUser = await prisma.user.findUnique({
@@ -1398,17 +1418,17 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
     if (resolvedClientId) uniqueClientIds.add(resolvedClientId);
   }
 
-  if (uniqueClientIds.size > 0) {
+  if (sent && uniqueClientIds.size > 0) {
     for (const cid of uniqueClientIds) {
       const clientName = clientNameById.get(cid) ?? '';
       await createActivityLog({
         userId: effectiveActorId(req),
         userName: actorName,
         subCompanyId,
-        type: 'email_sent',
+        type: activityType,
         description: replyAsUserId
-          ? `Sent email as ${replyToName} to ${clientName || 'client'}`
-          : `Sent email to ${clientName || 'client'}`,
+          ? `${activityVerb} email as ${replyToName} to ${clientName || 'client'}`
+          : `${activityVerb} email to ${clientName || 'client'}`,
         metadata: {
           clientId: cid,
           clientName: clientName || undefined,
@@ -1419,16 +1439,16 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
         },
       });
     }
-  } else {
+  } else if (sent) {
     // Email sent without a linked client (e.g. direct email)
     await createActivityLog({
       userId: effectiveActorId(req),
       userName: actorName,
       subCompanyId,
-      type: 'email_sent',
+      type: activityType,
       description: replyAsUserId
-        ? `Sent email as ${replyToName}: ${subject || '(no subject)'}`
-        : `Sent email: ${subject || '(no subject)'}`,
+        ? `${activityVerb} email as ${replyToName}: ${subject || '(no subject)'}`
+        : `${activityVerb} email: ${subject || '(no subject)'}`,
       metadata: {
         subject,
         emailId: emailRecord.id,
@@ -1445,7 +1465,10 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
   return res.status(201).json({
     id: emailRecord.id,
     sent,
-    message: sent ? 'Email sent' : 'Email saved (SendGrid not configured)',
+    sendStatus: sendEvidence?.sendStatus ?? null,
+    sentAt: sendEvidence?.sentAt ?? null,
+    message: sendEvidence?.sendStatus === 'queued' ? 'Email queued for the sending window'
+      : sent ? 'Email sent' : 'Email saved (SendGrid not configured)',
   });
 });
 

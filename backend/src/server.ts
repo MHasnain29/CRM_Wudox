@@ -33,6 +33,7 @@ import { approvalsRouter } from './routes/approvals';
 import { activityLogsRouter } from './routes/activityLogs';
 import { dashboardRouter } from './routes/dashboard';
 import { dailyActivityRouter } from './routes/dailyActivity';
+import { dailyReportsRouter } from './routes/dailyReports';
 import { bugReportsRouter } from './routes/bugReports';
 import proposalsRouter from './routes/proposals';
 import reviewTemplatesRouter from './routes/reviewTemplates';
@@ -203,6 +204,7 @@ app.get(`${env.API_PREFIX}/${env.API_VERSION}`, (_req: Request, res: Response) =
 
 // API routes
 const prefix = `${env.API_PREFIX}/${env.API_VERSION}`;
+app.use(`${prefix}/daily-reports`, dailyReportsRouter);
 app.use(`${prefix}/public`, publicRouter);
 app.use(`${prefix}/auth`, authRouter);
 app.use(`${prefix}/agency-links`, agencyLinkRouter);
