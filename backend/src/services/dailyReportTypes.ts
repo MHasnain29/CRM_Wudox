@@ -11,6 +11,7 @@ export interface ReportPolicyInput {
   shiftHours: number;
   period: 'today' | 'previous_day';
   recipientEmail: string | null;
+  ccEmails?: string[];
   authorizedById?: string | null;
   profiles: string[];
   agencyIds: string[];
@@ -41,10 +42,16 @@ export interface DailyReportPayload {
   version: 1; title: string; reportDate: string; timezone: string;
   periodStart: string; periodEnd: string; generatedAt: string;
   recipient: { id: string; name: string; email: string };
+  /** Absent on snapshots created before CC support. */
+  ccEmails?: string[];
   authorizedById?: string;
   scope: ReportScope; agencyIds: string[]; userIds: string[]; requiredPermissions: string[];
   profiles: string[]; people: ReportPerson[];
-  summary: { people: number; trackedSeconds: number | null; completedTasks: number | null; personalEmails: number; followUpsCompleted: number; repliesReceived?: number };
+  summary: {
+    people: number; trackedSeconds: number | null; completedTasks: number | null; personalEmails: number; followUpsCompleted: number; repliesReceived?: number;
+    /** Software staff's Hubstaff tasks, shared tasks counted once; complete = every person's data was available. */
+    hubstaffTasks?: Record<'completed' | 'worked' | 'open' | 'overdue', { count: number; complete: boolean }>;
+  };
   sources: { label: string; status: string; lastSyncedAt: string | null }[];
   warnings: string[];
 }

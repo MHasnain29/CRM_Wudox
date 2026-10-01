@@ -648,6 +648,7 @@ model DailyReportPolicy {
   period                String   @default("previous_day")
   recipientUserIds      String[] @default([]) @map("recipient_user_ids")
   recipientEmail        String?  @map("recipient_email")
+  ccEmails              String[] @default([]) @map("cc_emails")
   authorizedById        String?  @map("authorized_by_id")
   recipientsConfigured Boolean  @default(false) @map("recipients_configured")
   sendToManagers        Boolean  @default(false) @map("send_to_managers")
@@ -1759,6 +1760,8 @@ model Email {
   activityActorId String?         @map("activity_actor_id")
   /// personal | campaign | system; null for unclassified legacy records.
   sendingKind   String?           @map("sending_kind")
+  /// True when the provider was asked to report delivery, open and click events for this message.
+  deliveryTracked Boolean         @default(false) @map("delivery_tracked")
   fromName      String            @map("from_name")
   fromEmail     String            @map("from_email")
   subject       String            @db.VarChar(500)
@@ -1819,6 +1822,15 @@ model EmailAttachment {
   @@map("email_attachments")
 }
 
+/// Last time a provider webhook delivered any event. Reports use it to tell
+/// "no results yet" apart from "the webhook is not reporting".
+model WebhookHeartbeat {
+  provider    String   @id
+  lastEventAt DateTime @map("last_event_at")
+
+  @@map("webhook_heartbeats")
+}
+
 model EmailRecipient {
   id            String         @id @default(uuid())
   emailId       String         @map("email_id")
@@ -1827,6 +1839,11 @@ model EmailRecipient {
   emailAddress  String         @map("email")
   sendStatus    String?        @map("send_status")
   sentAt        DateTime?      @map("sent_at")
+  /// First provider event of each kind (SendGrid Event Webhook); null until reported.
+  deliveredAt   DateTime?      @map("delivered_at")
+  openedAt      DateTime?      @map("opened_at")
+  clickedAt     DateTime?      @map("clicked_at")
+  bouncedAt     DateTime?      @map("bounced_at")
   clientId      String?        @map("client_id")
   contactId     String?        @map("contact_id")
   client        Client?        @relation(fields: [clientId], references: [id])
@@ -1936,7 +1953,8 @@ model EmailCampaignRecipient {
   errorMessage   String?              @map("error_message")
   campaign       EmailCampaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
-  @@index([campaignId])
+  /// Leading campaignId also serves per-campaign lookups; daily reports read one period of sends.
+  @@index([campaignId, sentAt])
   @@index([status])
   @@map("email_campaign_recipients")
 }

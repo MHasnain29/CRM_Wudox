@@ -1,7 +1,7 @@
 /**
  * Status-only approval meta for Daily Agenda pending-request rows.
  */
-import { ROLE_LABELS } from '../config/permissions';
+import { formatRoleLabel } from '../config/permissions';
 
 export type ApprovalStatusMeta = {
   requesterName?: string;
@@ -32,14 +32,6 @@ function parseApprovalChain(raw: unknown): string[] {
   return raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
 }
 
-function formatApprovalRoleLabel(roleKey: string): string {
-  if (ROLE_LABELS[roleKey]) return ROLE_LABELS[roleKey];
-  return roleKey
-    .split('_')
-    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
-    .join(' ');
-}
-
 /**
  * Build step / awaiting labels from entity approvalChain when present,
  * with legacy manager→director fallback for client queues.
@@ -61,7 +53,7 @@ export function buildApprovalStatusMeta(opts: {
       chain.length - 1,
     );
     const awaitingRoleKey = chain[idx];
-    const roleLabel = formatApprovalRoleLabel(awaitingRoleKey);
+    const roleLabel = formatRoleLabel(awaitingRoleKey);
     const stepNum = idx + 1;
     const base = `Step ${stepNum} of ${chain.length} · awaiting ${roleLabel}`;
     const stepLabel =

@@ -719,6 +719,12 @@ export async function sendWelcomeWithPassword(
   });
 }
 
+/** SendGrid open + click tracking, shared by bulk campaigns and tracked CRM emails. */
+export const SENDGRID_ENGAGEMENT_TRACKING = {
+  clickTracking: { enable: true, enableText: false },
+  openTracking: { enable: true },
+};
+
 export interface SendClientEmailOptions {
   to: { email: string; name?: string }[];
   cc?: { email: string; name?: string }[];
@@ -733,6 +739,11 @@ export interface SendClientEmailOptions {
   dedupeKey?: string;
   /** Canonical CRM compose message for reliable provider-acceptance reporting. */
   crmEmailId?: string;
+  /**
+   * Ask SendGrid for open/click events (tracking pixel, rewritten links) and mark the
+   * crmEmailId message as delivery-tracked so reports count its results.
+   */
+  trackEngagement?: boolean;
   /** Optional file attachments (base64-encoded content) */
   attachments?: {
     content: string;
@@ -752,8 +763,9 @@ export interface SendClientEmailOptions {
 export async function sendClientEmail(options: SendClientEmailOptions): Promise<boolean> {
   const { to, cc, from, replyTo, subject, text, html, attachments, subCompanyId, requestedSendAt, dedupeKey } = options;
   const recipientEmails = [...to, ...(cc ?? [])].map((r) => r.email);
+  const tracked = !!options.crmEmailId && !!options.trackEngagement;
   const recordOutcome = (status: 'queued' | 'accepted' | 'failed', at?: Date) => options.crmEmailId
-    ? recordEmailSendOutcomeBestEffort({ emailId: options.crmEmailId, recipientEmails, status, ...(at ? { at } : {}) })
+    ? recordEmailSendOutcomeBestEffort({ emailId: options.crmEmailId, recipientEmails, status, ...(at ? { at } : {}), ...(tracked && status !== 'failed' ? { deliveryTracked: true } : {}) })
     : Promise.resolve();
   if (!to.length) return false;
 
@@ -787,6 +799,9 @@ export async function sendClientEmail(options: SendClientEmailOptions): Promise<
       disposition: (a.disposition ?? 'attachment') as 'attachment' | 'inline',
       ...(a.contentId ? { content_id: a.contentId } : {}),
     })) : undefined,
+    // Provider events for this message reach EmailRecipient through the webhook by this id.
+    ...(options.crmEmailId ? { customArgs: { crm_email_id: options.crmEmailId } } : {}),
+    ...(tracked ? { trackingSettings: SENDGRID_ENGAGEMENT_TRACKING } : {}),
   };
 
   if (subCompanyId) {

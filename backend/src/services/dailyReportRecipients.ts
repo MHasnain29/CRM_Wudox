@@ -1,5 +1,5 @@
 import type { DailyReportPolicy, User } from '@prisma/client';
-import { z } from 'zod';
+import { normalizeReportCcEmails, reportRecipientEmail } from './dailyReportAddresses';
 import prisma from '../config/database';
 import { resolveAllowedSubCompanyIds } from '../config/agencyScope';
 import { buildAccessContext, canAccessMultipleAgencies, canViewAllDataInAgency, canViewTeamData, hasAnyPermission, hasPermission } from './accessContext';
@@ -78,12 +78,14 @@ export function canConfigureReportDelivery(ctx: Awaited<ReturnType<typeof buildA
     hasAnyPermission(ctx, ['clients:read', 'employees:read']);
 }
 
-export const reportRecipientEmail = z.string().trim().toLowerCase().email().max(254);
+export { reportRecipientEmail } from './dailyReportAddresses';
 
 /** The saved administrator authorizes the report; the email is only its destination. */
 export async function resolveReportDeliveryTarget(policy: DailyReportPolicy): Promise<{ user: ReportUser; email: string; agencyIds: string[] } | null> {
   const parsed = reportRecipientEmail.safeParse(policy.recipientEmail);
   if (!parsed.success || !policy.recipientsConfigured || !policy.authorizedById || !policy.agencyIds.length) return null;
+  try { normalizeReportCcEmails(policy.ccEmails, parsed.data); }
+  catch { return null; }
   const user = await prisma.user.findUnique({ where: { id: policy.authorizedById }, select: reportUserSelect });
   if (!user?.isActive) return null;
   const [ctx, allowed] = await Promise.all([buildAccessContext(userToken(user)), resolveAllowedSubCompanyIds(userToken(user))]);

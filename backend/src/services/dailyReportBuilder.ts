@@ -1,4 +1,5 @@
 import type { DailyReportPolicy, Prisma } from '@prisma/client';
+import { normalizeReportCcEmails } from './dailyReportAddresses';
 import prisma from '../config/database';
 import { hasPermission } from './accessContext';
 import { reportAudience, type ReportUser } from './dailyReportRecipients';
@@ -12,6 +13,13 @@ function inPeriod(date: Date | null, start: Date, end: Date): boolean {
 const total = <T>(rows: T[], pick: (row: T) => number) => rows.reduce((n, r) => n + pick(r), 0);
 const messageIdentity = (message: { id: string; inboundMessageId: string | null }) => message.inboundMessageId?.trim()
   ? `message:${message.inboundMessageId.trim().replace(/^<([^<>]+)>$/, '$1')}` : `row:${message.id}`;
+
+type DeliveryEvents = { deliveredAt: Date | null; openedAt: Date | null; clickedAt: Date | null; bouncedAt: Date | null };
+/** Results reported for sent emails, personal and campaign alike. A click implies an open. */
+const DELIVERY_RESULTS: [suffix: string, label: string, pick: (r: DeliveryEvents) => unknown][] = [
+  ['Delivered', 'delivered', r => r.deliveredAt], ['Bounced', 'bounced or dropped', r => r.bouncedAt],
+  ['Opened', 'opened', r => r.openedAt || r.clickedAt], ['Clicked', 'with a link clicked', r => r.clickedAt],
+];
 
 export function coversDateRange(ranges: { startDate: Date; endDate: Date }[], start: Date, end: Date): boolean {
   let cursor = start.getTime();
@@ -55,11 +63,11 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
   const owners = { ownerId: { in: crmUserIds } };
 
   const [emails, acceptedRecipients, unknownEmails, inbox, campaigns, calls, inboundCalls, events, tasks, followUps, meetings, leads, placements, crmActivity, targets] = await Promise.all([
-    communications && crmUserIds.length ? prisma.email.findMany({ where: { ...scope, activityActorId: { in: crmUserIds }, sendStatus: 'accepted', sendingKind: 'personal', sentAt: period }, select: { id: true, activityActorId: true, subject: true, sentAt: true } }) : [],
+    communications && crmUserIds.length ? prisma.email.findMany({ where: { ...scope, activityActorId: { in: crmUserIds }, sendStatus: 'accepted', sendingKind: 'personal', sentAt: period }, select: { id: true, activityActorId: true, subject: true, sentAt: true, deliveryTracked: true, recipients: { where: { recipientType: 'to' }, select: { sentAt: true, deliveredAt: true, openedAt: true, clickedAt: true, bouncedAt: true } } } }) : [],
     communications && crmUserIds.length ? prisma.emailRecipient.findMany({ where: { emailRecord: { ...scope, activityActorId: { in: crmUserIds }, sendingKind: 'personal' }, sendStatus: 'accepted', sentAt: period, recipientType: 'to' }, select: { emailAddress: true, emailRecord: { select: { activityActorId: true } } } }) : [],
     communications && crmUserIds.length ? prisma.email.findMany({ where: { ...scope, folder: 'sent', OR: [{ fromUserId: { in: crmUserIds } }, { activityActorId: { in: crmUserIds } }], AND: [{ OR: [{ sendStatus: null }, { sendStatus: 'pending' }] }], timestamp: period }, select: { id: true, fromUserId: true, activityActorId: true } }) : [],
     communications && crmUserIds.length ? prisma.email.findMany({ where: { ...scope, OR: [{ forwardedToUserId: { in: crmUserIds } }, { forwardedToUserId: null, toUserId: { in: crmUserIds } }], folder: 'inbox', timestamp: period }, select: { id: true, subCompanyId: true, toUserId: true, forwardedToUserId: true, inReplyTo: true, threadId: true, inboundMessageId: true, isRead: true, subject: true, timestamp: true } }) : [],
-    communications && crmUserIds.length ? prisma.emailCampaignRecipient.findMany({ where: { campaign: { ...scope, createdById: { in: crmUserIds } }, OR: [{ sentAt: period }, { deliveredAt: period }, { bouncedAt: period }] }, select: { id: true, sentAt: true, deliveredAt: true, bouncedAt: true, campaign: { select: { createdById: true } } } }) : [],
+    communications && crmUserIds.length ? prisma.emailCampaignRecipient.findMany({ where: { campaign: { ...scope, createdById: { in: crmUserIds } }, sentAt: period }, select: { id: true, campaignId: true, sentAt: true, deliveredAt: true, openedAt: true, clickedAt: true, bouncedAt: true, campaign: { select: { createdById: true } } } }) : [],
     communications ? prisma.call.findMany({ where: { ...scope, ...owners, timestamp: period }, select: { ownerId: true, outcome: true, duration: true } }) : [],
     communications ? prisma.inboundCall.findMany({ where: { ...scope, answeredByUserId: { in: crmUserIds }, outcome: 'answered', startedAt: period }, select: { answeredByUserId: true } }) : [],
     (tasksAllowed || followUpsAllowed) && crmUserIds.length ? prisma.workCompletionEvent.findMany({ where: { ...scope, userId: { in: crmUserIds }, occurredAt: period }, orderBy: { occurredAt: 'desc' } }) : [],
@@ -84,6 +92,19 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
     return parent && parent.subCompanyId === message.subCompanyId && parent.fromUserId === message.toUserId
       && (!message.threadId || message.threadId === (parent.threadId ?? parent.id));
   });
+
+  // Delivery results arrive only through the SendGrid Event Webhook. A tracked send
+  // older than 15 minutes with no event of its own and no webhook call at all since
+  // it was sent means the webhook is not reporting (disabled or failing), so delivery
+  // counts are withheld rather than shown as zero. Sends use the recipient's own
+  // acceptance time, so a recipient the provider never accepted is not a send.
+  const settled = new Date(now.getTime() - 15 * 60000);
+  const unaccounted = [
+    ...emails.filter(e => e.deliveryTracked).flatMap(e => e.recipients),
+    ...campaigns,
+  ].filter(r => r.sentAt && r.sentAt < settled && !(r.deliveredAt || r.openedAt || r.clickedAt || r.bouncedAt));
+  const lastWebhookEvent = unaccounted.length ? (await prisma.webhookHeartbeat.findUnique({ where: { provider: 'sendgrid' } }))?.lastEventAt : null;
+  const deliveryReported = !unaccounted.some(r => !lastWebhookEvent || lastWebhookEvent < r.sentAt!);
 
   const configs = await prisma.hubstaffConfig.findMany({ where: { OR: [{ subCompanyId: { in: agencyIds } }, { projectMappings: { some: { subCompanyId: { in: agencyIds } } } }] }, include: { projectMappings: true } });
   // Disconnect retains imported rows for history, but they must not look like
@@ -123,7 +144,8 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
   // A manager's task totals may only include contributors they can see.
   const visibleContributors = new Set(timeUsers);
   const people: ReportPerson[] = [];
-  const uniqueTaskCompletions = new Set<string>();
+  // Team Hubstaff task totals for software staff: a task shared by several people counts once.
+  const teamTasks = { completed: new Set<string>(), worked: new Set<string>(), open: new Set<string>(), overdue: new Set<string>() };
   for (const user of users) {
     const profile = primaryProfiles.get(user.id)!;
     const ownActivities = activities.filter(a => a.userId === user.id && projectAllowed(a.configId, a.hubstaffProjectId));
@@ -151,10 +173,20 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       metric('replies', 'Replies received in CRM conversations', replies.length);
       if (replies.some(e => !e.inboundMessageId?.trim())) record.warnings.push('Some replies have no provider message ID; they are counted by stored record and webhook retries cannot be fully deduplicated.');
       if (replies.length) record.warnings.push('Reply totals include automatic replies because incoming messages do not yet record that classification.');
+      // Results count each To recipient the provider accepted, like bulk mail, so a
+      // message to three people that one opens is 1 of 3 opened, not 100%.
+      const tracked = sent.filter(e => e.deliveryTracked);
+      const trackedRecipients = tracked.flatMap(e => e.recipients.filter(r => r.sentAt));
+      metric('emailsTracked', 'Tracked To recipients of sent emails', trackedRecipients.length);
+      if (tracked.length < sent.length) metric('emailsUntracked', 'Sent emails from before delivery tracking', sent.length - tracked.length);
+      for (const [suffix, label, pick] of DELIVERY_RESULTS) metric(`emails${suffix}`, `Sent email recipients ${label}`,
+        deliveryReported && (tracked.length || !sent.length) ? trackedRecipients.filter(pick).length : null);
+      if (deliveryReported && tracked.length && tracked.length < sent.length) record.warnings.push(`Delivery results cover ${tracked.length} of ${sent.length} sent emails; the others were sent before delivery tracking started.`);
+      // Campaign results describe the emails sent in this period, as of this snapshot.
       const campaign = campaigns.filter(c => c.campaign.createdById === user.id);
-      metric('campaignSent', 'Campaign recipients sent', campaign.filter(c => inPeriod(c.sentAt, bounds.start, end)).length);
-      metric('campaignDelivered', 'Campaign deliveries confirmed today', campaign.filter(c => inPeriod(c.deliveredAt, bounds.start, end)).length);
-      metric('campaignBounced', 'Campaign bounces recorded today', campaign.filter(c => inPeriod(c.bouncedAt, bounds.start, end)).length);
+      metric('campaignCount', 'Campaigns with emails sent', new Set(campaign.map(c => c.campaignId)).size);
+      metric('campaignSent', 'Campaign emails sent', campaign.length);
+      for (const [suffix, label, pick] of DELIVERY_RESULTS) metric(`campaign${suffix}`, `Campaign emails ${label}`, deliveryReported ? campaign.filter(pick).length : null);
       const ownCalls = calls.filter(c => c.ownerId === user.id);
       metric('calls', 'Calls recorded', ownCalls.length);
       metric('callsAnswered', 'Calls answered', ownCalls.filter(c => c.outcome === 'answered').length);
@@ -162,6 +194,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       metric('callsBusy', 'Calls reaching a busy line', ownCalls.filter(c => c.outcome === 'busy').length);
       metric('callsVoicemail', 'Calls reaching voicemail', ownCalls.filter(c => c.outcome === 'voicemail').length);
       metric('callsPending', 'Calls awaiting an outcome', ownCalls.filter(c => c.outcome === 'initiated').length);
+      metric('callTalkSeconds', 'Talk time on recorded calls', total(ownCalls, c => c.duration ?? 0), 'seconds');
       // Group-routed missed calls have no reliable individual owner. Attribute
       // attended inbound calls only to the employee recorded as answering.
       metric('inboundCallsAnswered', 'Inbound calls attended', inboundCalls.filter(c => c.answeredByUserId === user.id).length);
@@ -313,7 +346,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
           sourceUrl: task.sourceUrl,
         };
         record.tasks.push(summary);
-        if (completed && taskConfigAvailable(config)) { completedKeys.add(logicalTaskKey(task)); uniqueTaskCompletions.add(logicalTaskKey(task)); }
+        if (completed && taskConfigAvailable(config)) completedKeys.add(logicalTaskKey(task));
         if (reopened) reopenedKeys.add(logicalTaskKey(task));
         if (observedCompleted) observedCompletedKeys.add(logicalTaskKey(task));
         for (const event of ownTaskEvents) record.evidence.push({ type: 'hubstaff_task', title: `${task.name}: ${event.type}${event.occurredAt ? '' : ' (observed during sync)'}`, at: (event.occurredAt ?? event.observedAt).toISOString(), url: task.sourceUrl });
@@ -327,6 +360,13 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       metric('hubstaffTasksWorked', 'Hubstaff tasks with recorded time in period', taskDataAvailable && !wrongZone && coverage ? workedKeys.size : null);
       metric('hubstaffTasksOpen', 'Assigned Hubstaff tasks currently active', taskDataAvailable && !unknownAssignedStatus ? openKeys.size : null);
       metric('hubstaffTasksOverdue', 'Assigned active Hubstaff tasks currently overdue', taskDataAvailable && !unknownAssignedStatus ? overdueKeys.size : null);
+      if (profile === 'software') {
+        const add = (target: Set<string>, keys: Set<string>, available: boolean) => { if (available) keys.forEach(key => target.add(key)); };
+        add(teamTasks.completed, completedKeys, taskDataAvailable);
+        add(teamTasks.worked, workedKeys, taskDataAvailable && !wrongZone && coverage);
+        add(teamTasks.open, openKeys, taskDataAvailable && !unknownAssignedStatus);
+        add(teamTasks.overdue, overdueKeys, taskDataAvailable && !unknownAssignedStatus);
+      }
       if (observedCompletedKeys.size) record.warnings.push('Observed task transitions show when CRM discovered a change, not the exact time it happened in Hubstaff.');
       if (!taskDataAvailable) record.warnings.push('Fresh task data is unavailable from one or more Hubstaff connections; task counts and current status are withheld.');
       if (unknownAssignedStatus) record.warnings.push('Some assigned Hubstaff tasks have an unknown status; current active and overdue task counts are unavailable.');
@@ -342,6 +382,14 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
     people.push(record);
   }
   const metricTotal = (key: string) => total(people, p => p.metrics.find(m => m.key === key)?.value ?? 0);
+  const software = people.filter(p => p.profile === 'software');
+  const teamTask = (kind: keyof typeof teamTasks, key: string) => ({
+    count: teamTasks[kind].size, complete: software.every(p => typeof p.metrics.find(m => m.key === key)?.value === 'number'),
+  });
+  const hubstaffTasks = software.length ? {
+    completed: teamTask('completed', 'hubstaffTasksCompleted'), worked: teamTask('worked', 'hubstaffTasksWorked'),
+    open: teamTask('open', 'hubstaffTasksOpen'), overdue: teamTask('overdue', 'hubstaffTasksOverdue'),
+  } : undefined;
   const warnings = ['Hubstaff input activity and CRM usage are context, not a measure of work quality. Time sources are never added together.'];
   const visibleConfigs = configs.filter(c => allTimeAllowed || links.some(l => l.configId === c.id && l.userId === recipient.id));
   const sources: DailyReportPayload['sources'] = visibleConfigs.map(config => ({
@@ -363,6 +411,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       warnings.push(`Hubstaff is not connected for ${uncoveredAgencies.map(agency => agency.name).join(', ')}. Available CRM activity is still included; Hubstaff task and time details will appear after connection, member linking and synchronization.`);
     }
   }
+  if (!deliveryReported) warnings.push('Email delivery results have not been received from SendGrid for this period, so delivered, bounced, opened and clicked counts are unavailable. Check that the SendGrid Event Webhook is enabled.');
   if (policy.period === 'today' || end < bounds.end) warnings.push(`This report is a snapshot as of ${end.toISOString()}; later activity is not included.`);
   if (reportDate !== localDateKey(now, policy.timezone)) warnings.push('Overdue counts and task status reflect the state when this snapshot was generated; completion events retain their original dates.');
   if (people.some(p => p.profile !== 'software')) warnings.push('Only recorded completion transitions are counted. Historical records without reliable completion evidence are excluded.');
@@ -371,10 +420,12 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
     version: 1, title: policy.scope === 'organization' ? 'Daily Company Report' : `Daily Report — ${agencies[0]?.name ?? 'Agency'}`,
     reportDate, timezone: policy.timezone, periodStart: bounds.start.toISOString(), periodEnd: end.toISOString(), generatedAt: now.toISOString(),
     recipient: { id: recipient.id, name: policy.recipientEmail || `${recipient.firstName} ${recipient.lastName}`.trim(), email: policy.recipientEmail || recipient.email },
+    ccEmails: normalizeReportCcEmails(policy.ccEmails, policy.recipientEmail || recipient.email),
     authorizedById: policy.authorizedById ?? recipient.id,
     scope: policy.scope as 'agency' | 'organization', agencyIds, userIds: people.map(p => p.userId), requiredPermissions: [...new Set(sourcePermissions)], profiles: policy.profiles,
     people, summary: { people: new Set(people.map(p => p.userId)).size, trackedSeconds: people.some(p => p.time.trackedSeconds !== null) ? total(people, p => p.time.trackedSeconds ?? 0) : null,
-      completedTasks: people.some(p => p.metrics.some(m => m.key === 'hubstaffTasksCompleted' && m.value === null)) ? null : uniqueTaskCompletions.size + metricTotal('crmTasksCompleted'), personalEmails: metricTotal('personalEmails'), followUpsCompleted: metricTotal('followUpsCompleted'), repliesReceived: metricTotal('replies') },
+      // CRM tasks for CRM staff plus de-duplicated Hubstaff tasks for software staff, as each card shows.
+      completedTasks: hubstaffTasks && !hubstaffTasks.completed.complete ? null : (hubstaffTasks?.completed.count ?? 0) + metricTotal('crmTasksCompleted'), hubstaffTasks, personalEmails: metricTotal('personalEmails'), followUpsCompleted: metricTotal('followUpsCompleted'), repliesReceived: metricTotal('replies') },
     sources,
     warnings,
   };
