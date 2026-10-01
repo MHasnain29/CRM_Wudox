@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import prisma from '../config/database';
 import { env } from '../config/env';
-import { resolveEmailSender, buildCrmReplyToAddress } from './email';
+import { resolveEmailSender, buildCrmReplyToAddress, SENDGRID_ENGAGEMENT_TRACKING } from './email';
 import { isSenderDomainError } from './senderDomainErrors';
 import { resolveSenderSignatureBlock, injectSenderSignature, toSendGridFrom } from './sender';
 import { shouldSendNow } from './emailSendWindow';
@@ -294,10 +294,7 @@ export async function sendCampaignById(campaignId: string): Promise<{
       html: renderedHtml,
       categories: [campaign.id],
       customArgs: { campaign_id: campaign.id, recipient_id: row.id },
-      trackingSettings: {
-        clickTracking: { enable: true, enableText: false },
-        openTracking: { enable: true },
-      },
+      trackingSettings: SENDGRID_ENGAGEMENT_TRACKING,
       ...(sigInlineAttachments.length
         ? {
             attachments: sigInlineAttachments.map((a) => ({

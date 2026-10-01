@@ -177,6 +177,15 @@ export function getRoleLabel(role: Role): string {
   return ROLE_LABELS[role] ?? role;
 }
 
+/** Display label for any role key; unknown (custom) keys are title-cased. */
+export function formatRoleLabel(roleKey: string): string {
+  if (ROLE_LABELS[roleKey]) return ROLE_LABELS[roleKey];
+  return roleKey
+    .split('_')
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(' ');
+}
+
 /** Roles that can see all data in their sub-company (no scope filter) */
 export const SUBCOMPANY_WIDE_ROLES: Role[] = ['super_admin', 'director', 'company_director', 'dev_team'];
 

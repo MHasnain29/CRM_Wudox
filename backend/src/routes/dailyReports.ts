@@ -10,6 +10,7 @@ import { profileResolver } from '../services/dailyReportProfiles';
 import { canReadReport, reportAudience, reportUserSelect, userToken, canConfigureReportDelivery, reportRecipientEmail, resolveReportDeliveryTarget } from '../services/dailyReportRecipients';
 import { localDateKey, shiftDate } from '../services/reportMetrics';
 import { saveReportSnapshot } from '../services/dailyReportBuilder';
+import { normalizeReportCcEmails, sameReportCcEmails } from '../services/dailyReportAddresses';
 
 export const dailyReportsRouter = Router();
 dailyReportsRouter.use(authenticate);
@@ -58,6 +59,7 @@ async function settingsResponse(req: Request) {
     timezone: stored?.timezone ?? legacy?.timezone ?? 'America/Toronto',
     shiftHours: stored?.shiftHours ?? legacy?.shiftHours ?? 8, period: stored?.period ?? 'previous_day',
     recipientEmail: stored?.recipientEmail ?? '', authorizedById: stored?.authorizedById ?? null,
+    ccEmails: stored?.ccEmails ?? [],
     recipientsConfigured: stored?.recipientsConfigured ?? false, profiles: [...REPORT_PROFILES], agencyIds,
   };
   return {
@@ -77,19 +79,24 @@ const policySchema = z.object({
   timezone: z.string().min(1).max(100).refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; } }, 'Invalid timezone'),
   shiftHours: z.number().int().min(1).max(24), period: z.enum(['today', 'previous_day']),
   recipientEmail: z.union([reportRecipientEmail, z.string().trim().length(0), z.null()]).transform(value => value || null),
+  ccEmails: z.array(reportRecipientEmail).optional(),
 }).strict();
 dailyReportsRouter.patch('/settings', requireSettingsWrite, route(async (req, res) => {
   const c = await context(req);
   if (!canConfigureReportDelivery(c.access)) return res.status(403).json({ error: 'Configuring a combined report requires access to all users and their CRM and Hubstaff work in this scope' });
   const parsed = policySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid report settings', details: parsed.error.flatten() });
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten().fieldErrors.ccEmails ? 'Enter valid CC email addresses.' : 'Invalid report settings', details: parsed.error.flatten() });
   if (parsed.data.enabled && !parsed.data.recipientEmail) return res.status(400).json({ error: 'Enter the email address that should receive the combined report' });
   const data = { ...parsed.data, authorizedById: c.user.id, recipientUserIds: [], sendToManagers: false,
     recipientsConfigured: !!parsed.data.recipientEmail, profiles: [...REPORT_PROFILES],
     agencyIds: c.scope === 'agency' ? [c.agency.id] : c.orgAgencies.map(a => a.id) };
   await prisma.$transaction(async tx => {
+    // Older clients omit CC. Retain their saved list; an explicit [] clears it.
+    const saved = parsed.data.ccEmails === undefined
+      ? await tx.dailyReportPolicy.findUnique({ where: { scope_scopeId: { scope: c.scope, scopeId: c.scopeId } } }) : null;
+    const ccEmails = normalizeReportCcEmails(parsed.data.ccEmails ?? saved?.ccEmails, data.recipientEmail);
     await tx.dailyReportPolicy.upsert({ where: { scope_scopeId: { scope: c.scope, scopeId: c.scopeId } },
-      create: { scope: c.scope, scopeId: c.scopeId, ...data }, update: data });
+      create: { scope: c.scope, scopeId: c.scopeId, ...data, ccEmails }, update: { ...data, ccEmails } });
     if (c.scope === 'agency') {
       const legacy = { enabled: data.enabled, sendHour: data.sendHour, sendMinute: data.sendMinute, timezone: data.timezone, shiftHours: data.shiftHours };
       await tx.dailyReportSetting.upsert({ where: { subCompanyId: c.agency.id }, create: { subCompanyId: c.agency.id, ...legacy }, update: legacy });
@@ -135,7 +142,15 @@ dailyReportsRouter.post('/preview', requireSettingsWrite, route(async (req, res)
 dailyReportsRouter.get('/history', requireSettingsWrite, route(async (req, res) => {
   const c = await context(req);
   const rows = await prisma.dailyReportDelivery.findMany({ where: { snapshot: { policy: { scope: c.scope, scopeId: c.scopeId } } }, include: { snapshot: true }, orderBy: { createdAt: 'desc' }, take: 100 });
-  return res.json({ data: rows.map(row => ({ id: row.id, snapshotId: row.snapshotId, recipientName: (row.snapshot.payload as unknown as DailyReportPayload).recipient.name, recipientEmail: row.recipientEmail, reportDate: row.snapshot.reportDate, status: row.status, attempts: row.attempts, lastError: row.lastError, acceptedAt: row.acceptedAt, createdAt: row.createdAt })) });
+  return res.json({ data: rows.map(row => {
+    const report = row.snapshot.payload as unknown as DailyReportPayload;
+    return {
+      id: row.id, snapshotId: row.snapshotId, recipientName: report.recipient.name,
+      recipientEmail: row.recipientEmail, ccEmails: report.ccEmails ?? [],
+      reportDate: row.snapshot.reportDate, status: row.status, attempts: row.attempts,
+      lastError: row.lastError, acceptedAt: row.acceptedAt, createdAt: row.createdAt,
+    };
+  }) });
 }));
 
 dailyReportsRouter.get('/snapshots/:id', route(async (req, res) => {
@@ -158,7 +173,9 @@ dailyReportsRouter.post('/deliveries/:id/retry', requireSettingsWrite, route(asy
   if (!managesPolicy) return res.status(403).json({ error: 'Report policy is outside your settings access' });
   if (!canConfigureReportDelivery(c.access)) return res.status(403).json({ error: 'Combined report access is required' });
   const target = await resolveReportDeliveryTarget(targetPolicy);
-  if (!target || target.email !== delivery.recipientEmail || target.user.id !== delivery.recipientId) return res.status(409).json({ error: 'The recipient email or report authorization changed; this saved delivery cannot be retried' });
+  const report = delivery.snapshot.payload as unknown as DailyReportPayload;
+  if (!target || target.email !== delivery.recipientEmail || target.user.id !== delivery.recipientId
+    || !sameReportCcEmails(targetPolicy.ccEmails, report.ccEmails, delivery.recipientEmail)) return res.status(409).json({ error: 'The recipient email, CC emails or report authorization changed; this saved delivery cannot be retried' });
   if (delivery.status !== 'failed') return res.status(409).json({ error: 'Only confirmed failed deliveries may be retried' });
   if (!await canReadReport(c.user, delivery.snapshot.payload as unknown as DailyReportPayload)) return res.status(403).json({ error: 'Report is outside your access' });
   if (!delivery.snapshot.policy.enabled) return res.status(409).json({ error: 'Enable this report policy before retrying' });

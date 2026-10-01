@@ -1370,6 +1370,7 @@ emailsRouter.post('/send', authenticate, actAsMiddleware, async (req: Request, r
         subCompanyId,
         dedupeKey: `email:${emailRecord.id}:to:${r.email.toLowerCase()}`,
         crmEmailId: emailRecord.id,
+        trackEngagement: true,
       });
       sent = sent || ok;
     }

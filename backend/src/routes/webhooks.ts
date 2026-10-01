@@ -1,6 +1,7 @@
 /**
  * SendGrid Event Webhook
- * Receives delivery/open/click/bounce/unsubscribe events and updates campaign stats.
+ * Receives delivery/open/click/bounce/unsubscribe events and updates campaign stats
+ * and personal CRM email recipients (customArgs.crm_email_id).
  *
  * Configure in SendGrid dashboard:
  *   Settings → Mail Settings → Event Webhook
@@ -11,6 +12,7 @@
  * No auth middleware — SendGrid calls this endpoint directly.
  */
 import { Router, Request, Response } from 'express';
+import type { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { recomputeCampaignStats } from '../services/campaignStats';
 
@@ -24,6 +26,7 @@ interface SendGridEvent {
   recipientId?: string; // from customArgs (legacy camelCase)
   campaign_id?: string; // from customArgs (snake_case)
   recipient_id?: string; // from customArgs (snake_case)
+  crm_email_id?: string; // from customArgs on personal CRM emails (Email.id)
   reason?: string;      // for bounced/dropped
   url?: string;         // for click events
 }
@@ -36,6 +39,28 @@ const EVENT_TO_STATUS: Record<string, string> = {
   dropped:   'failed',
   // 'deferred' intentionally omitted — SendGrid will retry; status should not regress
 };
+
+/** Event → recipient timestamp column (campaign and personal). A dropped message never reached the inbox. */
+const EVENT_TIMESTAMP_FIELD: Record<string, 'deliveredAt' | 'openedAt' | 'clickedAt' | 'bouncedAt'> = {
+  delivered: 'deliveredAt',
+  open:      'openedAt',
+  click:     'clickedAt',
+  bounce:    'bouncedAt',
+  dropped:   'bouncedAt',
+};
+
+/**
+ * Records the first event of each kind for one recipient of a personal CRM email.
+ * Webhook retries and repeat opens/clicks keep the original time.
+ */
+async function recordPersonalEmailEvent(emailId: string, address: string, eventType: string, timestamp: number) {
+  const field = EVENT_TIMESTAMP_FIELD[eventType];
+  if (!field || !address.trim() || !Number.isFinite(timestamp)) return;
+  await prisma.emailRecipient.updateMany({
+    where: { emailId, emailAddress: { equals: address.trim(), mode: 'insensitive' }, [field]: null } as Prisma.EmailRecipientWhereInput,
+    data: { [field]: new Date(timestamp * 1000) },
+  }).catch(() => {});
+}
 
 /**
  * Handles unsubscribe and spam-report events from SendGrid.
@@ -78,6 +103,14 @@ webhooksRouter.post('/sendgrid', async (req: Request, res: Response) => {
   const events: SendGridEvent[] = Array.isArray(req.body) ? req.body : [];
   if (events.length === 0) return;
 
+  // Reports read this to tell "no results yet" apart from "the webhook is not reporting".
+  const receivedAt = new Date();
+  await prisma.webhookHeartbeat.upsert({
+    where: { provider: 'sendgrid' },
+    create: { provider: 'sendgrid', lastEventAt: receivedAt },
+    update: { lastEventAt: receivedAt },
+  }).catch(() => {});
+
   // Track which campaigns were touched so we can recompute their cached stats once at the end.
   const affectedCampaignIds = new Set<string>();
 
@@ -109,6 +142,12 @@ webhooksRouter.post('/sendgrid', async (req: Request, res: Response) => {
       await handleBounce(event.email, eventType, event.reason);
     }
 
+    // The endpoint is unauthenticated: only plain string ids/addresses reach Prisma filters.
+    if (typeof event.crm_email_id === 'string') {
+      if (typeof event.email === 'string') await recordPersonalEmailEvent(event.crm_email_id, event.email, eventType, event.timestamp);
+      continue;
+    }
+
     // All other events require a campaignId (they come from our bulk sends)
     if (!campaignId) continue;
 
@@ -117,11 +156,9 @@ webhooksRouter.post('/sendgrid', async (req: Request, res: Response) => {
       const newStatus = EVENT_TO_STATUS[eventType];
       if (newStatus) {
         const updateData: Record<string, unknown> = { status: newStatus };
-        if (eventType === 'delivered') updateData.deliveredAt = new Date(event.timestamp * 1000);
-        if (eventType === 'open')      updateData.openedAt   = new Date(event.timestamp * 1000);
-        if (eventType === 'click')     updateData.clickedAt  = new Date(event.timestamp * 1000);
+        const field = EVENT_TIMESTAMP_FIELD[eventType];
+        if (field) updateData[field] = new Date(event.timestamp * 1000);
         if (eventType === 'bounce' || eventType === 'dropped') {
-          updateData.bouncedAt = new Date(event.timestamp * 1000);
           if (event.reason) {
             updateData.errorMessage = event.reason;
             updateData.failureReason = event.reason;

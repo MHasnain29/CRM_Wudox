@@ -29,6 +29,7 @@ export interface DailyReportPolicy {
   shiftHours: number;
   period: 'today' | 'previous_day';
   recipientEmail: string | null;
+  ccEmails: string[];
   authorizedById: string | null;
   profiles: ReportProfile[];
   agencyIds: string[];
@@ -49,6 +50,7 @@ export interface ReportDelivery {
   snapshotId: string;
   recipientName: string;
   recipientEmail: string;
+  ccEmails: string[];
   reportDate: string;
   status: string;
   attempts: number;
@@ -110,6 +112,7 @@ export interface DailyReportPayload {
   periodEnd: string;
   generatedAt: string;
   recipient: { id: string; name: string; email: string };
+  ccEmails?: string[];
   authorizedById?: string | null;
   scope: ReportScope;
   agencyIds: string[];
@@ -136,6 +139,7 @@ export const saveDailyReportSettings = (scope: ReportScope, policy: DailyReportP
     method: 'PATCH', body: JSON.stringify({
       enabled: policy.enabled,
       recipientEmail: policy.recipientEmail?.trim() || null,
+      ccEmails: policy.ccEmails ?? [],
       sendHour: policy.sendHour,
       sendMinute: policy.sendMinute,
       timezone: policy.timezone,

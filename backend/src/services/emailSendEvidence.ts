@@ -40,6 +40,8 @@ export async function recordEmailSendOutcome(input: {
   status: EmailSendStatus;
   at?: Date;
   onlyPending?: boolean;
+  /** Set once the message is queued or accepted with SendGrid engagement tracking. */
+  deliveryTracked?: boolean;
 }): Promise<void> {
   if (!input.recipientEmails.length) return;
   const at = input.at ?? new Date();
@@ -65,7 +67,7 @@ export async function recordEmailSendOutcome(input: {
       where: { emailId: input.emailId },
       select: { sendStatus: true, sentAt: true },
     });
-    await tx.email.update({ where: { id: input.emailId }, data: summarizeEmailSendEvidence(recipients) });
+    await tx.email.update({ where: { id: input.emailId }, data: { ...summarizeEmailSendEvidence(recipients), ...(input.deliveryTracked ? { deliveryTracked: true } : {}) } });
   });
 }
 

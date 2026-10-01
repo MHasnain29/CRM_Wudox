@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { sameReportCcEmails } from '../services/dailyReportAddresses';
 import prisma from '../config/database';
 import { resolveReportDeliveryTarget, canReadReport, reportAudience } from '../services/dailyReportRecipients';
 import { buildDailyReport } from '../services/dailyReportBuilder';
@@ -56,7 +57,8 @@ export async function processDailyReportDeliveries(now = new Date()): Promise<vo
     const effectivePolicy = { ...policy, agencyIds: target?.agencyIds ?? policy.agencyIds, profiles: [...REPORT_PROFILES] };
     const sameAuthorization = target?.user.isActive && target.user.id === delivery.recipientId
       && report.recipient.id === target.user.id && (!report.authorizedById || report.authorizedById === target.user.id);
-    const sameAddress = target?.email === delivery.recipientEmail && report.recipient.email === delivery.recipientEmail;
+    const sameAddress = target?.email === delivery.recipientEmail && report.recipient.email === delivery.recipientEmail
+      && sameReportCcEmails(policy.ccEmails, report.ccEmails, delivery.recipientEmail);
     const allowedAudience = target && sameAuthorization && sameAddress
       ? await reportAudience(target.user, effectivePolicy.agencyIds, false, false, policy.scope === 'organization') : null;
     const policyMatches = report.agencyIds.every(id => effectivePolicy.agencyIds.includes(id)) && report.profiles.every(profile => effectivePolicy.profiles.includes(profile as typeof REPORT_PROFILES[number]));
