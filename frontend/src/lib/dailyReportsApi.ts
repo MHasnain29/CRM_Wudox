@@ -103,6 +103,32 @@ export interface ReportEmployee {
   warnings: string[];
 }
 
+export interface DailyReportPresentation {
+  longDate: string;
+  fullDay: boolean;
+  window: string;
+  headline: string;
+  notice: string;
+  tiles: { label: string; value: string; notes: { text: string; bad?: boolean }[] }[];
+  attention: { title: string; people?: [string, string][]; detail?: string }[];
+  groups: { key: string; label: string; people: ReportPersonPresentation[] }[];
+  footnote: string;
+}
+
+export interface ReportPersonPresentation {
+  userId: string;
+  initials: string;
+  roleLabel: string;
+  empty: boolean;
+  status: { label: string; tone: 'bad' | 'warn' | 'ok' | 'muted' } | null;
+  trackedLabel: string | null;
+  lines: {
+    name: string;
+    stacked?: boolean;
+    groups: (string | { text: string; label: string; tone: 'zero' | 'bad' | 'normal' }[])[];
+  }[];
+}
+
 export interface DailyReportPayload {
   version: 1;
   title: string;
@@ -120,9 +146,19 @@ export interface DailyReportPayload {
   requiredPermissions: string[];
   profiles: string[];
   people: ReportEmployee[];
-  summary: { people: number; trackedSeconds: number | null; completedTasks: number | null; personalEmails: number; repliesReceived?: number; followUpsCompleted: number };
+  summary: {
+    people: number;
+    trackedSeconds: number | null;
+    completedTasks: number | null;
+    personalEmails: number;
+    repliesReceived?: number;
+    followUpsCompleted: number;
+    hubstaffTasks?: Record<'completed' | 'worked' | 'open' | 'overdue', { count: number; complete: boolean }>;
+  };
   sources: { label: string; status: string; lastSyncedAt: string | null }[];
   warnings: string[];
+  /** Derived from this saved snapshot using the email's presentation rules. */
+  presentation?: DailyReportPresentation;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

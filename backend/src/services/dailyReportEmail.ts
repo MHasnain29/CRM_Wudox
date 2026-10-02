@@ -232,8 +232,8 @@ function lineHtml(line: Line) {
 const DEPARTMENTS: Record<string, string> = { software: 'Software / IT', marketing_sales: 'Marketing / Sales', recruitment: 'Recruitment', general: 'Other teams' };
 const FOOTNOTE = 'Gray = nothing recorded. Red = needs attention (bounced or overdue). — = not available. Sent counts emails accepted for sending; replies are also counted in received. Delivered, bounced, opened and clicked count each person an email was sent to, as reported by SendGrid when this report was saved. Opens are estimates: some mail apps load or block images automatically. Open and overdue show the status when this report was saved.';
 
-export function renderDailyReport(report: DailyReportPayload, url: string) {
-  const personUrl = (person: ReportPerson) => `${url.split('#')[0]}#employee-${encodeURIComponent(person.userId)}`;
+/** Shared calculations keep the saved report screen and delivered email consistent. */
+function prepareDailyReport(report: DailyReportPayload) {
   const { longDate, window, fullDay } = reportWindow(report);
   const notice = coverageNotice(report);
   const tiles = summaryTiles(report);
@@ -242,8 +242,61 @@ export function renderDailyReport(report: DailyReportPayload, url: string) {
   const tracked = report.summary.trackedSeconds === null ? '' : ` · ${duration(report.summary.trackedSeconds)} tracked`;
   const headline = `${plural(report.summary.people, 'person', 'people')}${tracked} · ${report.timezone}`;
   const groups = [...new Set([...report.profiles, ...report.people.map(person => person.profile)])]
-    .map(profile => ({ label: DEPARTMENTS[profile] ?? profile, views: views.filter(view => view.person.profile === profile) }))
+    .map(profile => ({ key: profile, label: DEPARTMENTS[profile] ?? profile, views: views.filter(view => view.person.profile === profile) }))
     .filter(group => group.views.length);
+  return { longDate, window, fullDay, notice, tiles, attention, headline, groups };
+}
+
+export interface DailyReportPresentation {
+  longDate: string;
+  fullDay: boolean;
+  window: string;
+  headline: string;
+  notice: string;
+  tiles: Tile[];
+  attention: Attention[];
+  groups: {
+    key: string;
+    label: string;
+    people: {
+      userId: string;
+      initials: string;
+      roleLabel: string;
+      empty: boolean;
+      status: PersonView['status'];
+      trackedLabel: string | null;
+      lines: Line[];
+    }[];
+  }[];
+  footnote: string;
+}
+
+/** Derive display-only values from a saved payload; never change the snapshot. */
+export function buildDailyReportPresentation(report: DailyReportPayload): DailyReportPresentation {
+  const { groups, ...presentation } = prepareDailyReport(report);
+  return {
+    ...presentation,
+    groups: groups.map(({ key, label, views }) => ({
+      key,
+      label,
+      people: views.map(({ person, empty, status, lines }) => ({
+        userId: person.userId,
+        initials: initials(person.name),
+        roleLabel: formatRoleLabel(person.role),
+        empty,
+        status,
+        trackedLabel: person.time.trackedSeconds === null ? null
+          : `${duration(person.time.trackedSeconds)} tracked${person.time.status === 'complete' ? '' : ` (${person.time.status})`}`,
+        lines,
+      })),
+    })),
+    footnote: FOOTNOTE,
+  };
+}
+
+export function renderDailyReport(report: DailyReportPayload, url: string) {
+  const personUrl = (person: ReportPerson) => `${url.split('#')[0]}#employee-${encodeURIComponent(person.userId)}`;
+  const { longDate, window, notice, tiles, attention, headline, groups } = prepareDailyReport(report);
 
   const personCard = ({ person, empty, status, lines }: PersonView) => {
     const tag = status ? `<span style="display:inline-block;font-size:10.5px;font-weight:bold;border-radius:99px;padding:2px 8px;background:${TAG[status.tone][0]};color:${TAG[status.tone][1]}">${escape(status.label)}</span>` : '';

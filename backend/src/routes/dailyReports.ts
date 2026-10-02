@@ -10,6 +10,7 @@ import { profileResolver } from '../services/dailyReportProfiles';
 import { canReadReport, reportAudience, reportUserSelect, userToken, canConfigureReportDelivery, reportRecipientEmail, resolveReportDeliveryTarget } from '../services/dailyReportRecipients';
 import { localDateKey, shiftDate } from '../services/reportMetrics';
 import { saveReportSnapshot } from '../services/dailyReportBuilder';
+import { buildDailyReportPresentation } from '../services/dailyReportEmail';
 import { normalizeReportCcEmails, sameReportCcEmails } from '../services/dailyReportAddresses';
 
 export const dailyReportsRouter = Router();
@@ -159,7 +160,7 @@ dailyReportsRouter.get('/snapshots/:id', route(async (req, res) => {
   if (!snapshot) return res.status(404).json({ error: 'Report not found' });
   const payload = snapshot.payload as unknown as DailyReportPayload;
   if (!user || !await canReadReport(user, payload)) return res.status(403).json({ error: 'You no longer have access to all information in this report' });
-  return res.json(payload);
+  return res.json({ ...payload, presentation: buildDailyReportPresentation(payload) });
 }));
 
 dailyReportsRouter.post('/deliveries/:id/retry', requireSettingsWrite, route(async (req, res) => {

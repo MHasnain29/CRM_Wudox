@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DailyReportOverview } from '@/components/daily-reports/DailyReportOverview';
 import {
   REPORT_PROFILES,
   getDailyReportSnapshot,
@@ -44,15 +45,15 @@ function SourceLink({ url, children }: { url: string | null; children: ReactNode
   return <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">{children}<ExternalLink className="h-3 w-3 shrink-0" /></a>;
 }
 
-function EmployeeReport({ person, timezone }: { person: ReportEmployee; timezone: string }) {
+function EmployeeReport({ person, timezone, embedded = false }: { person: ReportEmployee; timezone: string; embedded?: boolean }) {
   const software = person.profile === 'software';
   const evidence = software ? person.evidence.filter((item) => item.type.startsWith('hubstaff')) : person.evidence;
   const metrics = software ? person.metrics.filter((metric) => metric.key.startsWith('hubstaff')) : person.metrics;
   return (
-    <Card id={`employee-${person.userId}`} className="scroll-mt-6">
+    <Card id={embedded ? undefined : `employee-${person.userId}`} className={embedded ? 'rounded-none border-0 shadow-none' : 'scroll-mt-6'}>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><CardTitle className="text-lg">{person.name}</CardTitle><CardDescription>{person.agencyName} · <span className="capitalize">{person.role.replace(/_/g, ' ')}</span></CardDescription></div>
+          {!embedded && <div><CardTitle className="text-lg">{person.name}</CardTitle><CardDescription>{person.agencyName} · <span className="capitalize">{person.role.replace(/_/g, ' ')}</span></CardDescription></div>}
           <div className="flex flex-wrap gap-2"><Badge variant="secondary">{software ? 'Hubstaff' : 'Hubstaff + CRM'}</Badge><Badge variant={person.time.status === 'complete' ? 'secondary' : 'outline'}>Time data: {person.time.status}</Badge></div>
         </div>
       </CardHeader>
@@ -115,6 +116,11 @@ function SnapshotDetail({ id }: { id: string | undefined }) {
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
   const includesCrmWork = report?.people.some((person) => person.profile !== 'software') ?? false;
+  let selectedEmployeeId: string | null = null;
+  if (hash.startsWith('#employee-')) {
+    try { selectedEmployeeId = decodeURIComponent(hash.slice('#employee-'.length)); }
+    catch { /* Invalid fragments do not select an employee. */ }
+  }
   useEffect(() => {
     if (!report || !hash.startsWith('#employee-')) return;
     try { document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }); }
@@ -136,7 +142,9 @@ function SnapshotDetail({ id }: { id: string | undefined }) {
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Button asChild variant="ghost" size="sm"><Link to={canViewSettings ? '/settings?tab=daily-reports' : '/reports'}><ArrowLeft className="mr-2 h-4 w-4" />{canViewSettings ? 'Daily report settings' : 'Reports'}</Link></Button>
-      {loading ? <div role="status" className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />Loading report…</div> : error ? <Card><CardContent className="space-y-3 pt-6"><p role="alert" className="text-destructive">{error}</p><Button variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button></CardContent></Card> : report ? (
+      {loading ? <div role="status" className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />Loading report…</div> : error ? <Card><CardContent className="space-y-3 pt-6"><p role="alert" className="text-destructive">{error}</p><Button variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button></CardContent></Card> : report ? (report.presentation ? (
+        <DailyReportOverview report={report} presentation={report.presentation} selectedEmployeeId={selectedEmployeeId} renderDetails={(person) => <EmployeeReport person={person} timezone={report.timezone} embedded />} />
+      ) : (
         <>
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold">{report.title}</h1>
@@ -165,7 +173,7 @@ function SnapshotDetail({ id }: { id: string | undefined }) {
           })}
           {report.people.length === 0 && <Card><CardContent className="pt-6 text-center text-muted-foreground">No users are available in this report’s saved scope.</CardContent></Card>}
         </>
-      ) : null}
+      )) : null}
     </div>
   );
 }
