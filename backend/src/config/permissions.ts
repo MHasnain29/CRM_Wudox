@@ -72,6 +72,7 @@ export type Permission =
   | 'leave:read'
   | 'leave:write'
   | 'leave:approve'
+  | 'attendance:view_all'
   | 'notices:read'
   | 'notices:write'
   | 'hubstaff:view_all'
@@ -110,6 +111,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'leave:read',
   'leave:write',
   'leave:approve',
+  'attendance:view_all',
   'notices:read',
   'notices:write',
   'hubstaff:view_all',

@@ -3359,9 +3359,9 @@ model Milestone {
 model LeaveType {
   id           String         @id @default(uuid())
   name         String
-  daysPerYear  Int            @map("days_per_year")
+  daysPerYear  Float          @map("days_per_year")
   paid         Boolean        @default(true)
-  maxCarryOver Int            @default(0) @map("max_carry_over")
+  maxCarryOver Float          @default(0) @map("max_carry_over")
   subCompanyId String?        @map("sub_company_id")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
@@ -3378,9 +3378,9 @@ model LeaveBalance {
   userId      String    @map("user_id")
   leaveTypeId String    @map("leave_type_id")
   year        Int
-  entitled    Int
-  used        Int       @default(0)
-  carriedOver Int       @default(0) @map("carried_over")
+  entitled    Float
+  used        Float     @default(0)
+  carriedOver Float     @default(0) @map("carried_over")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
@@ -3399,7 +3399,8 @@ model LeaveRequest {
   leaveTypeId String      @map("leave_type_id")
   startDate   DateTime    @map("start_date")
   endDate     DateTime    @map("end_date")
-  days        Int
+  days        Float
+  session     LeaveSession @default(full_day)
   reason      String?     @db.Text
   status      LeaveStatus @default(pending)
   approverId  String?     @map("approver_id")
@@ -3423,6 +3424,12 @@ enum LeaveStatus {
   approved
   rejected
   cancelled
+}
+
+enum LeaveSession {
+  full_day
+  first_half
+  second_half
 }
 
 enum NoticeType {

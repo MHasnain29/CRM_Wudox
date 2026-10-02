@@ -33,6 +33,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { useAuthStore } from '@/lib/authStore';
+import { onLeaveDataRefresh, useLeaveScopeKey } from '@/lib/leave';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown } from 'lucide-react';
@@ -118,6 +119,8 @@ export function Sidebar() {
   const userRole = useAuthStore((s) => s.user?.role ?? '');
   const [pendingLeadRequestsCount, setPendingLeadRequestsCount] = useState(0);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [pendingLeaveScope, setPendingLeaveScope] = useState('');
+  const leaveScopeKey = useLeaveScopeKey();
 
   const isManager = useCanViewTeamScope();
   const canReviewProposals = useCanReviewProposals();
@@ -215,14 +218,24 @@ export function Sidebar() {
   // Fetch pending leave requests count for approvers
   const canApproveLeave = permissions.includes('leave:approve');
   useEffect(() => {
+    let active = true;
+    let version = 0;
+    setPendingLeaveCount(0);
     if (!canApproveLeave) return;
-    apiFetch<{ data: { id: string }[] }>('/leave/requests?status=pending')
-      .then((res) => {
-        const list = (res.data as any).data ?? res.data ?? [];
-        setPendingLeaveCount(Array.isArray(list) ? list.length : 0);
-      })
-      .catch(() => {/* silently ignore */});
-  }, [canApproveLeave]);
+    const refresh = () => {
+      const requestVersion = ++version;
+      apiFetch<{ data: { id: string }[] }>('/leave/requests?status=pending')
+        .then((res) => {
+          if (!active || requestVersion !== version) return;
+          setPendingLeaveCount(res.ok ? res.data.data?.length ?? 0 : 0);
+          setPendingLeaveScope(leaveScopeKey);
+        })
+        .catch(() => { if (active && requestVersion === version) setPendingLeaveCount(0); });
+    };
+    refresh();
+    const unsubscribe = onLeaveDataRefresh(refresh);
+    return () => { active = false; unsubscribe(); };
+  }, [canApproveLeave, leaveScopeKey]);
 
   // Fetch closed-won-pending (activation pending) proposals count (proposal module access)
   const canAccessProposalsNav = permissions.some((p) =>
@@ -294,7 +307,7 @@ export function Sidebar() {
       if (item.to === '/messages') badgeCount = unreadMessagesCount;
       if (item.to === '/emails') badgeCount = unreadEmailsCount;
       if (item.to === '/proposals') badgeCount = (isManager ? pendingProposalsCount : 0) + cwpProposalsCount;
-      if (item.to === '/leave/admin') badgeCount = pendingLeaveCount;
+      if (item.to === '/leave/admin') badgeCount = pendingLeaveScope === leaveScopeKey ? pendingLeaveCount : 0;
     }
 
     const label = (isManager && item.managerLabel) ? item.managerLabel : item.label;

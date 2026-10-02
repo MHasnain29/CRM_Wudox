@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { apiFetch } from '@/lib/api';
-import { usePermission } from '@/hooks/usePermission';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { apiFetch, fetchAccessibleAgencies } from '@/lib/api';
+import { useAuthStore } from '@/lib/authStore';
+import { useCanAccessMultipleAgencies, useHasPermission } from '@/lib/access';
+import { useEffectiveUser } from '@/lib/effectiveUser';
+import { CheckInWidget } from '@/components/dashboard/CheckInWidget';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Clock, ChevronLeft, ChevronRight, Users, CalendarDays, Loader2 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Clock, ChevronLeft, ChevronRight, Users, CalendarDays, Loader2, RefreshCw } from 'lucide-react';
 import { format, parseISO, startOfMonth, addMonths, subMonths } from 'date-fns';
 
 interface AttendanceRecord {
@@ -22,6 +28,7 @@ interface AttendanceRecord {
   checkOutAt: string | null;
   totalMinutes: number | null;
   user?: { id: string; firstName: string; lastName: string; role: string };
+  subCompany?: { id: string; name: string };
 }
 
 function formatMinutes(minutes: number): string {
@@ -98,10 +105,11 @@ function AllEmployeesTable({ records }: { records: AttendanceRecord[] }) {
           <Card key={userId}>
             <CardHeader className="py-3 px-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Users className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium text-sm">{name}</span>
                   {user && <Badge variant="outline" className="text-xs">{user.role.replace(/_/g, ' ')}</Badge>}
+                  {recs[0].subCompany && <span className="text-xs text-muted-foreground">{recs[0].subCompany.name}</span>}
                 </div>
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <span>{daysPresent} day{daysPresent !== 1 ? 's' : ''}</span>
@@ -123,33 +131,41 @@ function AllEmployeesTable({ records }: { records: AttendanceRecord[] }) {
 }
 
 export default function Attendance() {
-  const canViewAll = usePermission('attendance:view_all');
+  const queryClient = useQueryClient();
+  const canViewAll = useHasPermission('attendance:view_all');
+  const user = useAuthStore((state) => state.user);
+  const userId = user?.id;
+  const permissions = useAuthStore((state) => state.permissions);
+  const canAccessMultipleAgencies = useCanAccessMultipleAgencies();
+  const effectiveUser = useEffectiveUser();
+  const [agencyId, setAgencyId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
   const [month, setMonth] = useState<Date>(startOfMonth(new Date()));
-  const [view, setView] = useState<'mine' | 'all'>('mine');
-  const [myRecords, setMyRecords] = useState<AttendanceRecord[]>([]);
-  const [allRecords, setAllRecords] = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-
+  const [selectedView, setView] = useState<'mine' | 'all' | null>(null);
+  const view = canViewAll ? selectedView ?? 'all' : 'mine';
+  const showAgencyPicker = canViewAll && (user?.role === 'super_admin' || canAccessMultipleAgencies);
+  const { data: accessibleAgencies = [], isLoading: agenciesLoading } = useQuery({
+    queryKey: ['attendance-agencies', userId, user?.role, permissions, effectiveUser.isActingAs, effectiveUser.subCompanyId],
+    queryFn: fetchAccessibleAgencies,
+    enabled: showAgencyPicker,
+  });
+  const agencies = effectiveUser.isActingAs
+    ? accessibleAgencies.filter((agency) => agency.id === effectiveUser.subCompanyId)
+    : accessibleAgencies;
   const monthParam = format(month, 'yyyy-MM');
-
-  const fetchMine = useCallback(async () => {
-    setLoading(true);
-    const res = await apiFetch<{ data: AttendanceRecord[] }>(`/attendance/me?month=${monthParam}`);
-    if (res.ok) setMyRecords(res.data.data ?? []);
-    setLoading(false);
-  }, [monthParam]);
-
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const res = await apiFetch<{ data: AttendanceRecord[] }>(`/attendance?month=${monthParam}`);
-    if (res.ok) setAllRecords(res.data.data ?? []);
-    setLoading(false);
-  }, [monthParam]);
-
-  useEffect(() => {
-    if (view === 'mine') fetchMine();
-    else fetchAll();
-  }, [view, fetchMine, fetchAll]);
+  const currentMonth = monthParam === format(new Date(), 'yyyy-MM');
+  const { data: records = [], isLoading: loading, isFetching, isError, refetch } = useQuery({
+    queryKey: ['attendance-records', userId, monthParam, view, agencyId, searchParams.get('linkedUserId'), permissions],
+    queryFn: async () => {
+      const path = view === 'mine' ? '/attendance/me' : '/attendance';
+      const agencyQuery = view === 'all' && agencyId ? `subCompanyId=${encodeURIComponent(agencyId)}` : 'allAgencies=true';
+      const res = await apiFetch<{ data: AttendanceRecord[] }>(`${path}?month=${monthParam}&${agencyQuery}`);
+      if (res.ok === false) throw new Error(res.error ?? 'Failed to load attendance records');
+      return res.data.data ?? [];
+    },
+    refetchInterval: view === 'all' && currentMonth ? 30_000 : false,
+  });
+  const myRecords = view === 'mine' ? records : [];
 
   const myTotalMins = myRecords.reduce((sum, r) => sum + (r.totalMinutes ?? 0), 0);
 
@@ -163,7 +179,7 @@ export default function Attendance() {
         <div className="flex items-center gap-3 flex-wrap">
           {canViewAll && (
             <Select value={view} onValueChange={(v) => setView(v as 'mine' | 'all')}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-40" aria-label="Attendance view">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -173,8 +189,33 @@ export default function Attendance() {
             </Select>
           )}
           <MonthNav month={month} onChange={setMonth} />
+          <Button variant="outline" size="sm" onClick={() => { void refetch(); }} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
         </div>
       </div>
+
+      <section aria-label="My attendance today" className="space-y-2">
+        <h2 className="text-sm font-medium text-muted-foreground">My Attendance — Today</h2>
+        <CheckInWidget key={userId} onAttendanceChange={() => { void queryClient.invalidateQueries({ queryKey: ['attendance-records', userId] }); }} />
+      </section>
+
+      {view === 'all' && <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-medium">Employee Attendance — {format(month, 'MMMM yyyy')}</h2>
+          {currentMonth && <p className="text-xs text-muted-foreground mt-1">Updates every 30 seconds.</p>}
+        </div>
+        {showAgencyPicker && <div className="space-y-1.5 w-full sm:w-72">
+          <Label htmlFor="attendance-agency">Agency</Label>
+          <Select value={agencyId ?? 'all'} onValueChange={(value) => setAgencyId(value === 'all' ? null : value)} disabled={agenciesLoading}>
+            <SelectTrigger id="attendance-agency"><SelectValue placeholder="Select an agency" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All accessible agencies</SelectItem>
+              {agencies.map((agency) => <SelectItem key={agency.id} value={agency.id}>{agency.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>}
+      </div>}
 
       {loading && (
         <div className="flex items-center justify-center py-16">
@@ -182,7 +223,14 @@ export default function Attendance() {
         </div>
       )}
 
-      {!loading && view === 'mine' && (
+      {isError && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border p-4">
+          <p className="text-sm text-muted-foreground">Could not load attendance records.</p>
+          <Button size="sm" variant="outline" onClick={() => { void refetch(); }}>Retry</Button>
+        </div>
+      )}
+
+      {!loading && !isError && view === 'mine' && (
         <>
           {myRecords.length > 0 && (
             <div className="flex gap-4">
@@ -215,8 +263,8 @@ export default function Attendance() {
         </>
       )}
 
-      {!loading && view === 'all' && (
-        <AllEmployeesTable records={allRecords} />
+      {!loading && !isError && view === 'all' && (
+        <AllEmployeesTable records={records} />
       )}
     </div>
   );

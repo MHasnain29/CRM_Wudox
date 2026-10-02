@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
-import { onLeaveRefresh } from '@/lib/socket';
+import { announceLeaveChange, countLeaveDays, formatLeavePeriod, onLeaveDataRefresh, useLeaveScopeKey, type LeaveSession } from '@/lib/leave';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import LeaveDurationBadge from '@/components/LeaveDurationBadge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -23,7 +24,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { CalendarOff, Plus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, differenceInBusinessDays, addDays } from 'date-fns';
 
 interface LeaveType {
   id: string;
@@ -46,6 +46,7 @@ interface LeaveRequest {
   startDate: string;
   endDate: string;
   days: number;
+  session?: LeaveSession;
   reason: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   createdAt: string;
@@ -61,10 +62,15 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function Leave() {
+  const scopeKey = useLeaveScopeKey();
+  const activeScope = useRef(scopeKey);
+  activeScope.current = scopeKey;
+  const fetchVersion = useRef(0);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedScope, setLoadedScope] = useState('');
 
   const [showDialog, setShowDialog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -73,43 +79,60 @@ export default function Leave() {
     leaveTypeId: '',
     startDate: '',
     endDate: '',
+    duration: 'full_day',
+    session: '' as LeaveSession | '',
     reason: '',
   });
 
   const fetchData = useCallback((showLoader = false) => {
+    const version = ++fetchVersion.current;
+    const isCurrent = () => activeScope.current === scopeKey && fetchVersion.current === version;
     if (showLoader) setLoading(true);
     Promise.all([
       apiFetch<any>('/leave/balances/me'),
-      apiFetch<any>('/leave/requests'),
-      apiFetch<any>('/leave/types'),
+      apiFetch<any>('/leave/requests?mine=true'),
+      apiFetch<any>('/leave/types?mine=true'),
     ]).then(([balRes, reqRes, typRes]) => {
-      if (balRes.ok) setBalances(balRes.data?.data ?? []);
-      if (reqRes.ok) setRequests(reqRes.data?.data ?? []);
-      if (typRes.ok) setLeaveTypes(typRes.data?.data ?? []);
-    }).catch(() => toast.error('Failed to load leave data')).finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { fetchData(true); }, [fetchData]);
+      if (!isCurrent()) return;
+      setBalances(balRes.ok ? balRes.data?.data ?? [] : []);
+      setRequests(reqRes.ok ? reqRes.data?.data ?? [] : []);
+      setLeaveTypes(typRes.ok ? typRes.data?.data ?? [] : []);
+      if (!balRes.ok || !reqRes.ok || !typRes.ok) toast.error('Failed to load leave data');
+    }).catch(() => { if (isCurrent()) toast.error('Failed to load leave data'); })
+      .finally(() => { if (isCurrent()) { setLoadedScope(scopeKey); setLoading(false); } });
+  }, [scopeKey]);
 
   useEffect(() => {
-    const unsub = onLeaveRefresh(() => fetchData());
+    setBalances([]);
+    setRequests([]);
+    setLeaveTypes([]);
+    setShowDialog(false);
+    setSubmitting(false);
+    setCancelling(null);
+    setForm({ leaveTypeId: '', startDate: '', endDate: '', duration: 'full_day', session: '', reason: '' });
+    fetchData(true);
+    return () => { fetchVersion.current += 1; };
+  }, [fetchData]);
+
+  useEffect(() => {
+    const unsub = onLeaveDataRefresh(() => fetchData());
     return () => { unsub(); };
   }, [fetchData]);
 
-  function calcDays(): number {
-    if (!form.startDate || !form.endDate) return 0;
-    const start = new Date(form.startDate);
-    const end = new Date(form.endDate);
-    if (end < start) return 0;
-    // Business days (Mon–Fri), inclusive
-    return differenceInBusinessDays(addDays(end, 1), start);
-  }
+  const halfDay = form.duration === 'half_day';
+  const days = countLeaveDays(form.startDate, form.endDate, halfDay);
+  const datesReady = !!form.startDate && (halfDay || !!form.endDate);
+  const dateError = !datesReady ? ''
+    : !halfDay && form.endDate < form.startDate ? 'End date cannot be before start date.'
+    : days <= 0 ? (halfDay
+      ? 'This date is a weekend. Choose a working day (Monday–Friday).'
+      : 'These dates contain only weekends. Choose a range with at least one working day (Monday–Friday).')
+    : '';
 
   async function handleSubmit() {
-    if (!form.leaveTypeId || !form.startDate || !form.endDate) return;
-    const days = calcDays();
-    if (days <= 0) {
-      toast.error('End date must be after start date');
+    if (!form.leaveTypeId || !form.startDate || (halfDay ? !form.session : !form.endDate)) return;
+    if (dateError) {
+      toast.error(dateError);
       return;
     }
     setSubmitting(true);
@@ -117,17 +140,17 @@ export default function Leave() {
       method: 'POST',
       body: JSON.stringify({
         leaveTypeId: form.leaveTypeId,
-        startDate: new Date(form.startDate).toISOString(),
-        endDate: new Date(form.endDate).toISOString(),
-        days,
+        startDate: form.startDate,
+        endDate: halfDay ? form.startDate : form.endDate,
+        session: halfDay ? form.session : 'full_day',
         reason: form.reason || undefined,
       }),
     });
-    if (res.ok) {
-      const created = res.data?.data ?? res.data;
-      setRequests((prev) => [created, ...prev]);
+    if (activeScope.current !== scopeKey) return;
+    if (res.ok === true) {
       setShowDialog(false);
-      setForm({ leaveTypeId: '', startDate: '', endDate: '', reason: '' });
+      setForm({ leaveTypeId: '', startDate: '', endDate: '', duration: 'full_day', session: '', reason: '' });
+      announceLeaveChange();
       toast.success('Leave request submitted');
     } else {
       toast.error((res as any).error ?? 'Failed to submit request');
@@ -138,26 +161,26 @@ export default function Leave() {
   async function handleCancel(reqId: string) {
     setCancelling(reqId);
     const res = await apiFetch<any>(`/leave/requests/${reqId}/cancel`, { method: 'PATCH' });
-    if (res.ok) {
+    if (activeScope.current !== scopeKey) return;
+    if (res.ok === true) {
       setRequests((prev) =>
         prev.map((r) => (r.id === reqId ? { ...r, status: 'cancelled' } : r))
       );
       toast.success('Request cancelled');
+      announceLeaveChange();
     } else {
-      toast.error('Failed to cancel request');
+      toast.error(res.error ?? 'Failed to cancel request');
     }
     setCancelling(null);
   }
 
-  if (loading) {
+  if (loading || loadedScope !== scopeKey) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
         <Loader2 className="animate-spin mr-2" size={20} /> Loading leave data…
       </div>
     );
   }
-
-  const days = calcDays();
 
   return (
     <div className="p-6 space-y-6">
@@ -202,7 +225,7 @@ export default function Leave() {
       {balances.length === 0 && (
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground text-center">
-            No leave balances set up yet. Contact HR to set up leave types.
+            No leave balances set up yet. Contact your Super Admin to set up leave types.
           </CardContent>
         </Card>
       )}
@@ -228,10 +251,10 @@ export default function Leave() {
                       <Badge className={`text-xs border-0 ${STATUS_COLOR[req.status]}`}>
                         {req.status}
                       </Badge>
+                      <LeaveDurationBadge session={req.session} />
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {format(new Date(req.startDate), 'dd MMM yyyy')} –{' '}
-                      {format(new Date(req.endDate), 'dd MMM yyyy')} · {req.days} day(s)
+                      {formatLeavePeriod(req)} · {req.days} day(s)
                       {req.reason && ` · ${req.reason}`}
                     </div>
                     {req.approver && (
@@ -297,30 +320,62 @@ export default function Leave() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Duration *</Label>
+              <Select value={form.duration} onValueChange={(duration) => setForm((f) => ({ ...f, duration, session: '' }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full_day">Full Day</SelectItem>
+                  <SelectItem value="half_day">Half Day</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {form.duration === 'half_day' && (
               <div className="space-y-1.5">
-                <Label>Start Date *</Label>
+                <Label htmlFor="leave-session">Which Half? *</Label>
+                <Select value={form.session} onValueChange={(session: LeaveSession) => setForm((f) => ({ ...f, session }))}>
+                  <SelectTrigger id="leave-session" aria-describedby={!form.session ? 'leave-session-hint' : undefined}><SelectValue placeholder="Select half…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="first_half">First Half</SelectItem>
+                    <SelectItem value="second_half">Second Half</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!form.session && <p id="leave-session-hint" className="text-sm text-muted-foreground">Choose First Half or Second Half to submit a half-day request.</p>}
+              </div>
+            )}
+
+            <div className={form.duration === 'half_day' ? '' : 'grid grid-cols-2 gap-3'}>
+              <div className="space-y-1.5">
+                <Label htmlFor="leave-start-date">{form.duration === 'half_day' ? 'Date *' : 'Start Date *'}</Label>
                 <Input
+                  id="leave-start-date"
                   type="date"
+                  aria-invalid={!!dateError}
+                  aria-describedby="leave-date-feedback"
                   value={form.startDate}
                   onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>End Date *</Label>
+              {form.duration === 'full_day' && <div className="space-y-1.5">
+                <Label htmlFor="leave-end-date">End Date *</Label>
                 <Input
+                  id="leave-end-date"
                   type="date"
+                  aria-invalid={!!dateError}
+                  aria-describedby="leave-date-feedback"
+                  min={form.startDate || undefined}
                   value={form.endDate}
                   onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
                 />
-              </div>
+              </div>}
             </div>
 
-            {days > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {days} business day(s) requested
-              </p>
-            )}
+            <p id="leave-date-feedback" role={dateError ? 'alert' : undefined} className={`text-sm ${dateError ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {dateError || (days > 0
+                ? `${days} working day(s) requested. Weekends are excluded.`
+                : 'Leave is counted Monday–Friday. Weekends are excluded.')}
+            </p>
 
             <div className="space-y-1.5">
               <Label>Reason (optional)</Label>
@@ -336,7 +391,7 @@ export default function Leave() {
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !form.leaveTypeId || !form.startDate || !form.endDate}
+              disabled={submitting || !form.leaveTypeId || !form.startDate || (form.duration === 'half_day' ? !form.session : !form.endDate) || days <= 0}
             >
               {submitting && <Loader2 size={14} className="animate-spin mr-1" />}
               Submit Request

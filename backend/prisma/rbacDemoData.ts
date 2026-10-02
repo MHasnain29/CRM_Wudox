@@ -475,6 +475,9 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'module.hubstaff', name: 'Hubstaff time tracking', module: 'hubstaff', parentKey: null, sortOrder: 1500, isGroup: true },
   { key: 'hubstaff:view_all', name: 'View time tracking for all users', module: 'hubstaff', parentKey: 'module.hubstaff', sortOrder: 1501, isGroup: false, actionType: 'read' },
   { key: 'hubstaff:manage', name: 'Connect Hubstaff & manage user mapping', module: 'hubstaff', parentKey: 'module.hubstaff', sortOrder: 1502, isGroup: false, actionType: 'custom' },
+
+  { key: 'module.attendance', name: 'Attendance', module: 'attendance', parentKey: null, sortOrder: 1600, isGroup: true },
+  { key: 'attendance:view_all', name: 'View employee attendance in accessible agencies', module: 'attendance', parentKey: 'module.attendance', sortOrder: 1601, isGroup: false, actionType: 'read' },
 ];
 
 export { PERMISSIONS_BY_ROLE_KEY } from '../src/config/systemRolePermissions';
