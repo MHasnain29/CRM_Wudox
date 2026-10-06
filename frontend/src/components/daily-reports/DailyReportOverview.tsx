@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { AlertTriangle, ChevronDown, Clock } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Clock, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { DailyReportPayload, DailyReportPresentation, ReportEmployee, ReportPersonPresentation } from '@/lib/dailyReportsApi';
@@ -65,16 +65,20 @@ function EmployeeSummary({ person, view, expanded, onToggle, details }: {
         ? <p className="px-4 py-2.5 text-xs text-muted-foreground">No activity recorded.</p>
         : <dl className="border-t px-4 py-1">{view.lines.map((line) => <MetricLine key={line.name} line={line} />)}</dl>}
       <Button
+        type="button"
         variant="ghost"
         size="sm"
-        className="h-9 w-full justify-between rounded-none border-t px-4 text-xs text-muted-foreground"
+        className="h-11 w-full justify-between rounded-none border-t border-teal-200 bg-teal-50 px-4 text-sm font-semibold text-teal-800 hover:bg-teal-100 hover:text-teal-900 focus-visible:ring-inset focus-visible:ring-teal-600 focus-visible:ring-offset-0 active:scale-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-900/60 dark:hover:text-teal-100 dark:focus-visible:ring-teal-400"
         onClick={onToggle}
         aria-label={`${expanded ? 'Hide' : 'View'} details for ${person.name}`}
         aria-expanded={expanded}
         aria-controls={detailsId}
       >
-        {expanded ? 'Hide details' : 'View details'}
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        <span className="flex items-center gap-2">
+          <Eye aria-hidden="true" className="h-4 w-4" />
+          {expanded ? 'Hide details' : 'View details'}
+        </span>
+        <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </Button>
       {expanded && <div id={detailsId} className="border-t">{details()}</div>}
     </article>
