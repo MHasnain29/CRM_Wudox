@@ -22,16 +22,32 @@ interface QueuePayload {
   recipientEmails?: string[];
 }
 
+/** Recover tracking evidence from the exact provider request saved in the queue. */
+function queuePayloadTracksEngagement(payload: QueuePayload): boolean {
+  const customArgs = payload?.message?.customArgs as { crm_email_id?: unknown } | undefined;
+  const tracking = payload?.message?.trackingSettings as {
+    openTracking?: { enable?: unknown };
+    clickTracking?: { enable?: unknown };
+  } | undefined;
+  return typeof payload?.crmEmailId === 'string'
+    && customArgs?.crm_email_id === payload.crmEmailId
+    && tracking?.openTracking?.enable === true
+    && tracking?.clickTracking?.enable === true;
+}
+
 export async function processOne(id: string, attemptCount: number, payload: unknown): Promise<void> {
   const parsed = payload as QueuePayload;
+  const deliveryTracked = queuePayloadTracksEngagement(parsed);
   const recordOutcome = (status: 'queued' | 'accepted' | 'failed', at?: Date) =>
     typeof parsed?.crmEmailId === 'string' && Array.isArray(parsed.recipientEmails)
       ? recordEmailSendOutcomeBestEffort({
         emailId: parsed.crmEmailId, recipientEmails: parsed.recipientEmails, status, at,
+        ...(deliveryTracked && status !== 'failed' ? { deliveryTracked: true } : {}),
       }) : Promise.resolve();
   // A worker may have persisted provider acceptance before failing to mark its queue row sent.
   if (typeof parsed?.crmEmailId === 'string' && Array.isArray(parsed.recipientEmails)
       && await hasEmailRecipientAcceptance(parsed.crmEmailId, parsed.recipientEmails)) {
+    if (deliveryTracked) await recordOutcome('accepted');
     await markQueuedEmailSent(id);
     return;
   }
@@ -59,14 +75,25 @@ export async function reconcileQueuedEmailEvidence(): Promise<void> {
     SELECT q.payload, q.sent_at FROM outbound_email_queue q
     WHERE q.status = 'sent' AND q.sent_at IS NOT NULL
       AND q.payload->>'crmEmailId' IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM email_recipients r
-        WHERE r.email_id = q.payload->>'crmEmailId'
-          AND r.send_status IS DISTINCT FROM 'accepted'
+      AND (
+        EXISTS (
+          SELECT 1 FROM email_recipients r
+          WHERE r.email_id = q.payload->>'crmEmailId'
+            AND r.send_status IS DISTINCT FROM 'accepted'
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(q.payload->'recipientEmails') AS a(address)
+              WHERE LOWER(r.email) = LOWER(a.address)
+            )
+        )
+        OR (
+          q.payload->'message'->'customArgs'->>'crm_email_id' = q.payload->>'crmEmailId'
+          AND q.payload #> '{message,trackingSettings,openTracking,enable}' = 'true'::jsonb
+          AND q.payload #> '{message,trackingSettings,clickTracking,enable}' = 'true'::jsonb
           AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(q.payload->'recipientEmails') AS a(address)
-            WHERE LOWER(r.email) = LOWER(a.address)
+            SELECT 1 FROM emails e
+            WHERE e.id = q.payload->>'crmEmailId' AND e.delivery_tracked = false
           )
+        )
       )
     ORDER BY q.sent_at ASC LIMIT 100
   `);
@@ -74,6 +101,7 @@ export async function reconcileQueuedEmailEvidence(): Promise<void> {
     await recordEmailSendOutcomeBestEffort({
       emailId: row.payload.crmEmailId!, recipientEmails: row.payload.recipientEmails!,
       status: 'accepted', at: row.sent_at,
+      ...(queuePayloadTracksEngagement(row.payload) ? { deliveryTracked: true } : {}),
     });
   }
 }

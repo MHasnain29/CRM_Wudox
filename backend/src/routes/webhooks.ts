@@ -31,6 +31,17 @@ interface SendGridEvent {
   url?: string;         // for click events
 }
 
+/** The public endpoint must never pass JSON objects through as Prisma filters. */
+function isSendGridEvent(value: unknown): value is SendGridEvent {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const event = value as Record<string, unknown>;
+  if (typeof event.event !== 'string' || typeof event.email !== 'string' || !event.email.trim()) return false;
+  if (typeof event.timestamp !== 'number' || !Number.isFinite(event.timestamp) || event.timestamp < 0) return false;
+  if (!Number.isFinite(new Date(event.timestamp * 1000).getTime())) return false;
+  return ['campaignId', 'recipientId', 'campaign_id', 'recipient_id', 'crm_email_id', 'reason', 'url']
+    .every((field) => event[field] === undefined || typeof event[field] === 'string');
+}
+
 const EVENT_TO_STATUS: Record<string, string> = {
   delivered: 'delivered',
   open:      'opened',
@@ -54,12 +65,19 @@ const EVENT_TIMESTAMP_FIELD: Record<string, 'deliveredAt' | 'openedAt' | 'clicke
  * Webhook retries and repeat opens/clicks keep the original time.
  */
 async function recordPersonalEmailEvent(emailId: string, address: string, eventType: string, timestamp: number) {
+  if (!Object.hasOwn(EVENT_TIMESTAMP_FIELD, eventType)) return;
   const field = EVENT_TIMESTAMP_FIELD[eventType];
-  if (!field || !address.trim() || !Number.isFinite(timestamp)) return;
+  const occurredAt = new Date(timestamp * 1000);
   await prisma.emailRecipient.updateMany({
-    where: { emailId, emailAddress: { equals: address.trim(), mode: 'insensitive' }, [field]: null } as Prisma.EmailRecipientWhereInput,
-    data: { [field]: new Date(timestamp * 1000) },
-  }).catch(() => {});
+    where: {
+      emailId,
+      emailAddress: { equals: address.trim(), mode: 'insensitive' },
+      // The first event can arrive after a later open/click or a retried batch.
+      // One conditional write keeps the earliest timestamp even under concurrency.
+      OR: [{ [field]: null }, { [field]: { gt: occurredAt } }],
+    } as Prisma.EmailRecipientWhereInput,
+    data: { [field]: occurredAt },
+  });
 }
 
 /**
@@ -71,7 +89,7 @@ async function handleUnsubscribe(email: string) {
   await prisma.clientContact.updateMany({
     where: { email },
     data: { isUnsubscribed: true },
-  }).catch(() => {});
+  });
 }
 
 /**
@@ -79,104 +97,108 @@ async function handleUnsubscribe(email: string) {
  *  - Sets emailBounced = true for hard bounces
  *  - Sets emailInvalid = true for invalid address drops
  */
-async function handleBounce(email: string, eventType: string, reason?: string) {
+async function handleBounce(email: string, eventType: string, timestamp: number, reason?: string) {
   const isInvalid =
     eventType === 'dropped' &&
     typeof reason === 'string' &&
     /invalid/i.test(reason);
 
   const data = isInvalid
-    ? { emailInvalid: true, emailBouncedAt: new Date(), emailBouncedReason: reason ?? null }
-    : { emailBounced: true, emailBouncedAt: new Date(), emailBouncedReason: reason ?? null };
+    ? { emailInvalid: true, emailBouncedAt: new Date(timestamp * 1000), emailBouncedReason: reason ?? null }
+    : { emailBounced: true, emailBouncedAt: new Date(timestamp * 1000), emailBouncedReason: reason ?? null };
 
   await prisma.clientContact.updateMany({
     where: { email },
     data,
-  }).catch(() => {});
+  });
 }
 
 /** POST /webhooks/sendgrid */
 webhooksRouter.post('/sendgrid', async (req: Request, res: Response) => {
-  // Acknowledge immediately — SendGrid retries if we don't respond quickly
-  res.status(200).json({ received: true });
+  if (!Array.isArray(req.body)) {
+    res.status(400).json({ error: 'Expected an array of SendGrid events' });
+    return;
+  }
+  // Ignore malformed entries without discarding valid events in the same batch.
+  const events: SendGridEvent[] = req.body.filter(isSendGridEvent);
+  try {
+    // Track campaigns for one recompute per batch; never increment cached counts.
+    const affectedCampaignIds = new Set<string>();
 
-  const events: SendGridEvent[] = Array.isArray(req.body) ? req.body : [];
-  if (events.length === 0) return;
+    for (const event of events) {
+      const campaignId = event.campaign_id ?? event.campaignId;
+      const recipientId = event.recipient_id ?? event.recipientId;
+      const eventType = event.event;
 
-  // Reports read this to tell "no results yet" apart from "the webhook is not reporting".
-  const receivedAt = new Date();
-  await prisma.webhookHeartbeat.upsert({
-    where: { provider: 'sendgrid' },
-    create: { provider: 'sendgrid', lastEventAt: receivedAt },
-    update: { lastEventAt: receivedAt },
-  }).catch(() => {});
-
-  // Track which campaigns were touched so we can recompute their cached stats once at the end.
-  const affectedCampaignIds = new Set<string>();
-
-  for (const event of events) {
-    const campaignId = event.campaign_id ?? event.campaignId;
-    const recipientId = event.recipient_id ?? event.recipientId;
-    const eventType = event.event;
-
-    // Unsubscribe — mark contact globally, no per-recipient update needed
-    if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
-      await handleUnsubscribe(event.email);
-      continue;
-    }
-
-    // Spam report — mark contact as unsubscribed AND record timestamp on recipient
-    if (eventType === 'spamreport') {
-      await handleUnsubscribe(event.email);
-      if (recipientId) {
-        await prisma.emailCampaignRecipient.updateMany({
-          where: { id: recipientId },
-          data: { spamReportedAt: new Date(event.timestamp * 1000) },
-        }).catch(() => {});
+      // Unsubscribe — mark contact globally, no per-recipient update needed
+      if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
+        await handleUnsubscribe(event.email);
+        continue;
       }
-      continue;
-    }
 
-    // Bounce / dropped — flag the contact email so future sends skip it
-    if (eventType === 'bounce' || eventType === 'dropped') {
-      await handleBounce(event.email, eventType, event.reason);
-    }
+      // Spam report — mark contact as unsubscribed AND record timestamp on recipient
+      if (eventType === 'spamreport') {
+        await handleUnsubscribe(event.email);
+        if (recipientId) {
+          await prisma.emailCampaignRecipient.updateMany({
+            where: { id: recipientId },
+            data: { spamReportedAt: new Date(event.timestamp * 1000) },
+          });
+        }
+        continue;
+      }
 
-    // The endpoint is unauthenticated: only plain string ids/addresses reach Prisma filters.
-    if (typeof event.crm_email_id === 'string') {
-      if (typeof event.email === 'string') await recordPersonalEmailEvent(event.crm_email_id, event.email, eventType, event.timestamp);
-      continue;
-    }
+      // Bounce / dropped — flag the contact email so future sends skip it
+      if (eventType === 'bounce' || eventType === 'dropped') {
+        await handleBounce(event.email, eventType, event.timestamp, event.reason);
+      }
 
-    // All other events require a campaignId (they come from our bulk sends)
-    if (!campaignId) continue;
+      if (event.crm_email_id) {
+        await recordPersonalEmailEvent(event.crm_email_id, event.email, eventType, event.timestamp);
+        continue;
+      }
 
-    // Update per-recipient status
-    if (recipientId) {
-      const newStatus = EVENT_TO_STATUS[eventType];
-      if (newStatus) {
-        const updateData: Record<string, unknown> = { status: newStatus };
-        const field = EVENT_TIMESTAMP_FIELD[eventType];
-        if (field) updateData[field] = new Date(event.timestamp * 1000);
-        if (eventType === 'bounce' || eventType === 'dropped') {
-          if (event.reason) {
-            updateData.errorMessage = event.reason;
-            updateData.failureReason = event.reason;
-          }
+      // All other events require a campaignId (they come from our bulk sends)
+      if (!campaignId) continue;
+
+      // Update per-recipient status
+      if (recipientId && Object.hasOwn(EVENT_TO_STATUS, eventType)) {
+        const updateData: Record<string, unknown> = { status: EVENT_TO_STATUS[eventType] };
+        updateData[EVENT_TIMESTAMP_FIELD[eventType]] = new Date(event.timestamp * 1000);
+        if ((eventType === 'bounce' || eventType === 'dropped') && event.reason) {
+          updateData.errorMessage = event.reason;
+          updateData.failureReason = event.reason;
         }
         await prisma.emailCampaignRecipient.updateMany({
-          where: { id: recipientId },
+          where: { id: recipientId, campaignId },
           data: updateData,
-        }).catch(() => {});
+        });
       }
+
+      affectedCampaignIds.add(campaignId);
     }
 
-    affectedCampaignIds.add(campaignId);
-  }
+    // Replays and partially persisted batches are safe: recipient rows remain
+    // the source of truth, and recomputing them does not duplicate counts.
+    for (const cid of affectedCampaignIds) {
+      await recomputeCampaignStats(cid);
+    }
 
-  // Re-aggregate stats from the recipient table for each touched campaign.
-  // This is the source of truth — increments would drift if a webhook arrived twice.
-  for (const cid of affectedCampaignIds) {
-    await recomputeCampaignStats(cid).catch(() => {});
+    if (events.length > 0) {
+      // A heartbeat means the batch was durably processed, not just received.
+      const receivedAt = new Date();
+      await prisma.webhookHeartbeat.upsert({
+        where: { provider: 'sendgrid' },
+        create: { provider: 'sendgrid', lastEventAt: receivedAt },
+        update: { lastEventAt: receivedAt },
+      });
+    }
+
+    // Acknowledge only after persistence. An early 200 permanently loses events
+    // when a database write fails, because the provider will not retry them.
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('[webhooks/sendgrid] Failed to persist event batch:', error);
+    res.status(503).json({ error: 'Unable to persist events; please retry' });
   }
 });

@@ -6,6 +6,7 @@ import { reportAudience, type ReportUser } from './dailyReportRecipients';
 import { profileResolver } from './dailyReportProfiles';
 import { hubstaffTaskIsOpen, inputActivityPercent, localDateKey, reportDayBounds, uniqueCompletedCount } from './reportMetrics';
 import type { DailyReportPayload, ReportPerson, ReportTask } from './dailyReportTypes';
+import { EMAIL_DELIVERY_RESULTS, hasEmailDeliveryResult, summarizeEmailDelivery } from './reportEmailDelivery';
 
 function inPeriod(date: Date | null, start: Date, end: Date): boolean {
   return !!date && date >= start && date < end;
@@ -13,13 +14,6 @@ function inPeriod(date: Date | null, start: Date, end: Date): boolean {
 const total = <T>(rows: T[], pick: (row: T) => number) => rows.reduce((n, r) => n + pick(r), 0);
 const messageIdentity = (message: { id: string; inboundMessageId: string | null }) => message.inboundMessageId?.trim()
   ? `message:${message.inboundMessageId.trim().replace(/^<([^<>]+)>$/, '$1')}` : `row:${message.id}`;
-
-type DeliveryEvents = { deliveredAt: Date | null; openedAt: Date | null; clickedAt: Date | null; bouncedAt: Date | null };
-/** Results reported for sent emails, personal and campaign alike. A click implies an open. */
-const DELIVERY_RESULTS: [suffix: string, label: string, pick: (r: DeliveryEvents) => unknown][] = [
-  ['Delivered', 'delivered', r => r.deliveredAt], ['Bounced', 'bounced or dropped', r => r.bouncedAt],
-  ['Opened', 'opened', r => r.openedAt || r.clickedAt], ['Clicked', 'with a link clicked', r => r.clickedAt],
-];
 
 export function coversDateRange(ranges: { startDate: Date; endDate: Date }[], start: Date, end: Date): boolean {
   let cursor = start.getTime();
@@ -93,10 +87,11 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       && (!message.threadId || message.threadId === (parent.threadId ?? parent.id));
   });
 
-  // Delivery results arrive only through the SendGrid Event Webhook. A tracked send
+  // Delivery results come from provider events or verified history recovery. A tracked send
   // older than 15 minutes with no event of its own and no webhook call at all since
   // it was sent means the webhook is not reporting (disabled or failing), so delivery
-  // counts are withheld rather than shown as zero. Sends use the recipient's own
+  // unknown counts are withheld rather than shown as zero. Verified events remain
+  // countable even when tracking is incomplete. Sends use the recipient's own
   // acceptance time, so a recipient the provider never accepted is not a send.
   const settled = new Date(now.getTime() - 15 * 60000);
   const unaccounted = [
@@ -177,16 +172,28 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       // message to three people that one opens is 1 of 3 opened, not 100%.
       const tracked = sent.filter(e => e.deliveryTracked);
       const trackedRecipients = tracked.flatMap(e => e.recipients.filter(r => r.sentAt));
+      const sentRecipients = sent.flatMap(e => e.recipients.filter(r => r.sentAt));
+      const personalDelivery = summarizeEmailDelivery(sentRecipients, {
+        hasSends: sent.length > 0, trackingEnabled: tracked.length === sent.length,
+        trackedRecipients, lastWebhookEvent, now,
+      });
       metric('emailsTracked', 'Tracked To recipients of sent emails', trackedRecipients.length);
-      if (tracked.length < sent.length) metric('emailsUntracked', 'Sent emails from before delivery tracking', sent.length - tracked.length);
-      for (const [suffix, label, pick] of DELIVERY_RESULTS) metric(`emails${suffix}`, `Sent email recipients ${label}`,
-        deliveryReported && (tracked.length || !sent.length) ? trackedRecipients.filter(pick).length : null);
-      if (deliveryReported && tracked.length && tracked.length < sent.length) record.warnings.push(`Delivery results cover ${tracked.length} of ${sent.length} sent emails; the others were sent before delivery tracking started.`);
+      if (tracked.length < sent.length) {
+        metric('emailsUntracked', 'Sent emails without confirmed engagement tracking', sent.length - tracked.length);
+        const recovered = sent.filter(e => !e.deliveryTracked).flatMap(e => e.recipients.filter(r => r.sentAt && hasEmailDeliveryResult(r))).length;
+        record.warnings.push(`${sent.length - tracked.length} of ${sent.length} personal emails have no confirmed engagement tracking.${recovered ? ` Verified delivery events for ${recovered} recipients are included.` : ''} Counts include recorded events only; missing results are not assumed to be zero.`);
+      }
+      for (const [suffix, label] of EMAIL_DELIVERY_RESULTS) metric(`emails${suffix}`, `Sent email recipients ${label}`, personalDelivery.counts[suffix]);
+      if (personalDelivery.reportingMissing) record.warnings.push('Some personal emails are still missing provider results. Verified counts are shown where available and may be incomplete.');
       // Campaign results describe the emails sent in this period, as of this snapshot.
       const campaign = campaigns.filter(c => c.campaign.createdById === user.id);
+      const campaignDelivery = summarizeEmailDelivery(campaign, {
+        hasSends: campaign.length > 0, trackingEnabled: true, lastWebhookEvent, now,
+      });
       metric('campaignCount', 'Campaigns with emails sent', new Set(campaign.map(c => c.campaignId)).size);
       metric('campaignSent', 'Campaign emails sent', campaign.length);
-      for (const [suffix, label, pick] of DELIVERY_RESULTS) metric(`campaign${suffix}`, `Campaign emails ${label}`, deliveryReported ? campaign.filter(pick).length : null);
+      for (const [suffix, label] of EMAIL_DELIVERY_RESULTS) metric(`campaign${suffix}`, `Campaign emails ${label}`, campaignDelivery.counts[suffix]);
+      if (campaignDelivery.reportingMissing) record.warnings.push('Some campaign emails are still missing provider results. Verified counts are shown where available and may be incomplete.');
       const ownCalls = calls.filter(c => c.ownerId === user.id);
       metric('calls', 'Calls recorded', ownCalls.length);
       metric('callsAnswered', 'Calls answered', ownCalls.filter(c => c.outcome === 'answered').length);
@@ -411,7 +418,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
       warnings.push(`Hubstaff is not connected for ${uncoveredAgencies.map(agency => agency.name).join(', ')}. Available CRM activity is still included; Hubstaff task and time details will appear after connection, member linking and synchronization.`);
     }
   }
-  if (!deliveryReported) warnings.push('Email delivery results have not been received from SendGrid for this period, so delivered, bounced, opened and clicked counts are unavailable. Check that the SendGrid Event Webhook is enabled.');
+  if (!deliveryReported) warnings.push('Some email delivery results have not been received from SendGrid. Available counts include verified events; missing results may make them incomplete. Check the SendGrid Event Webhook.');
   if (policy.period === 'today' || end < bounds.end) warnings.push(`This report is a snapshot as of ${end.toISOString()}; later activity is not included.`);
   if (reportDate !== localDateKey(now, policy.timezone)) warnings.push('Overdue counts and task status reflect the state when this snapshot was generated; completion events retain their original dates.');
   if (people.some(p => p.profile !== 'software')) warnings.push('Only recorded completion transitions are counted. Historical records without reliable completion evidence are excluded.');

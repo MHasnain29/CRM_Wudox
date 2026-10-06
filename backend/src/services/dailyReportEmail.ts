@@ -100,10 +100,10 @@ function timeLine(person: ReportPerson): Line {
 function personLines(person: ReportPerson): Line[] {
   if (person.profile === 'software') return [timeLine(person), sectionLine(person, HUBSTAFF_TASKS)].filter((line): line is Line => !!line);
   const lines = CRM_SECTIONS.map(section => sectionLine(person, section)).filter((line): line is Line => !!line);
-  // Delivery results only cover emails sent after tracking started (deploy day).
+  // Missing tracking can mean legacy mail or an interrupted evidence write.
   const untracked = metric(person, 'emailsUntracked');
   const email = lines.find(line => line.name === 'Email');
-  if (email && untracked) email.groups.push(`${plural(untracked, 'email')} sent before delivery tracking started`);
+  if (email && untracked) email.groups.push(`${plural(untracked, 'email')} without confirmed engagement tracking; counts include verified events only`);
   return lines;
 }
 
@@ -184,8 +184,15 @@ function summaryTiles(report: DailyReportPayload): Tile[] {
     ...tile('Tasks done', tasks('Completed'), count(tasks('Worked'), 'worked on'), tasksMissing),
     ...tile('Tasks open', tasks('Open'), alert(tasks('Overdue'), 'overdue')),
   ];
-  // Delivery rates use only emails sent with tracking, from people whose results are known.
-  const measured = crm.filter(person => typeof metric(person, 'emailsDelivered') === 'number');
+  // Partial positive results can coexist with unknown outcomes. Keep these counts
+  // in employee rows, but only compute rates when every tracked recipient settled.
+  const measured = crm.filter(person => {
+    if (metric(person, 'emailsUntracked')) return false;
+    const values = ['emailsDelivered', 'emailsBounced', 'emailsOpened', 'emailsClicked'].map(key => metric(person, key));
+    const tracked = metric(person, 'emailsTracked') ?? metric(person, 'personalEmails');
+    return values.every(value => typeof value === 'number') && typeof tracked === 'number'
+      && values[0]! + values[1]! === tracked;
+  });
   const tracked = measured.reduce((n, person) => n + (metric(person, 'emailsTracked') ?? metric(person, 'personalEmails') ?? 0), 0);
   const ofTracked = (key: string, word: string) => rate(measured.reduce((n, person) => n + total(person, [key]), 0), tracked, word);
   const bulkSent = sum(crm, 'campaignSent'), calls = sum(crm, 'calls'), talk = sum(crm, 'callTalkSeconds');
