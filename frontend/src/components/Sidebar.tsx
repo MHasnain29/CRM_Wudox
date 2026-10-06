@@ -78,7 +78,7 @@ const navItems: {
   // ── Software Team ──
   { to: '/projects',   icon: FolderKanban, label: 'Projects',    permissions: ['projects:read'], section: 'Software Team', color: '#7c3aed' },
   { to: '/tasks',      icon: CheckSquare,  label: 'My Tasks', managerLabel: 'Tasks', permissions: ['tasks:read'], showCount: true, color: '#f59e0b' },
-  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    permissions: ['leave:read'], excludeRoles: new Set(['super_admin', 'director', 'company_director']), color: '#0d9488' },
+  { to: '/leave',      icon: CalendarOff,  label: 'My Leave',    color: '#0d9488' },
   { to: '/leave/admin',icon: CalendarOff,  label: 'Leave Admin', permissions: ['leave:approve'], showCount: true, color: '#0d9488' },
   { to: '/attendance', icon: Clock,        label: 'Attendance',  permissions: ['calls:read'], color: '#6366f1' },
   { to: '/time-tracking', icon: Timer,     label: 'Time Tracking', permissions: ['calls:read'], color: '#0ea5e9' },

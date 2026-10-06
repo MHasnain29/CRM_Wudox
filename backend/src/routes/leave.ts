@@ -11,7 +11,7 @@ import {
   LeaveAccessError, type LeaveAccess,
 } from '../services/leaveAccess';
 import {
-  LeaveError, parseLeaveRequest, parseLeaveDate, leaveTypeInputSchema, leaveBalanceInputSchema,
+  LeaveError, parseLeaveDate, leaveTypeInputSchema, leaveBalanceInputSchema, getLeavePolicy,
   createLeaveRequest, transitionLeaveRequest, createLeaveType, updateLeaveType,
   deleteLeaveType, adjustLeaveBalance, carryOverLeave,
 } from '../services/leave';
@@ -20,7 +20,20 @@ import { notifyLeaveChange, refreshLeaveUsers } from '../services/leaveNotificat
 export const leaveRouter = Router();
 leaveRouter.use(authenticate);
 leaveRouter.use(actAsMiddleware);
-leaveRouter.use(requirePermission('leave:read'));
+const requireLeaveRead = requirePermission('leave:read');
+leaveRouter.use((req, res, next) => {
+  // Every authenticated employee can view their own leave, including custom roles.
+  // Agency-wide reads and all mutations retain their existing permission checks.
+  const ownRead = req.method === 'GET' && (
+    req.path === '/policy/me' || req.path === '/balances/me'
+    || ((req.path === '/requests' || req.path === '/types') && req.query.mine === 'true')
+  );
+  if (req.user?.sub && ownRead) {
+    next();
+    return;
+  }
+  return requireLeaveRead(req, res, next);
+});
 
 // Express 4 does not automatically forward rejected async handlers.
 function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
@@ -75,6 +88,11 @@ const requestInclude = {
   leaveType: { select: { id: true, name: true, paid: true } },
   approver: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.LeaveRequestInclude;
+
+leaveRouter.get('/policy/me', handle(async (req, res) => {
+  const access = await getLeaveAccess(req);
+  return res.json({ data: await getLeavePolicy(access.userId) });
+}));
 
 leaveRouter.get('/types', handle(async (req, res) => {
   const access = await getLeaveAccess(req);
@@ -178,8 +196,7 @@ leaveRouter.get('/requests/pending', requirePermission('leave:approve'), handle(
 
 leaveRouter.post('/requests', requirePermission('leave:write'), handle(async (req, res) => {
   const access = await getLeaveAccess(req);
-  const input = parseLeaveRequest(req.body);
-  const data = await createLeaveRequest(input, access.userId, (owner, type) => assertOwnType(access, owner, type));
+  const data = await createLeaveRequest(req.body, access.userId, (owner, type) => assertOwnType(access, owner, type));
   void notifyLeaveChange(data, 'request').catch(() => {});
   return res.status(201).json({ data });
 }));

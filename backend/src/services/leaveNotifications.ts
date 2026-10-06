@@ -13,6 +13,11 @@ type LeaveNotificationRecord = {
   endDate: Date;
   session: string;
   days: number;
+  hourlyCategory?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  durationMinutes?: number | null;
+  timezone?: string | null;
   user: { id: string; firstName: string; lastName: string; subCompanyId: string | null; role: string };
   leaveType: { name: string };
 };
@@ -60,6 +65,19 @@ function dateLabel(record: LeaveNotificationRecord): string {
   const start = record.startDate.toISOString().slice(0, 10);
   const end = record.endDate.toISOString().slice(0, 10);
   const date = start === end ? start : `${start} – ${end}`;
+  if (record.session === 'hourly') {
+    const category = record.hourlyCategory === 'late_arrival' ? 'Late Arrival' : 'Time Away';
+    const minutes = record.durationMinutes ?? 0;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    const duration = [
+      hours ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : '',
+      remainingMinutes ? `${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}` : '',
+    ].filter(Boolean).join(' ');
+    const interval = record.startTime && record.endTime ? `${record.startTime} – ${record.endTime}` : '';
+    const time = [interval, record.timezone].filter(Boolean).join(' ');
+    return `${date} (${[category, time, duration].filter(Boolean).join(', ')})`;
+  }
   const session = record.session === 'first_half' ? 'First Half'
     : record.session === 'second_half' ? 'Second Half' : '';
   const duration = `${record.days} ${record.days === 1 ? 'day' : 'days'}`;

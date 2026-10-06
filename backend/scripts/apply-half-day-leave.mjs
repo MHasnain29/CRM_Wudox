@@ -43,7 +43,11 @@ async function inspect(client, schema, checksum) {
     && session?.udt_name === 'LeaveSession' && session.udt_schema === schema
     && session.is_nullable === 'NO' && validDefault
     && types.length === 1 && types[0].typtype === 'e'
-    && JSON.stringify(types[0].labels) === JSON.stringify(['full_day', 'first_half', 'second_half']);
+    // Hourly leave extends this enum without changing the half-day schema contract.
+    && [
+      ['full_day', 'first_half', 'second_half'],
+      ['full_day', 'first_half', 'second_half', 'hourly'],
+    ].some((labels) => JSON.stringify(types[0].labels) === JSON.stringify(labels));
   if (!oldState && !newState) {
     throw new CheckError('Leave schema is incomplete or unexpected. Review it before applying any migration.');
   }

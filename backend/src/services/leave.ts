@@ -1,13 +1,9 @@
-import { LeaveSession, LeaveStatus, Prisma } from '@prisma/client';
+import { LeaveHourlyCategory, LeaveSession, LeaveStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../config/database';
-
-export class LeaveError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message);
-    this.name = 'LeaveError';
-  }
-}
+import { LeaveError } from './leaveError';
+import { clockMinutes, LEAVE_TIMEZONE, leavePolicy, leaveTimesOverlap, roundLeaveDays, workdayInterval, type WorkSchedule } from './leaveHours';
+export { LeaveError } from './leaveError';
 
 const dayQuantity = z.number().finite().nonnegative().multipleOf(0.5);
 
@@ -27,8 +23,13 @@ const requestInputSchema = z.object({
   leaveTypeId: z.string().uuid(),
   startDate: z.string(),
   endDate: z.string(),
-  days: z.number().finite().positive().optional(),
+  days: z.number().finite().nonnegative().optional(),
   session: z.nativeEnum(LeaveSession).default(LeaveSession.full_day),
+  hourlyCategory: z.nativeEnum(LeaveHourlyCategory).optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  durationMinutes: z.number().int().positive().optional(),
+  timezone: z.string().optional(),
   reason: z.string().max(1000).optional(),
 });
 
@@ -71,26 +72,71 @@ export interface ParsedLeaveRequest {
   endDate: Date;
   days: number;
   session: LeaveSession;
+  hourlyCategory?: LeaveHourlyCategory;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  timezone?: string;
+  workDayStartTime?: string;
+  workDayEndTime?: string;
   reason?: string;
 }
 
-export function parseLeaveRequest(input: unknown): ParsedLeaveRequest {
+export function parseLeaveRequest(input: unknown, schedule?: WorkSchedule): ParsedLeaveRequest {
   const parsed = requestInputSchema.safeParse(input);
   if (!parsed.success) throw new LeaveError(400, parsed.error.issues.map((issue) => issue.message).join('; '));
-  const { days: submittedDays, ...data } = parsed.data;
+  const { days: submittedDays, durationMinutes: submittedMinutes, ...data } = parsed.data;
+  if (data.hourlyCategory === LeaveHourlyCategory.late_arrival) {
+    throw new LeaveError(400, 'Late Arrival requests are no longer supported. Use Hourly Time Away leave.');
+  }
   const startDate = parseLeaveDate(data.startDate);
   const endDate = parseLeaveDate(data.endDate);
   if (endDate < startDate) throw new LeaveError(400, 'End date cannot be before start date.');
   const workingDays = countLeaveWeekdays(startDate, endDate);
   if (!workingDays) throw new LeaveError(400, 'Choose at least one working day (Monday–Friday).');
   if (data.session !== LeaveSession.full_day && startDate.getTime() !== endDate.getTime()) {
-    throw new LeaveError(400, 'Half-day leave must use one working date.');
+    throw new LeaveError(400, 'Half-day and hourly leave must use one working date.');
   }
-  const days = data.session === LeaveSession.full_day ? workingDays : 0.5;
+  let days = data.session === LeaveSession.full_day ? workingDays : 0.5;
+  let durationMinutes: number | undefined;
+  if (data.session === LeaveSession.hourly) {
+    if (!schedule) throw new LeaveError(400, 'Employee working hours are required for hourly leave.');
+    data.hourlyCategory = LeaveHourlyCategory.time_away;
+    if (!data.startTime || !data.endTime) {
+      throw new LeaveError(400, 'Enter start and end times for hourly leave.');
+    }
+    if (data.timezone !== undefined && data.timezone !== LEAVE_TIMEZONE) {
+      throw new LeaveError(400, `Leave request times must use ${LEAVE_TIMEZONE}.`);
+    }
+    const [workStart, workEnd] = workdayInterval(schedule);
+    const start = clockMinutes(data.startTime);
+    const end = clockMinutes(data.endTime);
+    if (end <= start) throw new LeaveError(400, 'End time must be after start time on the same date.');
+    if (start < workStart || end > workEnd) throw new LeaveError(400, 'Hourly leave must fall within your configured working hours.');
+    durationMinutes = end - start;
+    if (submittedMinutes !== undefined && submittedMinutes !== durationMinutes) {
+      throw new LeaveError(400, 'The submitted duration does not match the selected times.');
+    }
+    // Hourly Time Away records minutes only; it never consumes leave entitlement.
+    days = 0;
+    data.timezone = LEAVE_TIMEZONE;
+  } else if (data.hourlyCategory !== undefined || data.startTime !== undefined || data.endTime !== undefined || submittedMinutes !== undefined || data.timezone !== undefined) {
+    throw new LeaveError(400, 'Time fields and hourly category can only be used with Hourly leave.');
+  }
   if (submittedDays !== undefined && submittedDays !== days) {
     throw new LeaveError(400, `The selected dates and session require ${days} day(s).`);
   }
-  return { ...data, startDate, endDate, days };
+  return {
+    ...data, startDate, endDate, days,
+    ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+    ...(schedule ? { workDayStartTime: schedule.workStartTime, workDayEndTime: schedule.workEndTime } : {}),
+  };
+}
+
+export async function getLeavePolicy(userId: string) {
+  const schedule = await prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true, workEndTime: true } });
+  if (!schedule) throw new LeaveError(404, 'Employee not found.');
+  return leavePolicy(schedule);
 }
 
 /** Every leave mutation uses serializable isolation so overlap/balance predicates survive races. */
@@ -119,7 +165,7 @@ type AgencyOwner = { id: string; subCompanyId: string | null };
 type CreateAuthorization = (requester: AgencyOwner, type: AgencyOwner) => void | Promise<void>;
 type TransitionAuthorization = (request: RequestRecord) => void | Promise<void>;
 
-async function assertNoOverlap(tx: Prisma.TransactionClient, input: Pick<ParsedLeaveRequest, 'startDate' | 'endDate' | 'session'>, userId: string, excludeId?: string) {
+async function assertNoOverlap(tx: Prisma.TransactionClient, input: Pick<ParsedLeaveRequest, 'startDate' | 'endDate' | 'session'> & { startTime?: string | null; endTime?: string | null; workDayStartTime?: string | null; workDayEndTime?: string | null }, userId: string, schedule: WorkSchedule, excludeId?: string) {
   const endExclusive = new Date(input.endDate.getTime() + DAY_MS);
   const candidates = await tx.leaveRequest.findMany({
     where: {
@@ -129,38 +175,40 @@ async function assertNoOverlap(tx: Prisma.TransactionClient, input: Pick<ParsedL
       endDate: { gte: input.startDate },
       ...(excludeId ? { id: { not: excludeId } } : {}),
     },
-    select: { startDate: true, endDate: true, session: true },
+    select: { startDate: true, endDate: true, session: true, startTime: true, endTime: true, workDayStartTime: true, workDayEndTime: true },
   });
   const conflict = candidates.some((existing) => {
-    if (input.session !== LeaveSession.full_day && existing.session !== LeaveSession.full_day && input.session !== existing.session) return false;
     const overlapStart = new Date(Math.max(input.startDate.getTime(), calendarDate(existing.startDate).getTime()));
     const overlapEnd = new Date(Math.min(input.endDate.getTime(), calendarDate(existing.endDate).getTime()));
-    return countLeaveWeekdays(overlapStart, overlapEnd) > 0;
+    return countLeaveWeekdays(overlapStart, overlapEnd) > 0 && leaveTimesOverlap(input, existing, schedule);
   });
-  if (conflict) throw new LeaveError(409, 'This leave overlaps a pending or approved request. Choose another date or half of the day.');
+  if (conflict) throw new LeaveError(409, 'This leave overlaps a pending or approved request. Choose another date or time.');
 }
 
 function assertAvailable(balance: { entitled: number; carriedOver: number; used: number }, days: number) {
-  const available = balance.entitled + balance.carriedOver - balance.used;
+  const available = roundLeaveDays(balance.entitled + balance.carriedOver - balance.used);
   if (days > available) throw new LeaveError(400, `Insufficient balance. You have ${available} day(s) available but requested ${days}.`);
 }
 
-export async function createLeaveRequest(input: ParsedLeaveRequest, userId: string, authorize?: CreateAuthorization) {
+export async function createLeaveRequest(input: unknown, userId: string, authorize?: CreateAuthorization) {
   return withLeaveTransaction(async (tx) => {
-    const requester = await tx.user.findUnique({ where: { id: userId }, select: { id: true, subCompanyId: true } });
+    const requester = await tx.user.findUnique({ where: { id: userId }, select: { id: true, subCompanyId: true, workStartTime: true, workEndTime: true } });
     if (!requester) throw new LeaveError(404, 'Employee not found.');
-    const leaveType = await tx.leaveType.findUnique({ where: { id: input.leaveTypeId } });
+    const request = parseLeaveRequest(input, requester);
+    const leaveType = await tx.leaveType.findUnique({ where: { id: request.leaveTypeId } });
     if (!leaveType) throw new LeaveError(400, 'Leave type not found.');
     await authorize?.(requester, leaveType);
-    await assertNoOverlap(tx, input, userId);
-    const year = input.startDate.getUTCFullYear();
-    const balance = await tx.leaveBalance.upsert({
-      where: { userId_leaveTypeId_year: { userId, leaveTypeId: input.leaveTypeId, year } },
-      update: {},
-      create: { userId, leaveTypeId: input.leaveTypeId, year, entitled: leaveType.daysPerYear, used: 0, carriedOver: 0 },
-    });
-    assertAvailable(balance, input.days);
-    return tx.leaveRequest.create({ data: { ...input, userId, status: LeaveStatus.pending }, include: requestInclude });
+    await assertNoOverlap(tx, request, userId, requester);
+    if (request.session !== LeaveSession.hourly) {
+      const year = request.startDate.getUTCFullYear();
+      const balance = await tx.leaveBalance.upsert({
+        where: { userId_leaveTypeId_year: { userId, leaveTypeId: request.leaveTypeId, year } },
+        update: {},
+        create: { userId, leaveTypeId: request.leaveTypeId, year, entitled: leaveType.daysPerYear, used: 0, carriedOver: 0 },
+      });
+      assertAvailable(balance, request.days);
+    }
+    return tx.leaveRequest.create({ data: { ...request, userId, status: LeaveStatus.pending }, include: requestInclude });
   });
 }
 
@@ -174,19 +222,28 @@ export async function transitionLeaveRequest(id: string, action: 'approve' | 're
     }
     if (request.status !== LeaveStatus.pending) throw new LeaveError(409, 'This request has already been processed.');
     if (action === 'approve') {
+      const schedule = await tx.user.findUnique({ where: { id: request.userId }, select: { workStartTime: true, workEndTime: true } });
+      if (!schedule) throw new LeaveError(404, 'Employee not found.');
       // Legacy pending requests may predate overlap validation. Do not approve a conflicting request.
-      await assertNoOverlap(tx, { ...request, startDate: calendarDate(request.startDate), endDate: calendarDate(request.endDate) }, request.userId, id);
-      const balance = await tx.leaveBalance.findUnique({
-        where: { userId_leaveTypeId_year: { userId: request.userId, leaveTypeId: request.leaveTypeId, year: request.startDate.getUTCFullYear() } },
-      });
-      if (!balance) throw new LeaveError(400, 'Leave balance record not found. Contact HR.');
-      assertAvailable(balance, request.days);
-      await tx.leaveBalance.update({ where: { id: balance.id }, data: { used: { increment: request.days } } });
+      await assertNoOverlap(tx, { ...request, startDate: calendarDate(request.startDate), endDate: calendarDate(request.endDate) }, request.userId, schedule, id);
+      // Also protect pending hourly requests created under the previous deduction policy.
+      if (request.session !== LeaveSession.hourly && request.days > 0) {
+        const balance = await tx.leaveBalance.findUnique({
+          where: { userId_leaveTypeId_year: { userId: request.userId, leaveTypeId: request.leaveTypeId, year: request.startDate.getUTCFullYear() } },
+        });
+        if (!balance) throw new LeaveError(400, 'Leave balance record not found. Contact HR.');
+        assertAvailable(balance, request.days);
+        await tx.leaveBalance.update({ where: { id: balance.id }, data: { used: roundLeaveDays(balance.used + request.days) } });
+      }
     }
     const status = action === 'approve' ? LeaveStatus.approved : action === 'reject' ? LeaveStatus.rejected : LeaveStatus.cancelled;
     const updated = await tx.leaveRequest.updateMany({
       where: { id, status: LeaveStatus.pending },
-      data: { status, ...(action === 'cancel' ? {} : { approverId: actorId, approvedAt: new Date() }) },
+      data: {
+        status,
+        ...(request.session === LeaveSession.hourly ? { days: 0 } : {}),
+        ...(action === 'cancel' ? {} : { approverId: actorId, approvedAt: new Date() }),
+      },
     });
     if (updated.count !== 1) throw new LeaveError(409, 'This request has already been processed.');
     return tx.leaveRequest.findUniqueOrThrow({ where: { id }, include: requestInclude });

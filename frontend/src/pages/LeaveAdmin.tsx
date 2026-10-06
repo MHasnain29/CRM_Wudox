@@ -5,34 +5,35 @@ import { useAuthStore } from '@/lib/authStore';
 import { useStore } from '@/lib/store';
 import { useCanAccessMultipleAgencies } from '@/lib/access';
 import { useEffectiveUser } from '@/lib/effectiveUser';
-import { announceLeaveChange, formatLeavePeriod, onLeaveDataRefresh, useLeaveScopeKey, type LeaveSession } from '@/lib/leave';
+import { announceLeaveChange, formatLeaveDays, onLeaveDataRefresh, useLeaveScopeKey, type LeaveTimingFields } from '@/lib/leave';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import LeaveDurationBadge from '@/components/LeaveDurationBadge';
+import LeaveAdminRequestCard from '@/components/leave/LeaveAdminRequestCard';
+import LeaveRequestFilters from '@/components/leave/LeaveRequestFilters';
+import { matchesLeaveRequestFilters, type LeaveDurationFilter, type LeaveStatusFilter } from '@/lib/leaveFilters';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Check, X, Loader2, Plus, Trash2, Pencil, CalendarOff, Settings2, Users, AlertTriangle, History,
+  Check, X, Loader2, Plus, Trash2, Pencil, CalendarOff, Settings2, Users, AlertTriangle, History, Clock3,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
 
-interface LeaveRequest {
+interface LeaveRequest extends LeaveTimingFields {
   id: string;
   startDate: string;
   endDate: string;
   days: number;
-  session?: LeaveSession;
   reason: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   createdAt: string;
@@ -59,12 +60,7 @@ interface LeaveBalance {
   leaveType: { id: string; name: string; paid: boolean };
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  cancelled: 'bg-gray-100 text-gray-500',
-};
+const TAB_CLASS_NAME = 'h-10 sm:h-9 gap-2 rounded-lg px-3 text-xs data-[state=active]:bg-card data-[state=active]:text-primary sm:px-4 sm:text-sm';
 
 export default function LeaveAdmin() {
   const user = useAuthStore((state) => state.user);
@@ -96,6 +92,11 @@ export default function LeaveAdmin() {
   const [loading, setLoading] = useState(true);
   const [loadedScope, setLoadedScope] = useState('');
   const [activeTab, setActiveTab] = useState('pending');
+  const [historyDuration, setHistoryDuration] = useState<LeaveDurationFilter>('all');
+  const [historyStatus, setHistoryStatus] = useState<LeaveStatusFilter>('all');
+  const [pendingDuration, setPendingDuration] = useState<LeaveDurationFilter>('all');
+  const filteredHistory = history.filter((request) => matchesLeaveRequestFilters(request, historyDuration, historyStatus));
+  const filteredPending = requests.filter((request) => matchesLeaveRequestFilters(request, pendingDuration));
   const dataLoading = loading || loadedScope !== scopeKey;
   const canSaveConfiguration = canConfigure && !!selectedAgency && !dataLoading;
 
@@ -144,6 +145,9 @@ export default function LeaveAdmin() {
   useEffect(() => {
     setRequests([]);
     setHistory([]);
+    setHistoryDuration('all');
+    setHistoryStatus('all');
+    setPendingDuration('all');
     setLeaveTypes([]);
     setBalances([]);
     setShowTypeDialog(false);
@@ -251,19 +255,25 @@ export default function LeaveAdmin() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5 p-4 sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <CalendarOff size={22} /> Leave Admin
-        </h1>
-        {showAgencyPicker && <div className="space-y-1.5 w-full sm:w-72">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/10 bg-primary/10 text-primary">
+            <CalendarOff size={23} aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Leave Admin</h1>
+            <p className="text-sm text-muted-foreground">Review requests and manage your team’s leave.</p>
+          </div>
+        </div>
+        {showAgencyPicker && <div className="w-full shrink-0 space-y-1.5 sm:w-72">
           <Label htmlFor="leave-admin-agency">Agency</Label>
           <Select
             value={selectedAgencyId ? selectedAgency?.id ?? '' : 'all'}
             onValueChange={(value) => setSelectedAgencyId(value === 'all' ? null : value)}
             disabled={agenciesLoading}
           >
-            <SelectTrigger id="leave-admin-agency">
+            <SelectTrigger id="leave-admin-agency" className="h-10 rounded-xl bg-card">
               <SelectValue placeholder={agenciesLoading ? 'Loading agencies…' : 'Select an agency'} />
             </SelectTrigger>
             <SelectContent>
@@ -279,180 +289,160 @@ export default function LeaveAdmin() {
         <div className="flex items-center justify-center h-64 text-muted-foreground">
           <Loader2 className="animate-spin mr-2" size={20} /> Loading…
         </div>
-      ) : <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="pending">
+      ) : <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border bg-muted/50 p-1 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="pending" className={TAB_CLASS_NAME}>
+            <Clock3 size={16} className="hidden sm:block" aria-hidden="true" />
             Pending Requests
             {requests.length > 0 && (
-              <Badge className="ml-2 bg-orange-100 text-orange-700 border-0 text-xs">
+              <Badge className="min-w-5 justify-center border-0 bg-primary/10 px-1.5 py-0 text-[11px] tabular-nums text-primary hover:bg-primary/10">
                 {requests.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="history">
-            <History size={14} className="mr-1" /> History
+          <TabsTrigger value="history" className={TAB_CLASS_NAME}>
+            <History size={16} aria-hidden="true" /> History
           </TabsTrigger>
-          <TabsTrigger value="types">
-            <Settings2 size={14} className="mr-1" /> Leave Types
+          <TabsTrigger value="types" className={TAB_CLASS_NAME}>
+            <Settings2 size={16} aria-hidden="true" /> Leave Types
           </TabsTrigger>
-          <TabsTrigger value="balances">
-            <Users size={14} className="mr-1" /> Balances
+          <TabsTrigger value="balances" className={TAB_CLASS_NAME}>
+            <Users size={16} aria-hidden="true" /> Balances
           </TabsTrigger>
         </TabsList>
 
         {/* Pending Requests */}
-        <TabsContent value="pending" className="mt-4">
-          <Card>
-            <CardContent className="pt-4">
-              {requests.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  No pending leave requests.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {requests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between border rounded p-3 gap-3"
+        <TabsContent value="pending" className="space-y-2.5">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold">Pending requests</h2>
+            <p className="text-sm text-muted-foreground">Leave and time away awaiting review.</p>
+          </div>
+          <LeaveRequestFilters duration={pendingDuration} onDurationChange={setPendingDuration} />
+          {requests.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground"><Clock3 size={22} aria-hidden="true" /></div>
+              <p className="text-sm text-muted-foreground">No pending leave requests.</p>
+            </div>
+          ) : filteredPending.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center" role="status">
+              <p className="text-sm text-muted-foreground">No pending requests match this duration.</p>
+              <Button variant="outline" size="sm" onClick={() => setPendingDuration('all')}>Clear filters</Button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredPending.map((req) => (
+                <LeaveAdminRequestCard
+                  key={req.id}
+                  request={req}
+                  showSubmittedDate
+                  actions={canApprove && <div className="flex w-full items-center gap-2 sm:w-auto">
+                    <Button
+                      size="sm"
+                      className="h-10 flex-1 gap-1.5 rounded-lg px-3 sm:h-9 sm:flex-none"
+                      disabled={actionLoading !== null || req.user.id === user?.id || req.user.id === effectiveUser.id}
+                      aria-label="Approve leave"
+                      onClick={() => handleApprove(req.id)}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">
-                            {req.user.firstName} {req.user.lastName}
-                          </span>
-                          <Badge className={`text-xs border-0 ${STATUS_COLOR[req.status]}`}>
-                            {req.status}
-                          </Badge>
-                          <LeaveDurationBadge session={req.session} />
-                          <span className="text-sm text-muted-foreground">
-                            {req.leaveType.name}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {formatLeavePeriod(req)} · {req.days} day(s)
-                          {req.reason && ` · ${req.reason}`}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Submitted {format(new Date(req.createdAt), 'dd MMM yyyy')}
-                        </div>
-                      </div>
-                      {canApprove && <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          disabled={actionLoading !== null || req.user.id === user?.id || req.user.id === effectiveUser.id}
-                          aria-label="Approve leave"
-                          onClick={() => handleApprove(req.id)}
-                        >
-                          {actionLoading === req.id + '_approve'
-                            ? <Loader2 size={14} className="animate-spin" />
-                            : <Check size={14} />
-                          }
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          disabled={actionLoading !== null || req.user.id === user?.id || req.user.id === effectiveUser.id}
-                          aria-label="Reject leave"
-                          onClick={() => handleReject(req.id)}
-                        >
-                          {actionLoading === req.id + '_reject'
-                            ? <Loader2 size={14} className="animate-spin" />
-                            : <X size={14} />
-                          }
-                        </Button>
-                      </div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      {actionLoading === req.id + '_approve'
+                        ? <Loader2 size={15} className="animate-spin" />
+                        : <Check size={15} />
+                      }
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-10 flex-1 gap-1.5 rounded-lg px-3 sm:h-9 text-destructive hover:bg-destructive/5 hover:text-destructive sm:flex-none"
+                      disabled={actionLoading !== null || req.user.id === user?.id || req.user.id === effectiveUser.id}
+                      aria-label="Reject leave"
+                      onClick={() => handleReject(req.id)}
+                    >
+                      {actionLoading === req.id + '_reject'
+                        ? <Loader2 size={15} className="animate-spin" />
+                        : <X size={15} />
+                      }
+                      Reject
+                    </Button>
+                  </div>}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         {/* History */}
-        <TabsContent value="history" className="mt-4">
-          <Card>
-            <CardContent className="pt-4">
-              {history.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">No leave history yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {history.map((req) => (
-                    <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
-                          <Badge className={`text-xs border-0 ${STATUS_COLOR[req.status]}`}>
-                            {req.status}
-                          </Badge>
-                          <LeaveDurationBadge session={req.session} />
-                          <span className="text-muted-foreground">{req.leaveType.name}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {formatLeavePeriod(req)} · {req.days} day(s)
-                          {req.reason && ` · ${req.reason}`}
-                        </div>
-                        {req.approver && (
-                          <div className="text-xs text-muted-foreground">
-                            {req.status === 'approved' ? 'Approved' : 'Reviewed'} by{' '}
-                            {req.approver.firstName} {req.approver.lastName}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="history" className="space-y-2.5">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold">Request history</h2>
+            <p className="text-sm text-muted-foreground">Previously reviewed and cancelled requests.</p>
+          </div>
+          <LeaveRequestFilters
+            duration={historyDuration}
+            status={historyStatus}
+            statuses={['approved', 'rejected', 'cancelled']}
+            onDurationChange={setHistoryDuration}
+            onStatusChange={setHistoryStatus}
+          />
+          {history.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground"><History size={22} aria-hidden="true" /></div>
+              <p className="text-sm text-muted-foreground">No leave history yet.</p>
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center" role="status">
+              <p className="text-sm text-muted-foreground">No requests match these filters.</p>
+              <Button variant="outline" size="sm" onClick={() => { setHistoryDuration('all'); setHistoryStatus('all'); }}>
+                Clear filters
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredHistory.map((req) => <LeaveAdminRequestCard key={req.id} request={req} />)}
+            </div>
+          )}
         </TabsContent>
 
         {/* Leave Types */}
-        <TabsContent value="types" className="mt-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+        <TabsContent value="types">
+          <Card className="overflow-hidden rounded-2xl">
+            <CardHeader className="border-b bg-muted/20 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle className="text-base">Leave Types</CardTitle>
-                {canConfigure && <Button size="sm" disabled={!canSaveConfiguration} onClick={() => openTypeDialog()}>
+                {canConfigure && <Button size="sm" className="h-10 rounded-lg px-3 sm:h-9" disabled={!canSaveConfiguration} onClick={() => openTypeDialog()}>
                   <Plus size={14} className="mr-1" /> Add Type
                 </Button>}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 sm:p-4">
               {canConfigure && !selectedAgency && (
-                <p className="text-sm text-muted-foreground mb-3">Select an agency above to manage leave types and allowances.</p>
+                <p className="mb-3 rounded-xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">Select an agency above to manage leave types and allowances.</p>
               )}
               {leaveTypes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No leave types configured.</p>
+                <p className="py-10 text-center text-sm text-muted-foreground">No leave types configured.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {leaveTypes.map((lt) => (
-                    <div key={lt.id} className="flex items-center justify-between border rounded p-3 text-sm">
-                      <div>
-                        <span className="font-medium">{lt.name}</span>
-                        {lt.subCompanyId === null && <Badge variant="outline" className="ml-2 text-xs">Shared</Badge>}
-                        <span className="text-muted-foreground ml-3">
-                          {lt.daysPerYear} days/year
-                        </span>
-                        <span className="ml-3">
-                          <Badge variant="outline" className="text-xs">
+                    <div key={lt.id} className="flex flex-col gap-3 rounded-xl border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="break-words font-semibold">{lt.name}</span>
+                          {lt.subCompanyId === null && <Badge variant="outline" className="text-xs">Shared</Badge>}
+                          <Badge variant="outline" className="bg-muted/40 text-xs font-normal">
                             {lt.paid ? 'Paid' : 'Unpaid'}
                           </Badge>
-                        </span>
-                        {lt.maxCarryOver > 0 && (
-                          <span className="text-muted-foreground ml-2 text-xs">
-                            Max carry-over: {lt.maxCarryOver}
-                          </span>
-                        )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span>{lt.daysPerYear} days/year</span>
+                          {lt.maxCarryOver > 0 && (
+                            <span>Max carry-over: {lt.maxCarryOver}</span>
+                          )}
+                        </div>
                       </div>
-                      {canConfigure && <div className="flex items-center gap-2">
-                        <Button size="sm" variant="ghost" disabled={!canSaveConfiguration} onClick={() => openTypeDialog(lt)}>
+                      {canConfigure && <div className="flex shrink-0 items-center gap-2 border-t pt-2 sm:border-0 sm:pt-0">
+                        <Button size="sm" variant="outline" className="h-9 rounded-lg" disabled={!canSaveConfiguration} onClick={() => openTypeDialog(lt)}>
                           <Pencil size={14} className="mr-1" /> Edit
                         </Button>
-                        <Button size="sm" variant="ghost" disabled={!canSaveConfiguration} onClick={() => handleDeleteType(lt.id)} aria-label={`Delete ${lt.name}`} className="text-muted-foreground hover:text-red-500">
+                        <Button size="sm" variant="ghost" disabled={!canSaveConfiguration} onClick={() => handleDeleteType(lt.id)} aria-label={`Delete ${lt.name}`} className="h-9 w-9 rounded-lg px-0 text-muted-foreground hover:bg-destructive/5 hover:text-destructive">
                           <Trash2 size={14} />
                         </Button>
                       </div>}
@@ -465,41 +455,44 @@ export default function LeaveAdmin() {
         </TabsContent>
 
         {/* Balances */}
-        <TabsContent value="balances" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+        <TabsContent value="balances">
+          <Card className="overflow-hidden rounded-2xl">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b bg-muted/20 px-4 py-3">
               <CardTitle className="text-base">All Leave Balances</CardTitle>
               {canConfigure && <Button
                 variant="outline"
                 size="sm"
-                className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                className="h-10 rounded-lg sm:h-9 border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950"
                 onClick={() => setShowCarryoverDialog(true)}
                 disabled={!canSaveConfiguration}
               >
                 <AlertTriangle size={14} className="mr-1.5" /> Year-End Carryover
               </Button>}
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 sm:p-4">
               {balances.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No balances found.</p>
+                <p className="py-10 text-center text-sm text-muted-foreground">No balances found.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {balances.map((b) => {
                     const available = b.entitled + b.carriedOver - b.used;
                     return (
-                      <div key={b.id} className="flex items-center justify-between border rounded p-3 text-sm">
-                        <div>
-                          <span className="font-medium">
+                      <div key={b.id} className="flex flex-col gap-3 rounded-xl border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <p className="break-words font-semibold">
                             {b.user.firstName} {b.user.lastName}
-                          </span>
-                          <span className="text-muted-foreground ml-3">{b.leaveType.name}</span>
+                          </p>
+                          <p className="break-words text-xs text-muted-foreground">{b.leaveType.name}</p>
                         </div>
-                        <div className="text-right text-xs text-muted-foreground">
-                          <span className="text-sm font-semibold text-foreground mr-2">
-                            {available} avail.
-                          </span>
-                          {b.used} used / {b.entitled} entitled
-                          {b.carriedOver > 0 && ` + ${b.carriedOver} carried`}
+                        <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground sm:min-w-56 sm:text-right">
+                          <p className="text-foreground">
+                            <span className="text-lg font-semibold tabular-nums">{formatLeaveDays(available)}</span>
+                            <span className="ml-1.5 text-xs text-muted-foreground">days available</span>
+                          </p>
+                          <p>
+                            {formatLeaveDays(b.used)} used / {b.entitled} entitled
+                            {b.carriedOver > 0 && ` + ${b.carriedOver} carried`}
+                          </p>
                         </div>
                       </div>
                     );
@@ -513,22 +506,22 @@ export default function LeaveAdmin() {
 
       {/* Year-End Carryover Confirmation */}
       <Dialog open={canSaveConfiguration && showCarryoverDialog} onOpenChange={setShowCarryoverDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
-              <AlertTriangle size={18} /> Run Year-End Carryover?
+        <DialogContent className="flex max-h-[90dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0">
+          <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12 text-left sm:px-6 sm:pr-12">
+            <DialogTitle className="flex items-center gap-2 text-base leading-snug text-amber-700 dark:text-amber-300">
+              <AlertTriangle size={20} className="shrink-0" aria-hidden="true" /> Run Year-End Carryover?
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
+          <DialogDescription className="min-h-0 overflow-y-auto px-5 py-5 text-sm leading-relaxed sm:px-6">
             This will create leave balances for <strong>{new Date().getFullYear() + 1}</strong> for all
             staff in the selected agency, carrying over unused days up to each leave type's maximum. This action cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCarryoverDialog(false)} disabled={carryoverLoading}>
+          </DialogDescription>
+          <DialogFooter className="shrink-0 flex-row flex-wrap justify-end gap-2 border-t bg-muted/20 px-5 py-4 sm:space-x-0 sm:px-6">
+            <Button variant="outline" className="h-11 rounded-xl bg-card px-5" onClick={() => setShowCarryoverDialog(false)} disabled={carryoverLoading}>
               Cancel
             </Button>
             <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="h-11 rounded-xl bg-amber-600 px-5 text-white hover:bg-amber-700"
               onClick={handleCarryover}
               disabled={carryoverLoading}
             >
@@ -541,29 +534,37 @@ export default function LeaveAdmin() {
 
       {/* New Leave Type Dialog */}
       <Dialog open={canSaveConfiguration && showTypeDialog} onOpenChange={setShowTypeDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingTypeId ? 'Edit Leave Type' : 'Add Leave Type'}</DialogTitle>
+        <DialogContent className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-[560px] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0">
+          <DialogHeader className="shrink-0 flex-row items-center gap-3 space-y-0 border-b px-5 py-5 pr-12 text-left sm:px-6 sm:pr-12">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Settings2 size={22} aria-hidden="true" /></div>
+            <div className="space-y-1">
+              <DialogTitle className="text-lg leading-snug">{editingTypeId ? 'Edit Leave Type' : 'Add Leave Type'}</DialogTitle>
+              <DialogDescription className="text-xs leading-relaxed sm:text-sm">Configure the leave type and its allowance.</DialogDescription>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            {editingTypeId && <p className="text-sm text-muted-foreground">
+          <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+            {editingTypeId && <p className="rounded-xl border border-primary/10 bg-primary/5 p-4 text-xs leading-relaxed text-muted-foreground">
               {leaveTypes.find((type) => type.id === editingTypeId)?.subCompanyId === null
                 ? 'This type is shared: its name and default settings change for all agencies. Changing the yearly allowance updates current-year allowances only in the selected agency.'
                 : 'Changing the yearly allowance updates current-year allowances in this agency.'}
               {' '}Leave already used and carried over stays unchanged.
             </p>}
-            <div className="space-y-1.5">
-              <Label>Name *</Label>
+            <div className="space-y-2">
+              <Label htmlFor="leave-type-name">Name *</Label>
               <Input
+                id="leave-type-name"
+                className="h-11 rounded-xl bg-card"
                 value={typeForm.name}
                 onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Annual Leave, Sick Leave"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Days per Year *</Label>
+            <div className="grid grid-cols-1 gap-4 rounded-xl border border-border/70 bg-muted/30 p-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-days">Days per Year *</Label>
                 <Input
+                  id="leave-type-days"
+                  className="h-11 rounded-lg bg-card"
                   type="number"
                   min={0}
                   max={365}
@@ -574,9 +575,11 @@ export default function LeaveAdmin() {
                   }
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Max Carry-Over</Label>
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-carryover">Max Carry-Over</Label>
                 <Input
+                  id="leave-type-carryover"
+                  className="h-11 rounded-lg bg-card"
                   type="number"
                   min={0}
                   max={365}
@@ -588,20 +591,20 @@ export default function LeaveAdmin() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 rounded-xl border px-4 py-3">
               <input
                 type="checkbox"
                 id="paid-check"
                 checked={typeForm.paid}
                 onChange={(e) => setTypeForm((f) => ({ ...f, paid: e.target.checked }))}
-                className="w-4 h-4"
+                className="h-4 w-4 accent-primary"
               />
               <Label htmlFor="paid-check">Paid leave</Label>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTypeDialog(false)}>Cancel</Button>
-            <Button onClick={handleSaveType} disabled={creatingType || !typeForm.name.trim()}>
+          <DialogFooter className="shrink-0 flex-row justify-end gap-2 border-t bg-muted/20 px-5 py-4 sm:space-x-0 sm:px-6">
+            <Button variant="outline" className="h-11 rounded-xl bg-card px-5" onClick={() => setShowTypeDialog(false)}>Cancel</Button>
+            <Button className="h-11 rounded-xl px-5" onClick={handleSaveType} disabled={creatingType || !typeForm.name.trim()}>
               {creatingType && <Loader2 size={14} className="animate-spin mr-1" />}
               Save
             </Button>

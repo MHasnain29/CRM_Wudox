@@ -3401,6 +3401,13 @@ model LeaveRequest {
   endDate     DateTime    @map("end_date")
   days        Float
   session     LeaveSession @default(full_day)
+  hourlyCategory LeaveHourlyCategory? @map("hourly_category")
+  startTime   String?     @map("start_time")
+  endTime     String?     @map("end_time")
+  durationMinutes Int?    @map("duration_minutes")
+  timezone    String?
+  workDayStartTime String? @map("work_day_start_time")
+  workDayEndTime String?   @map("work_day_end_time")
   reason      String?     @db.Text
   status      LeaveStatus @default(pending)
   approverId  String?     @map("approver_id")
@@ -3430,6 +3437,12 @@ enum LeaveSession {
   full_day
   first_half
   second_half
+  hourly
+}
+
+enum LeaveHourlyCategory {
+  time_away
+  late_arrival
 }
 
 enum NoticeType {

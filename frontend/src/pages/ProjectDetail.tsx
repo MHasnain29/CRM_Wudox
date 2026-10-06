@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch, fetchTaskById, mapApiTaskToTask } from '@/lib/api';
-import { formatLeavePeriod, type LeaveSession } from '@/lib/leave';
+import { formatLeavePeriod, type LeaveTimingFields } from '@/lib/leave';
 import LeaveDurationBadge from '@/components/LeaveDurationBadge';
 import { TaskDetailDialog } from '@/components/TaskDetailDialog';
 import type { Task as FullTask } from '@/lib/types';
@@ -69,14 +69,13 @@ interface Project {
   tasks: Task[];
 }
 
-interface LeaveEntry {
+interface LeaveEntry extends LeaveTimingFields {
   id: string;
   user: { firstName: string; lastName: string };
   leaveType: { name: string };
   startDate: string;
   endDate: string;
   days: number;
-  session?: LeaveSession;
 }
 
 interface UserOption {
@@ -518,8 +517,8 @@ export default function ProjectDetail() {
                         {entry.user.firstName} {entry.user.lastName}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {entry.leaveType.name} · {entry.days} day(s)
-                        <LeaveDurationBadge session={entry.session} />
+                        {entry.leaveType.name}{entry.session !== 'hourly' && ` · ${entry.days} day(s)`}
+                        <LeaveDurationBadge session={entry.session} hourlyCategory={entry.hourlyCategory} />
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {formatLeavePeriod(entry)}

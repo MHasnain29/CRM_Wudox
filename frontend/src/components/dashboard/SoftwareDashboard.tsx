@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
 import { useStore } from '@/lib/store';
-import { formatLeavePeriod, onLeaveDataRefresh, useLeaveScopeKey, type LeaveSession } from '@/lib/leave';
+import { formatLeaveDays, formatLeavePeriod, onLeaveDataRefresh, useLeaveScopeKey, type LeaveTimingFields } from '@/lib/leave';
 import { format, isToday, isPast } from 'date-fns';
 import {
   FolderKanban, CheckSquare, CalendarOff, Clock, Users,
@@ -29,14 +29,13 @@ interface Project {
   milestones: { id: string; title: string; dueDate: string; done: boolean }[];
 }
 
-interface LeaveRequest {
+interface LeaveRequest extends LeaveTimingFields {
   id: string;
   user: { id?: string; firstName: string; lastName: string };
   leaveType: { name: string };
   startDate: string;
   endDate: string;
   days: number;
-  session?: LeaveSession;
   status: string;
 }
 
@@ -201,10 +200,10 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {pendingLeave.slice(0, 6).map((req) => (
-                    <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm">
+                    <div key={req.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-3 text-sm">
                       <div>
                         <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
-                        <span className="text-muted-foreground ml-2">· {req.leaveType.name} · {req.days}d</span>
+                        <span className="text-muted-foreground ml-2">· {req.leaveType.name}{req.session !== 'hourly' && ` · ${req.days}d`}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">{formatLeavePeriod(req, 'dd MMM')}</span>
                     </div>
@@ -225,7 +224,7 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {upcomingLeaves.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                       <div>
                         <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                         <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
@@ -248,7 +247,7 @@ export default function SoftwareDashboard() {
                   {Array.from(balanceByType.values()).map(({ name, totalEntitled, totalUsed }) => (
                     <div key={name} className="border rounded p-3">
                       <p className="text-xs font-medium text-muted-foreground">{name}</p>
-                      <p className="text-lg font-bold">{totalUsed} <span className="text-sm font-normal text-muted-foreground">/ {totalEntitled}</span></p>
+                      <p className="text-lg font-bold">{formatLeaveDays(totalUsed)} <span className="text-sm font-normal text-muted-foreground">/ {totalEntitled}</span></p>
                       <p className="text-xs text-muted-foreground">used / entitled</p>
                     </div>
                   ))}
@@ -296,13 +295,13 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {upcomingLeaves.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                       <div>
                         <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                         <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {formatLeavePeriod(r, 'dd MMM')} · {r.days}d
+                        {formatLeavePeriod(r, 'dd MMM')}{r.session !== 'hourly' && ` · ${r.days}d`}
                       </span>
                     </div>
                   ))}
@@ -325,8 +324,8 @@ export default function SoftwareDashboard() {
                       <div key={name} className="flex items-center justify-between border rounded p-2.5 text-sm">
                         <span className="font-medium">{name}</span>
                         <div className="text-xs text-right text-muted-foreground">
-                          <span className="text-foreground font-semibold">{totalUsed}</span> used
-                          <span className="ml-2">{totalEntitled - totalUsed} remaining</span>
+                          <span className="text-foreground font-semibold">{formatLeaveDays(totalUsed)}</span> used
+                          <span className="ml-2">{formatLeaveDays(totalEntitled - totalUsed)} remaining</span>
                         </div>
                       </div>
                     );
@@ -403,8 +402,8 @@ export default function SoftwareDashboard() {
                     return (
                       <div key={b.id} className="border rounded p-3">
                         <p className="text-xs font-medium text-muted-foreground">{b.leaveType.name}</p>
-                        <p className="text-xl font-bold">{available}</p>
-                        <p className="text-xs text-muted-foreground">{b.used} used / {b.entitled} entitled</p>
+                        <p className="text-xl font-bold">{formatLeaveDays(available)}</p>
+                        <p className="text-xs text-muted-foreground">{formatLeaveDays(b.used)} used / {b.entitled} entitled</p>
                       </div>
                     );
                   })}
@@ -487,10 +486,10 @@ export default function SoftwareDashboard() {
             </CardHeader>
             <CardContent className="space-y-2">
               {pendingLeave.slice(0, 5).map((req) => (
-                <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm">
+                <div key={req.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-3 text-sm">
                   <div>
                     <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
-                    <span className="text-muted-foreground ml-2">· {req.leaveType.name} · {req.days} day(s)</span>
+                    <span className="text-muted-foreground ml-2">· {req.leaveType.name}{req.session !== 'hourly' && ` · ${req.days} day(s)`}</span>
                   </div>
                   <span className="text-xs text-muted-foreground">{formatLeavePeriod(req, 'dd MMM')}</span>
                 </div>
@@ -507,7 +506,7 @@ export default function SoftwareDashboard() {
             ) : (
               <div className="space-y-2">
                 {teamLeaveThisWeek.map((r: any) => (
-                  <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                  <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                     <div>
                       <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                       <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
