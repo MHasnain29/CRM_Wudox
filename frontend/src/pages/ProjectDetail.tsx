@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch, fetchTaskById, mapApiTaskToTask } from '@/lib/api';
+import { formatLeavePeriod, type LeaveTimingFields } from '@/lib/leave';
+import LeaveDurationBadge from '@/components/LeaveDurationBadge';
 import { TaskDetailDialog } from '@/components/TaskDetailDialog';
 import type { Task as FullTask } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,7 +69,7 @@ interface Project {
   tasks: Task[];
 }
 
-interface LeaveEntry {
+interface LeaveEntry extends LeaveTimingFields {
   id: string;
   user: { firstName: string; lastName: string };
   leaveType: { name: string };
@@ -514,12 +516,12 @@ export default function ProjectDetail() {
                       <div className="font-medium">
                         {entry.user.firstName} {entry.user.lastName}
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {entry.leaveType.name} · {entry.days} day(s)
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        {entry.leaveType.name}{entry.session !== 'hourly' && ` · ${entry.days} day(s)`}
+                        <LeaveDurationBadge session={entry.session} hourlyCategory={entry.hourlyCategory} />
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {format(new Date(entry.startDate), 'dd MMM')} –{' '}
-                        {format(new Date(entry.endDate), 'dd MMM yyyy')}
+                        {formatLeavePeriod(entry)}
                       </div>
                     </div>
                   ))}

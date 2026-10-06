@@ -33,6 +33,7 @@ import { getFromR2, uploadToR2 } from '../services/r2Storage';
 import { invalidateClientListCache } from '../services/clientListCache';
 import { resolveEmailChipScope, buildEmailChipWhere } from '../services/emailChipScope';
 import { emitIncomingEmailRefresh } from '../services/incomingEmailRefresh';
+import { compareEmailListEntries, emailListPageWindow } from '../services/emailListPagination';
 
 type InboundUploadFile = {
   fieldname: string;
@@ -367,63 +368,10 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
     }
   }
 
-  const [list, total] = await Promise.all([
-    prisma.email.findMany({
-      where,
-      orderBy: { timestamp: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        recipients: { where: { recipientType: 'to' } },
-        fromUser: { select: { id: true, firstName: true, lastName: true, email: true } },
-        forwardedFromUser: { select: { id: true, firstName: true, lastName: true } },
-        sentByUser: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { attachments: true } },
-      },
-    }),
-    prisma.email.count({ where }),
-  ]);
-
-  const unreadCount = await prisma.email.count({
-    where: { ...where, isRead: false },
-  });
-
-  let data = list.map((e) => ({
-    id: e.id,
-    from: {
-      name: e.fromName,
-      email: e.fromEmail,
-      userId: e.fromUserId ?? undefined,
-    },
-    to: e.recipients.filter((r) => r.recipientType === 'to').map((r) => ({
-      name: r.name ?? r.emailAddress,
-      email: r.emailAddress,
-      clientId: r.clientId ?? undefined,
-      contactId: r.contactId ?? undefined,
-    })),
-    subject: e.subject,
-    body: e.body,
-    timestamp: e.timestamp,
-    isRead: e.isRead,
-    folder: e.folder,
-    clientId: e.clientId ?? undefined,
-    leadId: e.leadId ?? undefined,
-    inReplyTo: e.inReplyTo ?? undefined,
-    threadId: e.threadId ?? undefined,
-    subCompanyId: e.subCompanyId,
-    attachmentCount: e._count?.attachments ?? 0,
-    forwardedFromUserId: e.forwardedFromUserId ?? undefined,
-    forwardedFromName: e.forwardedFromUser
-      ? `${e.forwardedFromUser.firstName} ${e.forwardedFromUser.lastName}`.trim()
-      : undefined,
-    sentBy: e.sentByUser
-      ? { id: e.sentByUser.id, name: [e.sentByUser.firstName, e.sentByUser.lastName].filter(Boolean).join(' ') }
-      : undefined,
-  }));
-
   // Backfill compatibility: include PandaDoc "sent" proposals that were sent before
   // we started persisting them into the emails table.
-  if (folder === 'sent' && page === 1 && subCompanyId) {
+  let syntheticItems: Array<{ id: string; timestamp: Date } & Record<string, unknown>> = [];
+  if (folder === 'sent' && subCompanyId) {
     const pandaStatuses = ['document.sent', 'document.viewed', 'document.completed'];
     const ownerFilterIds = ownerIdsList.length > 0
       ? ownerIdsList
@@ -459,6 +407,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
         id: true,
         pandaDocId: true,
         pandaDocUpdatedAt: true,
+        createdAt: true,
         leadId: true,
         selectedContact: { select: { id: true, name: true, email: true } },
         lead: {
@@ -472,29 +421,35 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           },
         },
       },
-      orderBy: { pandaDocUpdatedAt: 'desc' },
+      orderBy: [{ pandaDocUpdatedAt: 'desc' }, { id: 'desc' }],
       take: 200,
     });
 
-    const existingPandaDocLeadIds = new Set(
-      list
-        .filter((e) => {
-          const subject = (e.subject || '').toLowerCase();
-          const body = (e.body || '').toLowerCase();
-          return subject.includes('agreement sent via pandadoc')
-            || body.includes('sent via pandadoc');
-        })
-        .map((e) => e.leadId)
-        .filter(Boolean)
-    );
+    // Check the whole authorized mailbox, not just the requested page. A
+    // persisted PandaDoc email must suppress its compatibility entry on every page.
+    const persistedPandaDocEmails = pandaProposals.length
+      ? await prisma.email.findMany({
+        where: { AND: [
+          where,
+          { leadId: { in: pandaProposals.map((proposal) => proposal.leadId) } },
+          { OR: [
+            { subject: { contains: 'agreement sent via pandadoc', mode: 'insensitive' } },
+            { body: { contains: 'sent via pandadoc', mode: 'insensitive' } },
+          ] },
+        ] },
+        select: { leadId: true },
+        distinct: ['leadId'],
+      })
+      : [];
+    const existingPandaDocLeadIds = new Set(persistedPandaDocEmails.map((email) => email.leadId));
 
-    const syntheticItems = pandaProposals
+    syntheticItems = pandaProposals
       .filter((p) => !existingPandaDocLeadIds.has(p.leadId))
       .map((p) => {
         const ownerName = `${p.lead.owner.firstName ?? ''} ${p.lead.owner.lastName ?? ''}`.trim() || p.lead.owner.email || 'User';
         const contactName = p.selectedContact?.name || p.selectedContact?.email || 'Client contact';
         const contactEmail = p.selectedContact?.email || '';
-        const ts = p.pandaDocUpdatedAt ?? new Date();
+        const ts = p.pandaDocUpdatedAt ?? p.createdAt;
         const pandaDocUrl = `https://app.pandadoc.com/a/#/documents/${p.pandaDocId}`;
         return {
           id: `pandadoc-${p.id}`,
@@ -525,13 +480,67 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
           sentBy: undefined,
         };
       });
-
-    if (syntheticItems.length > 0) {
-      data = [...data, ...syntheticItems]
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, limit);
-    }
   }
+
+  // Subtracting the legacy count from the offset guarantees every omitted
+  // persisted row precedes this merged page, regardless of where legacy rows
+  // sort. The extra rows keep displaced persisted messages available on later pages.
+  const window = emailListPageWindow(page, limit, syntheticItems.length);
+  const [list, persistedTotal, unreadCount] = await Promise.all([
+    prisma.email.findMany({
+      where,
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      skip: window.skip,
+      take: window.take,
+      include: {
+        recipients: { where: { recipientType: 'to' } },
+        fromUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        forwardedFromUser: { select: { id: true, firstName: true, lastName: true } },
+        sentByUser: { select: { id: true, firstName: true, lastName: true } },
+        _count: { select: { attachments: true } },
+      },
+    }),
+    prisma.email.count({ where }),
+    prisma.email.count({ where: { ...where, isRead: false } }),
+  ]);
+  const total = persistedTotal + syntheticItems.length;
+
+  const persistedItems = list.map((e) => ({
+    id: e.id,
+    from: {
+      name: e.fromName,
+      email: e.fromEmail,
+      userId: e.fromUserId ?? undefined,
+    },
+    to: e.recipients.filter((r) => r.recipientType === 'to').map((r) => ({
+      name: r.name ?? r.emailAddress,
+      email: r.emailAddress,
+      clientId: r.clientId ?? undefined,
+      contactId: r.contactId ?? undefined,
+    })),
+    subject: e.subject,
+    body: e.body,
+    timestamp: e.timestamp,
+    isRead: e.isRead,
+    folder: e.folder,
+    clientId: e.clientId ?? undefined,
+    leadId: e.leadId ?? undefined,
+    inReplyTo: e.inReplyTo ?? undefined,
+    threadId: e.threadId ?? undefined,
+    subCompanyId: e.subCompanyId,
+    attachmentCount: e._count?.attachments ?? 0,
+    forwardedFromUserId: e.forwardedFromUserId ?? undefined,
+    forwardedFromName: e.forwardedFromUser
+      ? `${e.forwardedFromUser.firstName} ${e.forwardedFromUser.lastName}`.trim()
+      : undefined,
+    sentBy: e.sentByUser
+      ? { id: e.sentByUser.id, name: [e.sentByUser.firstName, e.sentByUser.lastName].filter(Boolean).join(' ') }
+      : undefined,
+  }));
+
+  const data = [...persistedItems, ...syntheticItems]
+    .sort(compareEmailListEntries)
+    .slice(window.offset, window.offset + limit);
 
   return res.json({
     data,

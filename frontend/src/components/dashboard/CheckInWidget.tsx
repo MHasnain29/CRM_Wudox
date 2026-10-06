@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Clock, LogIn, LogOut } from 'lucide-react';
+import { Clock, LogIn, LogOut, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -19,30 +19,64 @@ function formatMinutes(minutes: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export function CheckInWidget() {
+export function CheckInWidget({ onAttendanceChange }: { onAttendanceChange?: () => void } = {}) {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const statusVersion = useRef(0);
 
-  useEffect(() => {
-    apiFetch<{ data: AttendanceRecord | null }>('/attendance/status').then((r) => {
-      if (r.ok) setRecord(r.data.data ?? null);
-    });
+  const loadStatus = useCallback(async (): Promise<boolean> => {
+    const version = ++statusVersion.current;
+    const isCurrent = () => mounted.current && statusVersion.current === version;
+    setStatusLoading(true);
+    setStatusError(null);
+    try {
+      const res = await apiFetch<{ data: AttendanceRecord | null }>('/attendance/status');
+      if (!isCurrent()) return false;
+      if (res.ok === true) {
+        setRecord(res.data.data ?? null);
+        return true;
+      }
+      setStatusError(res.error ?? 'Unable to load today’s attendance. Please retry.');
+    } catch {
+      if (isCurrent()) setStatusError('Unable to load today’s attendance. Please retry.');
+    } finally {
+      if (isCurrent()) setStatusLoading(false);
+    }
+    return false;
   }, []);
 
-  async function handleCheckin() {
-    setLoading(true);
-    const res = await apiFetch<{ data: AttendanceRecord }>('/attendance/checkin', { method: 'POST' }) as any;
-    setLoading(false);
-    if (res.ok) { setRecord(res.data.data); toast.success('Checked in'); }
-    else toast.error(res.data?.error ?? 'Check-in failed');
-  }
+  useEffect(() => {
+    mounted.current = true;
+    void loadStatus();
+    return () => {
+      mounted.current = false;
+      statusVersion.current += 1;
+    };
+  }, [loadStatus]);
 
-  async function handleCheckout() {
+  async function changeAttendance(action: 'checkin' | 'checkout') {
+    if (loading || statusLoading || statusError) return;
     setLoading(true);
-    const res = await apiFetch<{ data: AttendanceRecord }>('/attendance/checkout', { method: 'POST' }) as any;
-    setLoading(false);
-    if (res.ok) { setRecord(res.data.data); toast.success('Checked out'); }
-    else toast.error(res.data?.error ?? 'Check-out failed');
+    const errorMessage = action === 'checkin' ? 'Check-in failed. Please retry.' : 'Check-out failed. Please retry.';
+    try {
+      const res = await apiFetch<{ data: AttendanceRecord }>(`/attendance/${action}`, { method: 'POST' });
+      if (!mounted.current) return;
+      if (res.ok === true) {
+        setRecord(res.data.data);
+        toast.success(action === 'checkin' ? 'Checked in' : 'Checked out');
+        onAttendanceChange?.();
+      } else {
+        toast.error(res.error ?? errorMessage);
+        if (res.status === 409 && await loadStatus()) onAttendanceChange?.();
+      }
+    } catch {
+      if (mounted.current) toast.error(errorMessage);
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
   }
 
   const checkedIn = !!record;
@@ -56,16 +90,18 @@ export function CheckInWidget() {
             <Clock className={`h-4 w-4 ${checkedOut ? 'text-green-600' : checkedIn ? 'text-orange-500' : 'text-blue-500'}`} />
           </div>
           <div>
-            {!checkedIn && <p className="text-sm font-medium">Not checked in yet</p>}
-            {checkedIn && !checkedOut && (
+            {statusLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading today’s attendance…</p>}
+            {!statusLoading && statusError && <p role="alert" className="text-sm text-destructive">{statusError}</p>}
+            {!statusLoading && !statusError && !checkedIn && <p className="text-sm font-medium">Not checked in yet</p>}
+            {!statusLoading && !statusError && checkedIn && !checkedOut && (
               <>
                 <p className="text-sm font-medium">Checked in at {format(new Date(record!.checkInAt), 'h:mm a')}</p>
                 <p className="text-xs text-muted-foreground">Remember to check out when you're done</p>
               </>
             )}
-            {checkedOut && (
+            {!statusLoading && !statusError && checkedOut && (
               <>
-                <p className="text-sm font-medium text-green-700">Done for today — {record!.totalMinutes ? formatMinutes(record!.totalMinutes) : '—'} logged</p>
+                <p className="text-sm font-medium text-green-700">Done for today — {record!.totalMinutes != null ? formatMinutes(record!.totalMinutes) : '—'} logged</p>
                 <p className="text-xs text-muted-foreground">
                   {format(new Date(record!.checkInAt), 'h:mm a')} → {format(new Date(record!.checkOutAt!), 'h:mm a')}
                 </p>
@@ -73,13 +109,14 @@ export function CheckInWidget() {
             )}
           </div>
         </div>
-        {!checkedIn && (
-          <Button size="sm" onClick={handleCheckin} disabled={loading} className="shrink-0">
+        {!statusLoading && statusError && <Button size="sm" variant="outline" onClick={() => void loadStatus()} disabled={loading} className="shrink-0">Retry</Button>}
+        {!statusLoading && !statusError && !checkedIn && (
+          <Button size="sm" onClick={() => void changeAttendance('checkin')} disabled={loading} className="shrink-0">
             <LogIn className="h-3.5 w-3.5 mr-1.5" /> Check In
           </Button>
         )}
-        {checkedIn && !checkedOut && (
-          <Button size="sm" variant="outline" onClick={handleCheckout} disabled={loading} className="shrink-0">
+        {!statusLoading && !statusError && checkedIn && !checkedOut && (
+          <Button size="sm" variant="outline" onClick={() => void changeAttendance('checkout')} disabled={loading} className="shrink-0">
             <LogOut className="h-3.5 w-3.5 mr-1.5" /> Check Out
           </Button>
         )}

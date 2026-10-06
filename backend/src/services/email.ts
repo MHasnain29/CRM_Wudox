@@ -741,7 +741,8 @@ export interface SendClientEmailOptions {
   crmEmailId?: string;
   /**
    * Ask SendGrid for open/click events (tracking pixel, rewritten links) and mark the
-   * crmEmailId message as delivery-tracked so reports count its results.
+   * crmEmailId message as delivery-tracked so reports count its results. Enabled by
+   * default when crmEmailId is present; false preserves an explicit opt-out.
    */
   trackEngagement?: boolean;
   /** Optional file attachments (base64-encoded content) */
@@ -763,7 +764,7 @@ export interface SendClientEmailOptions {
 export async function sendClientEmail(options: SendClientEmailOptions): Promise<boolean> {
   const { to, cc, from, replyTo, subject, text, html, attachments, subCompanyId, requestedSendAt, dedupeKey } = options;
   const recipientEmails = [...to, ...(cc ?? [])].map((r) => r.email);
-  const tracked = !!options.crmEmailId && !!options.trackEngagement;
+  const tracked = !!options.crmEmailId && options.trackEngagement !== false;
   const recordOutcome = (status: 'queued' | 'accepted' | 'failed', at?: Date) => options.crmEmailId
     ? recordEmailSendOutcomeBestEffort({ emailId: options.crmEmailId, recipientEmails, status, ...(at ? { at } : {}), ...(tracked && status !== 'failed' ? { deliveryTracked: true } : {}) })
     : Promise.resolve();

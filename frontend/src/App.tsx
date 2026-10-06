@@ -152,7 +152,7 @@ const App = () => (
               <Route path="/jobs" element={<PermissionRoute permission="jobs:read"><Jobs /></PermissionRoute>} />
               <Route path="/projects" element={<PermissionRoute permission="projects:read"><Projects /></PermissionRoute>} />
               <Route path="/projects/:id" element={<PermissionRoute permission="projects:read"><ProjectDetail /></PermissionRoute>} />
-              <Route path="/leave" element={<PermissionRoute permission="leave:read"><Leave /></PermissionRoute>} />
+              <Route path="/leave" element={<Leave />} />
               <Route path="/leave/admin" element={<PermissionRoute permission="leave:approve"><LeaveAdmin /></PermissionRoute>} />
               <Route path="/attendance" element={<Attendance />} />
               <Route path="/time-tracking" element={<TimeTracking />} />

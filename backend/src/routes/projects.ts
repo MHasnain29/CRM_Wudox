@@ -5,7 +5,7 @@
  *        PM/TL/Scrum see all projects in their subCompany where they have membership.
  *        CTO/Director/HR/Finance see all projects in subCompany.
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ProjectStatus, ProjectMemberRole, LeaveStatus } from '@prisma/client';
 import prisma from '../config/database';
@@ -13,6 +13,7 @@ import { authenticate } from '../middleware/auth';
 import { actAsMiddleware } from '../middleware/actAs';
 import { requirePermission } from '../middleware/requirePermission';
 import { resolveAgencyScope, resolveListAgencyScope } from '../config/agencyScope';
+import { getLeaveAccess, requireLeaveOwnerAccess, LeaveAccessError } from '../services/leaveAccess';
 
 export const projectsRouter = Router();
 projectsRouter.use(authenticate);
@@ -344,28 +345,42 @@ projectsRouter.delete('/:id/milestones/:mId', requirePermission('projects:write'
 
 // ── GET /projects/:id/leave-calendar ────────────────────────────────────────
 
-projectsRouter.get('/:id/leave-calendar', async (req: Request, res: Response) => {
+projectsRouter.get('/:id/leave-calendar', async (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const project = await prisma.project.findUnique({
-    where: { id: req.params.id },
-    include: { members: { select: { userId: true } } },
-  });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  try {
+    const access = await getLeaveAccess(req);
+    const project = await prisma.project.findUnique({
+      where: { id: req.params.id },
+      include: { members: { select: { userId: true } } },
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    requireLeaveOwnerAccess(access, project.ownerId, project.subCompanyId);
+    if (!hasBroadAccess(req.access?.roleKey ?? req.user.role)
+      && !project.members.some((member) => member.userId === access.userId)) {
+      return res.status(403).json({ error: 'Project membership required' });
+    }
 
-  const memberIds = project.members.map((m) => m.userId);
+    const memberIds = project.members.map((m) => m.userId);
 
-  const leaves = await prisma.leaveRequest.findMany({
-    where: {
-      userId: { in: memberIds },
-      status: LeaveStatus.approved,
-    },
-    include: {
-      user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
-      leaveType: { select: { id: true, name: true } },
-    },
-    orderBy: { startDate: 'asc' },
-  });
+    const leaves = await prisma.leaveRequest.findMany({
+      where: {
+        userId: { in: memberIds },
+        status: LeaveStatus.approved,
+        user: access.canAccessAgencylessOwners
+          ? { OR: [{ subCompanyId: { in: access.agencyIds } }, { subCompanyId: null }] }
+          : { subCompanyId: { in: access.agencyIds } },
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        leaveType: { select: { id: true, name: true } },
+      },
+      orderBy: { startDate: 'asc' },
+    });
 
-  return res.json({ data: leaves });
+    return res.json({ data: leaves });
+  } catch (error) {
+    if (error instanceof LeaveAccessError) return res.status(error.status).json({ error: error.message });
+    return next(error);
+  }
 });

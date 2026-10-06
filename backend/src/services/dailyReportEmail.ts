@@ -100,10 +100,10 @@ function timeLine(person: ReportPerson): Line {
 function personLines(person: ReportPerson): Line[] {
   if (person.profile === 'software') return [timeLine(person), sectionLine(person, HUBSTAFF_TASKS)].filter((line): line is Line => !!line);
   const lines = CRM_SECTIONS.map(section => sectionLine(person, section)).filter((line): line is Line => !!line);
-  // Delivery results only cover emails sent after tracking started (deploy day).
+  // Missing tracking can mean legacy mail or an interrupted evidence write.
   const untracked = metric(person, 'emailsUntracked');
   const email = lines.find(line => line.name === 'Email');
-  if (email && untracked) email.groups.push(`${plural(untracked, 'email')} sent before delivery tracking started`);
+  if (email && untracked) email.groups.push(`${plural(untracked, 'email')} without confirmed engagement tracking; counts include verified events only`);
   return lines;
 }
 
@@ -184,8 +184,15 @@ function summaryTiles(report: DailyReportPayload): Tile[] {
     ...tile('Tasks done', tasks('Completed'), count(tasks('Worked'), 'worked on'), tasksMissing),
     ...tile('Tasks open', tasks('Open'), alert(tasks('Overdue'), 'overdue')),
   ];
-  // Delivery rates use only emails sent with tracking, from people whose results are known.
-  const measured = crm.filter(person => typeof metric(person, 'emailsDelivered') === 'number');
+  // Partial positive results can coexist with unknown outcomes. Keep these counts
+  // in employee rows, but only compute rates when every tracked recipient settled.
+  const measured = crm.filter(person => {
+    if (metric(person, 'emailsUntracked')) return false;
+    const values = ['emailsDelivered', 'emailsBounced', 'emailsOpened', 'emailsClicked'].map(key => metric(person, key));
+    const tracked = metric(person, 'emailsTracked') ?? metric(person, 'personalEmails');
+    return values.every(value => typeof value === 'number') && typeof tracked === 'number'
+      && values[0]! + values[1]! === tracked;
+  });
   const tracked = measured.reduce((n, person) => n + (metric(person, 'emailsTracked') ?? metric(person, 'personalEmails') ?? 0), 0);
   const ofTracked = (key: string, word: string) => rate(measured.reduce((n, person) => n + total(person, [key]), 0), tracked, word);
   const bulkSent = sum(crm, 'campaignSent'), calls = sum(crm, 'calls'), talk = sum(crm, 'callTalkSeconds');
@@ -232,8 +239,8 @@ function lineHtml(line: Line) {
 const DEPARTMENTS: Record<string, string> = { software: 'Software / IT', marketing_sales: 'Marketing / Sales', recruitment: 'Recruitment', general: 'Other teams' };
 const FOOTNOTE = 'Gray = nothing recorded. Red = needs attention (bounced or overdue). — = not available. Sent counts emails accepted for sending; replies are also counted in received. Delivered, bounced, opened and clicked count each person an email was sent to, as reported by SendGrid when this report was saved. Opens are estimates: some mail apps load or block images automatically. Open and overdue show the status when this report was saved.';
 
-export function renderDailyReport(report: DailyReportPayload, url: string) {
-  const personUrl = (person: ReportPerson) => `${url.split('#')[0]}#employee-${encodeURIComponent(person.userId)}`;
+/** Shared calculations keep the saved report screen and delivered email consistent. */
+function prepareDailyReport(report: DailyReportPayload) {
   const { longDate, window, fullDay } = reportWindow(report);
   const notice = coverageNotice(report);
   const tiles = summaryTiles(report);
@@ -242,8 +249,61 @@ export function renderDailyReport(report: DailyReportPayload, url: string) {
   const tracked = report.summary.trackedSeconds === null ? '' : ` · ${duration(report.summary.trackedSeconds)} tracked`;
   const headline = `${plural(report.summary.people, 'person', 'people')}${tracked} · ${report.timezone}`;
   const groups = [...new Set([...report.profiles, ...report.people.map(person => person.profile)])]
-    .map(profile => ({ label: DEPARTMENTS[profile] ?? profile, views: views.filter(view => view.person.profile === profile) }))
+    .map(profile => ({ key: profile, label: DEPARTMENTS[profile] ?? profile, views: views.filter(view => view.person.profile === profile) }))
     .filter(group => group.views.length);
+  return { longDate, window, fullDay, notice, tiles, attention, headline, groups };
+}
+
+export interface DailyReportPresentation {
+  longDate: string;
+  fullDay: boolean;
+  window: string;
+  headline: string;
+  notice: string;
+  tiles: Tile[];
+  attention: Attention[];
+  groups: {
+    key: string;
+    label: string;
+    people: {
+      userId: string;
+      initials: string;
+      roleLabel: string;
+      empty: boolean;
+      status: PersonView['status'];
+      trackedLabel: string | null;
+      lines: Line[];
+    }[];
+  }[];
+  footnote: string;
+}
+
+/** Derive display-only values from a saved payload; never change the snapshot. */
+export function buildDailyReportPresentation(report: DailyReportPayload): DailyReportPresentation {
+  const { groups, ...presentation } = prepareDailyReport(report);
+  return {
+    ...presentation,
+    groups: groups.map(({ key, label, views }) => ({
+      key,
+      label,
+      people: views.map(({ person, empty, status, lines }) => ({
+        userId: person.userId,
+        initials: initials(person.name),
+        roleLabel: formatRoleLabel(person.role),
+        empty,
+        status,
+        trackedLabel: person.time.trackedSeconds === null ? null
+          : `${duration(person.time.trackedSeconds)} tracked${person.time.status === 'complete' ? '' : ` (${person.time.status})`}`,
+        lines,
+      })),
+    })),
+    footnote: FOOTNOTE,
+  };
+}
+
+export function renderDailyReport(report: DailyReportPayload, url: string) {
+  const personUrl = (person: ReportPerson) => `${url.split('#')[0]}#employee-${encodeURIComponent(person.userId)}`;
+  const { longDate, window, notice, tiles, attention, headline, groups } = prepareDailyReport(report);
 
   const personCard = ({ person, empty, status, lines }: PersonView) => {
     const tag = status ? `<span style="display:inline-block;font-size:10.5px;font-weight:bold;border-radius:99px;padding:2px 8px;background:${TAG[status.tone][0]};color:${TAG[status.tone][1]}">${escape(status.label)}</span>` : '';

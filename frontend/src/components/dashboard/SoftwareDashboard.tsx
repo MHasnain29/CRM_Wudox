@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
 import { useStore } from '@/lib/store';
+import { formatLeaveDays, formatLeavePeriod, onLeaveDataRefresh, useLeaveScopeKey, type LeaveTimingFields } from '@/lib/leave';
 import { format, isToday, isPast } from 'date-fns';
 import {
   FolderKanban, CheckSquare, CalendarOff, Clock, Users,
@@ -19,8 +20,6 @@ const IC_ROLES = new Set([
   'business_analyst', 'devops_engineer',
 ]);
 
-const APPROVER_ROLES = new Set(['hr', 'team_lead', 'project_manager', 'cto']);
-
 interface Project {
   id: string;
   name: string;
@@ -30,9 +29,9 @@ interface Project {
   milestones: { id: string; title: string; dueDate: string; done: boolean }[];
 }
 
-interface LeaveRequest {
+interface LeaveRequest extends LeaveTimingFields {
   id: string;
-  user: { firstName: string; lastName: string };
+  user: { id?: string; firstName: string; lastName: string };
   leaveType: { name: string };
   startDate: string;
   endDate: string;
@@ -75,6 +74,8 @@ export default function SoftwareDashboard() {
   const { tasks } = useStore();
   const navigate = useNavigate();
   const role = user?.role ?? '';
+  const canApproveLeave = useAuthStore((state) => state.permissions.includes('leave:approve'));
+  const leaveScopeKey = useLeaveScopeKey();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [pendingLeave, setPendingLeave] = useState<LeaveRequest[]>([]);
@@ -83,44 +84,38 @@ export default function SoftwareDashboard() {
   const [upcomingLeaves, setUpcomingLeaves] = useState<LeaveRequest[]>([]);
   const [teamLeaveThisWeek, setTeamLeaveThisWeek] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedLeaveScope, setLoadedLeaveScope] = useState('');
 
   useEffect(() => {
-    async function load() {
+    let active = true;
+    let version = 0;
+    setLoading(true);
+    setProjects([]);
+    setPendingLeave([]);
+    setMyBalances([]);
+    setAllBalances([]);
+    setUpcomingLeaves([]);
+    setTeamLeaveThisWeek([]);
+    async function load(includeProjects = false) {
+      const requestVersion = ++version;
       try {
         const now = new Date();
-        const weekEnd = new Date(now.getTime() + 7 * 86400000);
-
-        const fetches: Promise<any>[] = [
-          apiFetch('/projects').catch(() => null),
-          APPROVER_ROLES.has(role)
-            ? apiFetch('/leave/requests?status=pending').catch(() => null)
-            : apiFetch('/leave/balances/me').catch(() => null),
-        ];
-
-        // HR: need all balances + today's calendar + team leave calendar
-        if (role === 'hr') {
-          fetches.push(apiFetch('/leave/balances').catch(() => null));
-          fetches.push(apiFetch(`/leave/calendar?from=${now.toISOString()}&to=${weekEnd.toISOString()}`).catch(() => null));
-        }
-
-        // Finance: all balances + upcoming 30-day calendar
-        if (role === 'finance') {
-          const in30 = new Date(now.getTime() + 30 * 86400000).toISOString();
-          fetches.push(apiFetch('/leave/balances').catch(() => null));
-          fetches.push(apiFetch(`/leave/calendar?from=${now.toISOString()}&to=${in30}`).catch(() => null));
-        }
-
-        // Management: team leave this week
-        if (!IC_ROLES.has(role) && role !== 'hr' && role !== 'finance') {
-          fetches.push(apiFetch(`/leave/calendar?from=${now.toISOString()}&to=${weekEnd.toISOString()}`).catch(() => null));
-        }
-
-        const [projRes, leaveRes, balRes, calRes] = await Promise.all(fetches);
-
+        const calendarEnd = new Date(now.getTime() + (role === 'finance' ? 30 : 7) * 86400000);
+        const needsBalances = role === 'hr' || role === 'finance';
+        const calendarPath = `/leave/calendar?from=${format(now, 'yyyy-MM-dd')}&to=${format(calendarEnd, 'yyyy-MM-dd')}`;
+        const request = (path: string) => apiFetch<any>(path).catch(() => null);
+        const [projRes, leaveRes, balRes, calRes] = await Promise.all([
+          includeProjects ? request('/projects') : Promise.resolve(null),
+          request(canApproveLeave ? '/leave/requests?status=pending' : '/leave/balances/me'),
+          needsBalances ? request('/leave/balances') : Promise.resolve(null),
+          !IC_ROLES.has(role) ? request(calendarPath) : Promise.resolve(null),
+        ]);
+        if (!active) return;
         if (projRes?.data) setProjects((projRes.data as any).data ?? projRes.data);
+        if (version !== requestVersion) return;
         if (leaveRes?.data) {
           const leaveData = (leaveRes.data as any).data ?? leaveRes.data;
-          if (APPROVER_ROLES.has(role)) {
+          if (canApproveLeave) {
             setPendingLeave(Array.isArray(leaveData) ? leaveData : []);
           } else {
             setMyBalances(Array.isArray(leaveData) ? leaveData : []);
@@ -136,11 +131,16 @@ export default function SoftwareDashboard() {
           }
         }
       } finally {
-        setLoading(false);
+        if (active && version === requestVersion) {
+          setLoadedLeaveScope(leaveScopeKey);
+          setLoading(false);
+        }
       }
     }
-    load();
-  }, [role]);
+    void load(true);
+    const unsubscribe = onLeaveDataRefresh(() => { void load(); });
+    return () => { active = false; unsubscribe(); };
+  }, [role, canApproveLeave, leaveScopeKey]);
 
   const myTasks = tasks.filter((t) => t.status !== 'done');
   const overdueTasks = myTasks.filter(
@@ -151,7 +151,7 @@ export default function SoftwareDashboard() {
   );
   const activeProjects = projects.filter((p) => p.status === 'active');
 
-  if (loading) {
+  if (loading || loadedLeaveScope !== leaveScopeKey) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
         Loading dashboard…
@@ -162,7 +162,7 @@ export default function SoftwareDashboard() {
   // ── HR Dashboard ───────────────────────────────────────────────────────────
   if (role === 'hr') {
     const onLeaveToday = upcomingLeaves.filter(r =>
-      new Date(r.startDate) <= new Date() && new Date(r.endDate) >= new Date()
+      r.startDate.slice(0, 10) <= format(new Date(), 'yyyy-MM-dd') && r.endDate.slice(0, 10) >= format(new Date(), 'yyyy-MM-dd')
     );
 
     // Balance summary by leave type across all users
@@ -183,8 +183,8 @@ export default function SoftwareDashboard() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<Inbox className="text-orange-500" />} label="Pending Approvals" value={pendingLeave.length} />
-          <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={onLeaveToday.length} />
-          <StatCard icon={<Users className="text-purple-500" />} label="On Leave This Week" value={upcomingLeaves.length} />
+          <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={new Set(onLeaveToday.map((request) => request.user.id ?? request.id)).size} />
+          <StatCard icon={<Users className="text-purple-500" />} label="On Leave This Week" value={new Set(upcomingLeaves.map((request) => request.user.id ?? request.id)).size} />
           <StatCard icon={<CheckCircle2 className="text-green-500" />} label="Leave Types" value={balanceByType.size} />
         </div>
 
@@ -192,7 +192,7 @@ export default function SoftwareDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Pending Leave Requests</CardTitle>
-              <Button size="sm" variant="outline" onClick={() => navigate('/leave/admin')}>Manage All</Button>
+              {canApproveLeave && <Button size="sm" variant="outline" onClick={() => navigate('/leave/admin')}>Manage All</Button>}
             </CardHeader>
             <CardContent>
               {pendingLeave.length === 0 ? (
@@ -200,12 +200,12 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {pendingLeave.slice(0, 6).map((req) => (
-                    <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm">
+                    <div key={req.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-3 text-sm">
                       <div>
                         <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
-                        <span className="text-muted-foreground ml-2">· {req.leaveType.name} · {req.days}d</span>
+                        <span className="text-muted-foreground ml-2">· {req.leaveType.name}{req.session !== 'hourly' && ` · ${req.days}d`}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">{format(new Date(req.startDate), 'dd MMM')} – {format(new Date(req.endDate), 'dd MMM')}</span>
+                      <span className="text-xs text-muted-foreground">{formatLeavePeriod(req, 'dd MMM')}</span>
                     </div>
                   ))}
                   {pendingLeave.length > 6 && (
@@ -224,13 +224,13 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {upcomingLeaves.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                       <div>
                         <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                         <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {format(new Date(r.startDate), 'dd MMM')} – {format(new Date(r.endDate), 'dd MMM')}
+                        {formatLeavePeriod(r, 'dd MMM')}
                       </span>
                     </div>
                   ))}
@@ -247,7 +247,7 @@ export default function SoftwareDashboard() {
                   {Array.from(balanceByType.values()).map(({ name, totalEntitled, totalUsed }) => (
                     <div key={name} className="border rounded p-3">
                       <p className="text-xs font-medium text-muted-foreground">{name}</p>
-                      <p className="text-lg font-bold">{totalUsed} <span className="text-sm font-normal text-muted-foreground">/ {totalEntitled}</span></p>
+                      <p className="text-lg font-bold">{formatLeaveDays(totalUsed)} <span className="text-sm font-normal text-muted-foreground">/ {totalEntitled}</span></p>
                       <p className="text-xs text-muted-foreground">used / entitled</p>
                     </div>
                   ))}
@@ -263,7 +263,7 @@ export default function SoftwareDashboard() {
   // ── Finance Dashboard ──────────────────────────────────────────────────────
   if (role === 'finance') {
     const onLeaveToday = upcomingLeaves.filter(r =>
-      new Date(r.startDate) <= new Date() && new Date(r.endDate) >= new Date()
+      r.startDate.slice(0, 10) <= format(new Date(), 'yyyy-MM-dd') && r.endDate.slice(0, 10) >= format(new Date(), 'yyyy-MM-dd')
     );
     // Monthly summary: group balances by user
     const userMap = new Map<string, { name: string; rows: LeaveBalance[] }>();
@@ -281,7 +281,7 @@ export default function SoftwareDashboard() {
         <CheckInWidget />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={onLeaveToday.length} />
+          <StatCard icon={<CalendarOff className="text-blue-500" />} label="On Leave Today" value={new Set(onLeaveToday.map((request) => request.user.id ?? request.id)).size} />
           <StatCard icon={<Users className="text-purple-500" />} label="Staff Tracked" value={userMap.size} />
           <StatCard icon={<TrendingUp className="text-green-500" />} label="Leaves Next 30 Days" value={upcomingLeaves.length} />
         </div>
@@ -295,13 +295,13 @@ export default function SoftwareDashboard() {
               ) : (
                 <div className="space-y-2">
                   {upcomingLeaves.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                       <div>
                         <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                         <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {format(new Date(r.startDate), 'dd MMM')} – {format(new Date(r.endDate), 'dd MMM')} · {r.days}d
+                        {formatLeavePeriod(r, 'dd MMM')}{r.session !== 'hourly' && ` · ${r.days}d`}
                       </span>
                     </div>
                   ))}
@@ -324,8 +324,8 @@ export default function SoftwareDashboard() {
                       <div key={name} className="flex items-center justify-between border rounded p-2.5 text-sm">
                         <span className="font-medium">{name}</span>
                         <div className="text-xs text-right text-muted-foreground">
-                          <span className="text-foreground font-semibold">{totalUsed}</span> used
-                          <span className="ml-2">{totalEntitled - totalUsed} remaining</span>
+                          <span className="text-foreground font-semibold">{formatLeaveDays(totalUsed)}</span> used
+                          <span className="ml-2">{formatLeaveDays(totalEntitled - totalUsed)} remaining</span>
                         </div>
                       </div>
                     );
@@ -394,7 +394,7 @@ export default function SoftwareDashboard() {
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><CalendarOff size={16} /> My Leave Balances</CardTitle></CardHeader>
             <CardContent>
               {myBalances.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No leave types set up yet. Contact HR.</p>
+                <p className="text-sm text-muted-foreground">No leave types set up yet. Contact your Super Admin.</p>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {myBalances.map((b) => {
@@ -402,8 +402,8 @@ export default function SoftwareDashboard() {
                     return (
                       <div key={b.id} className="border rounded p-3">
                         <p className="text-xs font-medium text-muted-foreground">{b.leaveType.name}</p>
-                        <p className="text-xl font-bold">{available}</p>
-                        <p className="text-xs text-muted-foreground">{b.used} used / {b.entitled} entitled</p>
+                        <p className="text-xl font-bold">{formatLeaveDays(available)}</p>
+                        <p className="text-xs text-muted-foreground">{formatLeaveDays(b.used)} used / {b.entitled} entitled</p>
                       </div>
                     );
                   })}
@@ -482,16 +482,16 @@ export default function SoftwareDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2"><CalendarOff size={16} /> Pending Leave Approvals</CardTitle>
-              <Button size="sm" variant="outline" onClick={() => navigate('/leave/admin')}>Manage All</Button>
+              {canApproveLeave && <Button size="sm" variant="outline" onClick={() => navigate('/leave/admin')}>Manage All</Button>}
             </CardHeader>
             <CardContent className="space-y-2">
               {pendingLeave.slice(0, 5).map((req) => (
-                <div key={req.id} className="flex items-center justify-between border rounded p-3 text-sm">
+                <div key={req.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-3 text-sm">
                   <div>
                     <span className="font-medium">{req.user.firstName} {req.user.lastName}</span>
-                    <span className="text-muted-foreground ml-2">· {req.leaveType.name} · {req.days} day(s)</span>
+                    <span className="text-muted-foreground ml-2">· {req.leaveType.name}{req.session !== 'hourly' && ` · ${req.days} day(s)`}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{format(new Date(req.startDate), 'dd MMM')} – {format(new Date(req.endDate), 'dd MMM')}</span>
+                  <span className="text-xs text-muted-foreground">{formatLeavePeriod(req, 'dd MMM')}</span>
                 </div>
               ))}
             </CardContent>
@@ -506,13 +506,13 @@ export default function SoftwareDashboard() {
             ) : (
               <div className="space-y-2">
                 {teamLeaveThisWeek.map((r: any) => (
-                  <div key={r.id} className="flex items-center justify-between border rounded p-2.5 text-sm">
+                  <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border rounded p-2.5 text-sm">
                     <div>
                       <span className="font-medium">{r.user?.firstName} {r.user?.lastName}</span>
                       <span className="text-muted-foreground ml-2 text-xs">· {r.leaveType?.name}</span>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {format(new Date(r.startDate), 'dd MMM')} – {format(new Date(r.endDate), 'dd MMM')}
+                      {formatLeavePeriod(r, 'dd MMM')}
                     </span>
                   </div>
                 ))}

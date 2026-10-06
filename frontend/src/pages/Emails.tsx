@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Mail, Send, Inbox, FileText, Reply, Plus, Search, X, PenLine, Trash2, Star, Check, Upload, Eye, Pencil, ArrowLeft, TrendingUp, Paperclip, UserCheck, LayoutTemplate } from 'lucide-react';
-import { useClientPagination, SectionPaginationBar } from '@/components/SectionPagination';
 import { ForwardedChip } from '@/components/offboarding/ForwardedChip';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { EmailMailboxScrollArea } from '@/components/email/EmailMailboxScrollArea';
 import { Separator } from '@/components/ui/separator';
 import { EmailComposeDialog } from '@/components/EmailComposeDialog';
 import { CustomEmailTemplatesSheet } from '@/components/email/CustomEmailTemplatesSheet';
@@ -194,7 +194,8 @@ function AgencyEmailsSection({
 }) {
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
-  const { emails, unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
+  const { emails, totalCount, hasNextPage, isFetching, isFetchingNextPage, nextPageError, loadNextPage,
+    unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
     selectedEmail, setSelectedEmail, loadingDetail, selectEmail: handleSelectEmail } = useEmailMailbox(
       { ...scope, agencyIds: [agency.id] }, scopeKey, currentFolder,
     );
@@ -227,17 +228,6 @@ function AgencyEmailsSection({
       (e.body || '').toLowerCase().replace(/<[^>]*>/g, '').includes(searchQuery.toLowerCase())
   );
 
-  const {
-    pageRows,
-    startIndex,
-    total,
-    totalPages,
-    page,
-    setPage,
-    pageSize,
-    showPagination,
-  } = useClientPagination(filteredEmails, [agency.id, currentFolder, searchQuery]);
-
   const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
@@ -247,7 +237,7 @@ function AgencyEmailsSection({
           <div>
             <h3 className="font-semibold text-base">{agency.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {emails.length} in {currentFolder}
+              {totalCount} in {currentFolder}
               {unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
             </p>
           </div>
@@ -289,7 +279,17 @@ function AgencyEmailsSection({
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value={currentFolder} className="mt-3">
-                  <ScrollArea className="h-[calc(90vh-240px)]">
+                  <EmailMailboxScrollArea
+                    className="h-[calc(90vh-240px)]"
+                    viewKey={JSON.stringify([scopeKey, agency.id, currentFolder])}
+                    loadedCount={emails.length}
+                    totalCount={totalCount}
+                    hasNextPage={hasNextPage}
+                    isFetching={isFetching}
+                    isFetchingNextPage={isFetchingNextPage}
+                    nextPageError={nextPageError}
+                    loadNextPage={loadNextPage}
+                  >
                     <div className="space-y-2 pr-2">
                       {error ? (
                         <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
@@ -298,9 +298,9 @@ function AgencyEmailsSection({
                       ) : filteredEmails.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
                           <Mail className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No emails in {currentFolder}</p>
+                          <p className="text-sm">{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
                         </div>
-                      ) : pageRows.map((email) => {
+                      ) : filteredEmails.map((email) => {
                         const isSelected = selectedEmail?.id === email.id;
                         return (
                           <Card
@@ -360,19 +360,8 @@ function AgencyEmailsSection({
                           </Card>
                         );
                       })}
-                      {showPagination && (
-                        <SectionPaginationBar
-                          total={total}
-                          startIndex={startIndex}
-                          pageLen={pageRows.length}
-                          totalPages={totalPages}
-                          page={page}
-                          onPageChange={setPage}
-                          pageSize={pageSize}
-                        />
-                      )}
                     </div>
-                  </ScrollArea>
+                  </EmailMailboxScrollArea>
                 </TabsContent>
               </Tabs>
             </div>
@@ -759,14 +748,13 @@ function AllAgenciesEmailsSection({
 // ─── Combined All-Team email view (manager "All Team" view) ─────────────────
 // Inbox / sent / drafts all honor ownerIds for elevated + managers (backend).
 function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[]; scope: EmailMailboxScope; scopeKey: string }) {
-  const PAGE_SIZE = 10;
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
-  const { emails, unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
+  const { emails, totalCount, hasNextPage, isFetching, isFetchingNextPage, nextPageError, loadNextPage,
+    unreadCount, isLoading, error, refetch, searchQuery, setSearchQuery,
     selectedEmail, setSelectedEmail, loadingDetail, selectEmail: handleSelectEmail } = useEmailMailbox(scope, scopeKey, currentFolder);
   const threadMessages = useEmailThread(selectedEmail);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
-  const [page, setPage] = useState(1);
 
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
@@ -797,15 +785,6 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
       (e.body || '').toLowerCase().replace(/<[^>]*>/g, '').includes(searchQuery.toLowerCase())
   );
 
-  useEffect(() => {
-    setPage(1);
-  }, [ownerKey, scopeKey, currentFolder, searchQuery]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredEmails.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const startIndex = (safePage - 1) * PAGE_SIZE;
-  const pageRows = filteredEmails.slice(startIndex, startIndex + PAGE_SIZE);
-
   const bodyPreview = (body: string) => emailBodyPlainPreview(body);
 
   return (
@@ -814,7 +793,7 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
         <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b">
           <div>
             <h3 className="font-semibold text-base">Emails</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{emails.length} emails · {unreadCount} unread</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{totalCount} emails · {unreadCount} unread</p>
           </div>
         </div>
         <CardContent className="flex-1 overflow-hidden flex flex-col p-4" style={{ minHeight: 0 }}>
@@ -850,7 +829,17 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value={currentFolder} className="mt-3">
-                  <ScrollArea className="h-[calc(90vh-240px)]">
+                  <EmailMailboxScrollArea
+                    className="h-[calc(90vh-240px)]"
+                    viewKey={JSON.stringify([scopeKey, ownerKey, currentFolder])}
+                    loadedCount={emails.length}
+                    totalCount={totalCount}
+                    hasNextPage={hasNextPage}
+                    isFetching={isFetching}
+                    isFetchingNextPage={isFetchingNextPage}
+                    nextPageError={nextPageError}
+                    loadNextPage={loadNextPage}
+                  >
                     <div className="space-y-2 pr-2">
                       {error ? (
                         <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
@@ -859,11 +848,9 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
                       ) : filteredEmails.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
                           <Mail className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No emails in {currentFolder}</p>
+                          <p className="text-sm">{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
                         </div>
-                      ) : (
-                        <>
-                          {pageRows.map((email) => {
+                      ) : filteredEmails.map((email) => {
                         const isSelected = selectedEmail?.id === email.id;
                         return (
                           <Card
@@ -922,57 +909,9 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
                             </CardContent>
                           </Card>
                         );
-                          })}
-                          {filteredEmails.length > PAGE_SIZE && (
-                            <div className="flex flex-col gap-2 pt-3 mt-2 border-t">
-                              <div className="text-xs text-muted-foreground">
-                                Showing {startIndex + 1} to {Math.min(startIndex + pageRows.length, filteredEmails.length)} of {filteredEmails.length}
-                              </div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                  disabled={safePage === 1}
-                                >
-                                  Previous
-                                </Button>
-                                <div className="flex items-center gap-1">
-                                  {(() => {
-                                    const maxButtons = 7;
-                                    const start =
-                                      totalPages <= maxButtons
-                                        ? 1
-                                        : Math.min(Math.max(1, safePage - 3), totalPages - maxButtons + 1);
-                                    const end = Math.min(start + maxButtons - 1, totalPages);
-                                    return Array.from({ length: end - start + 1 }, (_, i) => start + i).map((p) => (
-                                      <Button
-                                        key={p}
-                                        variant={safePage === p ? 'default' : 'outline'}
-                                        size="sm"
-                                        onClick={() => setPage(p)}
-                                        className="min-w-[36px]"
-                                      >
-                                        {p}
-                                      </Button>
-                                    ));
-                                  })()}
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                  disabled={safePage === totalPages}
-                                >
-                                  Next
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
+                      })}
                     </div>
-                  </ScrollArea>
+                  </EmailMailboxScrollArea>
                 </TabsContent>
               </Tabs>
             </div>
@@ -1140,7 +1079,8 @@ export default function Emails() {
     setUnreadEmailsCount(count);
   }, [setUnreadEmailsCount]);
 
-  const { emails, unreadCount, isLoading: loading, error: mailboxError, refetch: loadList,
+  const { emails, totalCount, hasNextPage, isFetching, isFetchingNextPage, nextPageError, loadNextPage,
+    unreadCount, isLoading: loading, error: mailboxError, refetch: loadList,
     selectedEmail, setSelectedEmail, loadingDetail, selectEmail, searchQuery, setSearchQuery } = useEmailMailbox(
       scopeFilter.query, scopeKey, currentFolder,
       scopeFilter.ready && !showAgencySections && !showAllTeamView,
@@ -1585,7 +1525,17 @@ export default function Emails() {
             </StickyHeader>
 
             <TabsContent value={currentFolder} className="mt-4">
-              <ScrollArea className="h-[calc(100vh-20rem)]">
+              <EmailMailboxScrollArea
+                className="h-[calc(100vh-20rem)]"
+                viewKey={JSON.stringify([scopeKey, currentFolder])}
+                loadedCount={emails.length}
+                totalCount={totalCount}
+                hasNextPage={hasNextPage}
+                isFetching={isFetching}
+                isFetchingNextPage={isFetchingNextPage}
+                nextPageError={nextPageError}
+                loadNextPage={loadNextPage}
+              >
                 <div className="space-y-2">
                   {mailboxError ? (
                     <p role="alert" className="text-center py-8 text-destructive">Could not load emails. Please try again.</p>
@@ -1594,7 +1544,7 @@ export default function Emails() {
                   ) : filteredEmails.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                       <Mail className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>No emails in {currentFolder}</p>
+                      <p>{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
                     </div>
                   ) : (
                     filteredEmails.map((email) => {
@@ -1697,7 +1647,7 @@ export default function Emails() {
                     })
                   )}
                 </div>
-              </ScrollArea>
+              </EmailMailboxScrollArea>
             </TabsContent>
           </Tabs>
         </div>
