@@ -2031,7 +2031,7 @@ export async function fetchEmails(params: {
   agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
   filterMode?: 'chips';
-}): Promise<{
+}, options: { signal?: AbortSignal; throwOnError?: boolean } = {}): Promise<{
   data: ApiEmailListItem[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
   unreadCount: number;
@@ -2048,9 +2048,9 @@ export async function fetchEmails(params: {
     data: ApiEmailListItem[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
     unreadCount: number;
-  }>(`/emails?${q.toString()}`);
+  }>(`/emails?${q.toString()}`, { signal: options.signal });
   if (res.ok === false) {
-    if (params.filterMode) throw new Error(res.error || 'Could not load emails');
+    if (params.filterMode || options.throwOnError) throw new Error(res.error || 'Could not load emails');
     return { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }, unreadCount: 0 };
   }
   return res.data ?? { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }, unreadCount: 0 };
