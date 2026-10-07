@@ -80,6 +80,21 @@ export function canConfigureReportDelivery(ctx: Awaited<ReturnType<typeof buildA
 
 export { reportRecipientEmail } from './dailyReportAddresses';
 
+export function isManualReportDelivery(delivery: { deliveryKey: string }): boolean {
+  return delivery.deliveryKey.startsWith('manual:');
+}
+
+/** Manual snapshots authorize their own destination without changing daily delivery settings. */
+export function reportPolicyForDelivery(
+  policy: DailyReportPolicy,
+  delivery: { deliveryKey: string; recipientId: string; recipientEmail: string },
+): DailyReportPolicy {
+  return isManualReportDelivery(delivery) ? {
+    ...policy, enabled: true, recipientEmail: delivery.recipientEmail,
+    authorizedById: delivery.recipientId, recipientsConfigured: true, ccEmails: [],
+  } : policy;
+}
+
 /** The saved administrator authorizes the report; the email is only its destination. */
 export async function resolveReportDeliveryTarget(policy: DailyReportPolicy): Promise<{ user: ReportUser; email: string; agencyIds: string[] } | null> {
   const parsed = reportRecipientEmail.safeParse(policy.recipientEmail);

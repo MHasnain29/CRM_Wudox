@@ -645,7 +645,7 @@ model DailyReportPolicy {
   sendMinute            Int      @default(0) @map("send_minute")
   timezone              String   @default("America/Toronto")
   shiftHours            Int      @default(8) @map("shift_hours")
-  period                String   @default("previous_day")
+  period                String   @default("today")
   recipientUserIds      String[] @default([]) @map("recipient_user_ids")
   recipientEmail        String?  @map("recipient_email")
   ccEmails              String[] @default([]) @map("cc_emails")

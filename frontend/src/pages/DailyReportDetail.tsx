@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DailyReportOverview } from '@/components/daily-reports/DailyReportOverview';
+import { ReportPreviewEmail } from '@/components/daily-reports/ReportPreviewEmail';
 import {
   REPORT_PROFILES,
   getDailyReportSnapshot,
@@ -142,6 +143,7 @@ function SnapshotDetail({ id }: { id: string | undefined }) {
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Button asChild variant="ghost" size="sm"><Link to={canViewSettings ? '/settings?tab=daily-reports' : '/reports'}><ArrowLeft className="mr-2 h-4 w-4" />{canViewSettings ? 'Daily report settings' : 'Reports'}</Link></Button>
+      {!loading && !error && report?.canSendEmail && id && <ReportPreviewEmail key={id} snapshotId={id} report={report} />}
       {loading ? <div role="status" className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />Loading report…</div> : error ? <Card><CardContent className="space-y-3 pt-6"><p role="alert" className="text-destructive">{error}</p><Button variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button></CardContent></Card> : report ? (report.presentation ? (
         <DailyReportOverview report={report} presentation={report.presentation} selectedEmployeeId={selectedEmployeeId} renderDetails={(person) => <EmployeeReport person={person} timezone={report.timezone} embedded />} />
       ) : (

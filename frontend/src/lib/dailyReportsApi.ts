@@ -27,7 +27,7 @@ export interface DailyReportPolicy {
   sendMinute: number;
   timezone: string;
   shiftHours: number;
-  period: 'today' | 'previous_day';
+  period: 'today';
   recipientEmail: string | null;
   ccEmails: string[];
   authorizedById: string | null;
@@ -159,6 +159,18 @@ export interface DailyReportPayload {
   warnings: string[];
   /** Derived from this saved snapshot using the email's presentation rules. */
   presentation?: DailyReportPresentation;
+  isPreview?: boolean;
+  canSendEmail?: boolean;
+}
+
+export interface ReportEmailResult {
+  deliveryId: string;
+  snapshotId: string;
+  status: string;
+  recipientEmail: string;
+  reportDate: string;
+  lastError?: string | null;
+  alreadyQueued?: boolean;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -180,7 +192,7 @@ export const saveDailyReportSettings = (scope: ReportScope, policy: DailyReportP
       sendMinute: policy.sendMinute,
       timezone: policy.timezone,
       shiftHours: policy.shiftHours,
-      period: policy.period,
+      period: 'today',
     }),
   });
 
@@ -202,3 +214,8 @@ export const previewDailyReport = (scope: ReportScope, date?: string) =>
 
 export const getDailyReportSnapshot = (id: string) =>
   request<DailyReportPayload>(`/daily-reports/snapshots/${encodeURIComponent(id)}`);
+
+export const sendDailyReportPreview = (id: string, recipientEmail: string) =>
+  request<ReportEmailResult>(`/daily-reports/snapshots/${encodeURIComponent(id)}/send`, {
+    method: 'POST', body: JSON.stringify({ recipientEmail }),
+  });
