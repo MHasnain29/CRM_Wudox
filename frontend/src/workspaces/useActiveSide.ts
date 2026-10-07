@@ -15,5 +15,7 @@ export function useActiveSide(): {
   const storedSide = useWorkspaceStore((s) => s.activeSide);
   const setSide = useWorkspaceStore((s) => s.setActiveSide);
   const { canSwitch, defaultSide } = workspaceAccessFromPermissions(permissions);
-  return { side: canSwitch ? storedSide : defaultSide, canSwitch, setSide };
+  // Recruitment is hidden in the sidebar, so ignore a persisted 'recruitment' side (no tab to switch back).
+  // return { side: canSwitch ? storedSide : defaultSide, canSwitch, setSide };
+  return { side: canSwitch ? 'marketing' : defaultSide, canSwitch, setSide };
 }

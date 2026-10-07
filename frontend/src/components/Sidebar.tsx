@@ -90,11 +90,11 @@ const navItems: {
   { to: '/pipeline',   icon: GitBranch,    label: 'Pipeline',    permissions: ['pipeline:read'], color: '#9333ea' },
   { to: '/follow-ups', icon: CalendarClock,label: 'My Follow-Ups', managerLabel: 'Follow Ups', permissions: ['tasks:read'], showCount: true, excludeRoles: SOFTWARE_HOUSE_ROLES, color: '#db2777' },
 
-  // ── Recruitment ──
-  { to: '/active-clients',      icon: Building2,  label: 'Active Clients', permissions: ['jobs:read'],       section: 'Recruitment', color: '#2563eb' },
-  { to: '/jobs',                icon: Briefcase,  label: 'Jobs',           permissions: ['jobs:read'],        color: '#0891b2' },
-  { to: '/employees',           icon: UserCircle2,label: 'Employees',      permissions: ['employees:read'],   color: '#7c3aed' },
-  { to: '/employee-job-matches',icon: Link2,      label: 'Job Matches',    permissions: ['employees:read'],   color: '#0d9488' },
+  // ── Recruitment (hidden for now — uncomment to restore) ──
+  // { to: '/active-clients',      icon: Building2,  label: 'Active Clients', permissions: ['jobs:read'],       section: 'Recruitment', color: '#2563eb' },
+  // { to: '/jobs',                icon: Briefcase,  label: 'Jobs',           permissions: ['jobs:read'],        color: '#0891b2' },
+  // { to: '/employees',           icon: UserCircle2,label: 'Employees',      permissions: ['employees:read'],   color: '#7c3aed' },
+  // { to: '/employee-job-matches',icon: Link2,      label: 'Job Matches',    permissions: ['employees:read'],   color: '#0d9488' },
 
   // ── Communication ──
   { to: '/messages',    icon: MessageSquare, label: 'Messages',    permissions: ['users:read'],  showCount: true, section: 'Communication', color: '#0284c7' },
@@ -380,7 +380,8 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="px-2 py-3 flex-1 overflow-y-auto">
-        <WorkspaceSwitcher />
+        {/* Marketing ↔ Recruitment tabs hidden while Recruitment is hidden — uncomment to restore */}
+        {/* <WorkspaceSwitcher /> */}
         <div className="space-y-0.5">
           {navSections.map((section) => {
             // Collapsed group for the non-active workspace (non-switchable users)
