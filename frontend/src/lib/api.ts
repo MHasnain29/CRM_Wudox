@@ -6864,16 +6864,28 @@ export async function fetchCampaigns(params?: {
   limit?: number;
   status?: string;
   subCompanyId?: string;
+  /** Several agencies at once (elevated callers); the server keeps only the ones the caller may see. */
+  agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
+  /** Inclusive ISO instants (the viewer's local day edges). Matched against each campaign's displayed date. */
+  from?: string;
+  to?: string;
 }): Promise<{ data: ApiCampaign[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
   const sp = new URLSearchParams();
   if (params?.page) sp.set('page', String(params.page));
   if (params?.limit) sp.set('limit', String(params.limit));
   if (params?.status) sp.set('status', params.status);
   if (params?.subCompanyId) sp.set('subCompanyId', params.subCompanyId);
+  if (params?.agencyIds?.length) sp.set('agencyIds', params.agencyIds.join(','));
+  if (params?.from) sp.set('from', params.from);
+  if (params?.to) sp.set('to', params.to);
   appendOwnerIds(sp, params?.ownerIds, params?.ownerExact);
   const res = await apiFetch<{ data: ApiCampaign[]; pagination: any }>(`/campaigns?${sp.toString()}`);
-  if (!res.ok) return { data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } };
+  // Throw instead of returning an empty list: a 400/403/500 must not read as "no campaigns in this period".
+  if (!res.ok) {
+    const failed = res as { status: number; error?: string };
+    throw Object.assign(new Error(failed.error ?? 'Failed to load campaigns'), { status: failed.status });
+  }
   return res.data;
 }
 
@@ -7242,20 +7254,39 @@ export type BulkEmailConversionRateResult = ConversionRateActivityResult;
 export async function fetchBulkEmailConversionRate(params?: {
   startDate?: string;
   endDate?: string;
+  /** Exact inclusive instants (the viewer's local day edges) — take precedence over startDate/endDate. */
+  from?: string;
+  to?: string;
+  /** No date bounds at all — takes precedence over everything else. */
+  allTime?: boolean;
   agencyId?: string;
+  /** Several agencies at once (elevated callers); the server keeps only the ones the caller may see. */
+  agencyIds?: string[];
+  /** Only campaigns created by these users — same rules as fetchCampaigns. */
+  ownerIds?: string[];
+  ownerExact?: boolean;
   source?: 'mail' | 'call';
   dateBasis?: 'activity' | 'assigned';
-}): Promise<BulkEmailConversionRateResult | null> {
+}): Promise<BulkEmailConversionRateResult> {
   const qs = new URLSearchParams();
   if (params?.startDate) qs.set('startDate', params.startDate);
   if (params?.endDate)   qs.set('endDate',   params.endDate);
+  if (params?.from)      qs.set('from',      params.from);
+  if (params?.to)        qs.set('to',        params.to);
+  if (params?.allTime)   qs.set('allTime',   '1');
   if (params?.agencyId)  qs.set('agencyId',  params.agencyId);
+  if (params?.agencyIds?.length) qs.set('agencyIds', params.agencyIds.join(','));
+  appendOwnerIds(qs, params?.ownerIds, params?.ownerExact);
   if (params?.source)    qs.set('source',    params.source);
   if (params?.dateBasis) qs.set('dateBasis', params.dateBasis);
   const query = qs.toString();
   const res = await apiFetch<BulkEmailConversionRateResult>(`/reports/bulk-email-conversion-rate${query ? `?${query}` : ''}`);
-  if (!res.ok) return null;
-  return res.data ?? null;
+  // Throw instead of returning null: a 400/403/500 must not read as "no conversions in this period".
+  if (!res.ok) {
+    const failed = res as { status: number; error?: string };
+    throw Object.assign(new Error(failed.error ?? 'Failed to load conversion rate'), { status: failed.status });
+  }
+  return res.data;
 }
 
 /**

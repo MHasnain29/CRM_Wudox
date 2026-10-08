@@ -5,25 +5,32 @@ import {
   type DatePeriodPreset,
   getDatePeriodLabel,
   isValidDatePeriodPreset,
+  parseDateParam,
   resolveDateRange,
 } from '@/lib/dateRangeFilter';
 
-export function useDateRangeFilter() {
+/**
+ * `allowedPresets` lets a page accept extra ?datePeriod values (Bulk Mail adds last_7_days /
+ * last_30_days). Omitted, behaviour is identical to before, so existing pages are unaffected.
+ */
+export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriodPreset[] }) {
+  const allowedPresets = opts?.allowedPresets;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawPeriod = searchParams.get('datePeriod');
-  const period: DatePeriodPreset = isValidDatePeriodPreset(rawPeriod) ? rawPeriod : 'all';
+  const period: DatePeriodPreset = isValidDatePeriodPreset(rawPeriod, allowedPresets) ? rawPeriod : 'all';
 
   const customFrom = searchParams.get('dateFrom');
   const customTo = searchParams.get('dateTo');
 
   const customRange = useMemo<DateRange | undefined>(() => {
-    if (!customFrom) return undefined;
-    const from = new Date(customFrom);
-    if (isNaN(from.getTime())) return undefined;
-    const to = customTo ? new Date(customTo) : undefined;
-    if (to && isNaN(to.getTime())) return { from };
-    return { from, to };
+    const from = parseDateParam(customFrom);
+    if (!from) return undefined;
+    const to = parseDateParam(customTo);
+    // No usable end date: a one-day range on `from`.
+    if (!to) return { from };
+    // A hand-edited URL can put the end before the start; swap rather than silently match nothing.
+    return to.getTime() < from.getTime() ? { from: to, to: from } : { from, to };
   }, [customFrom, customTo]);
 
   const effectiveRange = useMemo(
