@@ -19,6 +19,11 @@ import {
 import { ensureAccessContext } from '../utils/requestPermission';
 import { getActiveRoleKeysByScopeLevels } from '../services/rbac';
 import { getPositionsClosedByUserBulk } from '../services/positionsClosedAggregator';
+import type { Prisma } from '@prisma/client';
+import { requestCanUseOwnerIdsFilter } from '../services/accessContext';
+import { expandLinkedOwnerScope, linkedExpansionToWhere, ownerExactFromQuery } from '../services/linkedOwnerExpand';
+import { filterInstantSchema, refineFromBeforeTo } from '../services/campaignDateFilter';
+import { actAsMiddleware } from '../middleware/actAs';
 
 
 /** Own-scope roles with performance targets (RBAC-driven; sales_associate fallback if DB empty). */
@@ -599,181 +604,239 @@ performanceReportRouter.get(
  *   closed_won leads in the period whose client received at least one
  *   qualifying recipient row before lead.closedAt.
  *
- * Scope:
- *   - Caller with agency access (any authenticated user): restricted to
- *     their own subCompanyId unless elevated + agencyId query param given.
+ * Scope (mirrors GET /campaigns so this card always agrees with the list beside it):
+ *   - Runs act-as, like /campaigns, so an act-as session scopes to the target.
+ *   - Elevated callers default to their home agency and may pass agencyId / agencyIds
+ *     (kept to the agencies they may see; a set with no permitted member widens to all
+ *     of them, as buildSubCompanyFilter does). Everyone else gets every agency they may
+ *     see, which for an ordinary user is their own.
+ *   - ownerIds narrows to campaigns *created by* those users: a linked-account expansion
+ *     defines the agency scope itself (as it replaces it in /campaigns); otherwise the
+ *     filter applies only to callers allowed to filter by owner, and is ignored for the rest.
+ *
+ * Period (one of, in precedence order):
+ *   allTime=1              no date bounds
+ *   from / to              inclusive ISO instants (the viewer's local day edges, as GET /campaigns)
+ *   startDate / endDate    YYYY-MM-DD as UTC days (legacy; default: today)
  *
  * Query params:
- *   startDate  YYYY-MM-DD  (default: today UTC)
- *   endDate    YYYY-MM-DD  (default: startDate)
  *   agencyId   UUID        (optional; elevated roles only)
+ *   agencyIds  UUID,UUID   (optional; elevated roles only; kept to the ones the caller may see)
+ *   ownerIds   UUID,UUID   (optional; see Scope)
  */
 performanceReportRouter.get(
   '/bulk-email-conversion-rate',
+  // Route-level (not router-wide, which would change role resolution for the other reports).
+  actAsMiddleware,
   async (req: Request, res: Response) => {
     const callerSubCompanyId = req.user?.subCompanyId;
     if (!req.user || !callerSubCompanyId) {
       return res.status(403).json({ error: 'Auth context required' });
     }
 
-    const schema = z.object({
-      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      agencyId:  z.string().uuid().optional(),
-      source: z.enum(['call', 'mail']).optional(),
-      dateBasis: z.enum(['activity', 'assigned']).optional(),
-    });
-    const parsed = schema.safeParse(req.query);
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid query' });
+    const schema = z
+      .object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        from: filterInstantSchema.optional(),
+        to: filterInstantSchema.optional(),
+        allTime: z.enum(['1', 'true']).optional(),
+        agencyId:  z.string().uuid().optional(),
+        agencyIds: z.string().optional(),
+        ownerIds: z.string().optional(),
+        source: z.enum(['call', 'mail']).optional(),
+        dateBasis: z.enum(['activity', 'assigned']).optional(),
+      })
+      .superRefine(refineFromBeforeTo);
+    // Empty values (`?from=&ownerIds=`) mean "absent", not a 400.
+    const cleanedQuery = Object.fromEntries(Object.entries(req.query).filter(([, v]) => v !== ''));
+    const parsed = schema.safeParse(cleanedQuery);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    const q = parsed.data;
 
-    const today    = todayStr();
-    const startStr = parsed.data.startDate ?? today;
-    const endStr   = parsed.data.endDate   ?? startStr;
-    const rangeStart = dayStart(startStr);
-    const rangeEnd   = dayEnd(endStr);
-
-    // Resolve target agency: default to caller's agency; elevated roles may
-    // pass ?agencyId= to view a different agency they have access to.
-    const ctx = await ensureAccessContext(req);
-    const canPickAgency = ctx ? canAccessMultipleAgencies(ctx) : false;
-    let targetAgencyId = callerSubCompanyId;
-    if (parsed.data.agencyId && canPickAgency) {
-      const allowed = await resolveAllowedSubCompanyIds(req.user);
-      if (!allowed.includes(parsed.data.agencyId)) {
-        return res.status(403).json({ error: 'Not allowed for this agency' });
-      }
-      targetAgencyId = parsed.data.agencyId;
+    // Period applied to sends, assignments and closes alike. null = no bounds (All time).
+    let period: { gte?: Date; lte?: Date } | null;
+    if (q.allTime) {
+      period = null;
+    } else if (q.from || q.to) {
+      period = { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) };
+    } else {
+      const startStr = q.startDate ?? todayStr();
+      const endStr   = q.endDate   ?? startStr;
+      period = { gte: dayStart(startStr), lte: dayEnd(endStr) };
     }
 
-    const source = parsed.data.source ?? 'mail';
-    const dateBasis = parsed.data.dateBasis ?? 'activity';
+    const source = q.source ?? 'mail';
+    const dateBasis = q.dateBasis ?? 'activity';
     if (source !== 'mail') {
       return res.json({ count: 0, conversions: 0, rate: null });
     }
 
-    const SENT_STATUSES = ['sent', 'delivered', 'opened', 'clicked'] as const;
+    // Express 4 does not forward a rejected async handler to the error middleware; answer DB failures explicitly.
+    try {
+      // ── Agency scope ──
+      const ctx = await ensureAccessContext(req);
+      const canPickAgency = ctx ? canAccessMultipleAgencies(ctx) : false;
+      const allowed = await resolveAllowedSubCompanyIds(req.user);
+      // Elevated callers keep the home-agency default (legacy callers such as the Reports page rely on it);
+      // everyone else gets every agency they may see — exactly GET /campaigns' default for them.
+      let targetAgencyIds: string[] = canPickAgency || allowed.length === 0 ? [callerSubCompanyId] : allowed;
+      const requestedAgencyIds = q.agencyIds
+        ? q.agencyIds.split(',').map((id) => id.trim()).filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+        : q.agencyId ? [q.agencyId] : [];
+      if (requestedAgencyIds.length > 0 && canPickAgency) {
+        const permitted = requestedAgencyIds.filter((id) => allowed.includes(id));
+        // Same rule as GET /campaigns (buildSubCompanyFilter): a request with no permitted member widens
+        // to every agency the caller may see instead of failing, so list and card never disagree.
+        targetAgencyIds = permitted.length > 0 ? permitted : allowed;
+      }
 
-    // Denominator: recipient rows from this agency's campaigns sent in period
-    const denominator = await prisma.emailCampaignRecipient.count({
-      where: {
-        status:   { in: [...SENT_STATUSES] },
-        sentAt:   { gte: rangeStart, lte: rangeEnd },
-        campaign: { subCompanyId: targetAgencyId },
-      },
-    });
+      // ── Owner scope on the campaign's creator — identical rules to GET /campaigns ──
+      const ownerIdsList = q.ownerIds
+        ? q.ownerIds.split(',').filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+        : [];
+      let ownerWhere: Prisma.EmailCampaignWhereInput | null = null;
+      if (ownerIdsList.length > 0) {
+        const linked = await expandLinkedOwnerScope(req.user.sub, req.user.subCompanyId, ownerIdsList, { exact: ownerExactFromQuery(req.query) });
+        if (linked) {
+          // Link-group membership is the authorisation here, as in /campaigns: the expansion's agencies
+          // define the scope (its own subCompanyId clause replaces the default one below).
+          ownerWhere = linkedExpansionToWhere(linked, 'createdById') as Prisma.EmailCampaignWhereInput;
+          if (linked.subCompanyIds.length > 0) targetAgencyIds = linked.subCompanyIds;
+        } else if (await requestCanUseOwnerIdsFilter(req)) {
+          ownerWhere = { createdById: { in: ownerIdsList } };
+        }
+      }
+      const agencyScope: string | { in: string[] } =
+        targetAgencyIds.length === 1 ? targetAgencyIds[0] : { in: targetAgencyIds };
+      // Spread = the Object.assign in GET /campaigns: an expansion carrying its own subCompanyId clause
+      // replaces the agency scope; a plain createdById filter just adds to it. Shared by the denominator
+      // and every numerator lookup.
+      const campaignWhere: Prisma.EmailCampaignWhereInput = { subCompanyId: agencyScope, ...(ownerWhere ?? {}) };
 
-    let conversions = 0;
+      const SENT_STATUSES = ['sent', 'delivered', 'opened', 'clicked'] as const;
 
-    if (dateBasis === 'assigned') {
-      // Numerator: clients assigned to a measured own-scope role within the period
-      // (via approved LeadRequest or direct Lead creation) where a
-      // qualifying bulk-email recipient row exists strictly BEFORE the
-      // earliest assignment. Each unique client counts at most once.
-      const measuredRoles = await getMeasuredRoleKeys();
-      const associates = await prisma.user.findMany({
-        where: { subCompanyId: targetAgencyId, role: { in: measuredRoles }, isActive: true },
-        select: { id: true },
+      // Denominator: recipient rows from in-scope campaigns sent in the period
+      const denominator = await prisma.emailCampaignRecipient.count({
+        where: {
+          status:   { in: [...SENT_STATUSES] },
+          sentAt:   period ?? { not: null },
+          campaign: campaignWhere,
+        },
       });
-      const associateIds = associates.map((u) => u.id);
 
-      if (associateIds.length > 0) {
-        const [approvedRequests, directLeads] = await Promise.all([
-          prisma.leadRequest.findMany({
-            where: {
-              requestedById: { in: associateIds },
-              status: 'approved',
-              subCompanyId: targetAgencyId,
-              requestedAt: { gte: rangeStart, lte: rangeEnd },
-            },
-            select: { clientId: true, requestedAt: true },
-          }),
-          prisma.lead.findMany({
-            where: {
-              ownerId: { in: associateIds },
-              subCompanyId: targetAgencyId,
-              createdAt: { gte: rangeStart, lte: rangeEnd },
-            },
-            select: { clientId: true, createdAt: true },
-          }),
-        ]);
-
-        // Earliest assignment time per client — comparing email sends to
-        // this guarantees the email truly preceded any assignment.
-        const earliestAssignmentByClient = new Map<string, number>();
-        for (const r of approvedRequests) {
-          const t = r.requestedAt.getTime();
-          const cur = earliestAssignmentByClient.get(r.clientId);
-          if (cur === undefined || t < cur) earliestAssignmentByClient.set(r.clientId, t);
-        }
-        for (const l of directLeads) {
-          const t = l.createdAt.getTime();
-          const cur = earliestAssignmentByClient.get(l.clientId);
-          if (cur === undefined || t < cur) earliestAssignmentByClient.set(l.clientId, t);
-        }
-
-        if (earliestAssignmentByClient.size > 0) {
-          const clientIds = Array.from(earliestAssignmentByClient.keys());
+      /**
+       * Earliest qualifying send per client, from in-scope campaigns (any time — only the assignment / close
+       * is period-bound). Chunked: Postgres caps bind parameters at 32767 and All Time can list every client
+       * ever assigned.
+       */
+      const earliestSendByClient = async (clientIds: string[]): Promise<Map<string, number>> => {
+        const out = new Map<string, number>();
+        for (let i = 0; i < clientIds.length; i += 5000) {
           const matches = await prisma.emailCampaignRecipient.findMany({
             where: {
-              clientId: { in: clientIds },
+              clientId: { in: clientIds.slice(i, i + 5000) },
               status:   { in: [...SENT_STATUSES] },
-              campaign: { subCompanyId: targetAgencyId },
+              campaign: campaignWhere,
               sentAt:   { not: null },
             },
             select: { clientId: true, sentAt: true },
           });
-          const sentByClient: Record<string, number[]> = {};
           for (const m of matches) {
             if (!m.sentAt) continue;
-            (sentByClient[m.clientId] ??= []).push(m.sentAt.getTime());
-          }
-          for (const [clientId, assignedAt] of earliestAssignmentByClient) {
-            const sends = sentByClient[clientId];
-            if (sends && sends.some((t) => t < assignedAt)) conversions++;
+            const t = m.sentAt.getTime();
+            const cur = out.get(m.clientId);
+            if (cur === undefined || t < cur) out.set(m.clientId, t);
           }
         }
-      }
-    } else {
-      // Legacy 'activity' basis: closed_won leads in period with an email
-      // sent strictly before lead.closedAt.
-      const wonLeads = await prisma.lead.findMany({
-        where: {
-          status:       'closed_won',
-          closedAt:     { gte: rangeStart, lte: rangeEnd },
-          subCompanyId: targetAgencyId,
-        },
-        select: { id: true, closedAt: true, clientId: true },
-      });
+        return out;
+      };
 
-      if (wonLeads.length > 0) {
-        const clientIds = Array.from(new Set(wonLeads.map((l) => l.clientId)));
-        const matches = await prisma.emailCampaignRecipient.findMany({
-          where: {
-            clientId: { in: clientIds },
-            status:   { in: [...SENT_STATUSES] },
-            campaign: { subCompanyId: targetAgencyId },
-            sentAt:   { not: null },
-          },
-          select: { clientId: true, sentAt: true },
+      let conversions = 0;
+
+      if (dateBasis === 'assigned') {
+        // Numerator: clients assigned to a measured own-scope role within the period (via approved
+        // LeadRequest or direct Lead creation) where a qualifying bulk-email recipient row exists
+        // strictly BEFORE the earliest assignment. Each unique client counts at most once.
+        const measuredRoles = await getMeasuredRoleKeys();
+        const associates = await prisma.user.findMany({
+          where: { subCompanyId: agencyScope, role: { in: measuredRoles }, isActive: true },
+          select: { id: true },
         });
-        const sentByClient: Record<string, number[]> = {};
-        for (const m of matches) {
-          if (!m.sentAt) continue;
-          (sentByClient[m.clientId] ??= []).push(m.sentAt.getTime());
+        const associateIds = associates.map((u) => u.id);
+
+        if (associateIds.length > 0) {
+          const [approvedRequests, directLeads] = await Promise.all([
+            prisma.leadRequest.findMany({
+              where: {
+                requestedById: { in: associateIds },
+                status: 'approved',
+                subCompanyId: agencyScope,
+                ...(period ? { requestedAt: period } : {}),
+              },
+              select: { clientId: true, requestedAt: true },
+            }),
+            prisma.lead.findMany({
+              where: {
+                ownerId: { in: associateIds },
+                subCompanyId: agencyScope,
+                ...(period ? { createdAt: period } : {}),
+              },
+              select: { clientId: true, createdAt: true },
+            }),
+          ]);
+
+          // Earliest assignment time per client — comparing email sends to this guarantees the email
+          // truly preceded any assignment.
+          const earliestAssignmentByClient = new Map<string, number>();
+          for (const r of approvedRequests) {
+            const t = r.requestedAt.getTime();
+            const cur = earliestAssignmentByClient.get(r.clientId);
+            if (cur === undefined || t < cur) earliestAssignmentByClient.set(r.clientId, t);
+          }
+          for (const l of directLeads) {
+            const t = l.createdAt.getTime();
+            const cur = earliestAssignmentByClient.get(l.clientId);
+            if (cur === undefined || t < cur) earliestAssignmentByClient.set(l.clientId, t);
+          }
+
+          if (earliestAssignmentByClient.size > 0) {
+            const earliestSend = await earliestSendByClient(Array.from(earliestAssignmentByClient.keys()));
+            for (const [clientId, assignedAt] of earliestAssignmentByClient) {
+              const sentAt = earliestSend.get(clientId);
+              if (sentAt !== undefined && sentAt < assignedAt) conversions++;
+            }
+          }
         }
-        for (const lead of wonLeads) {
-          const closeMs = lead.closedAt!.getTime();
-          const sends = sentByClient[lead.clientId];
-          if (sends && sends.some((t) => t < closeMs)) conversions++;
+      } else {
+        // Legacy 'activity' basis: closed_won leads in period with an email sent strictly before lead.closedAt.
+        const wonLeads = await prisma.lead.findMany({
+          where: {
+            status:       'closed_won',
+            ...(period ? { closedAt: period } : {}),
+            subCompanyId: agencyScope,
+          },
+          select: { id: true, closedAt: true, clientId: true },
+        });
+
+        if (wonLeads.length > 0) {
+          const earliestSend = await earliestSendByClient(Array.from(new Set(wonLeads.map((l) => l.clientId))));
+          for (const lead of wonLeads) {
+            const sentAt = earliestSend.get(lead.clientId);
+            if (sentAt !== undefined && sentAt < lead.closedAt!.getTime()) conversions++;
+          }
         }
       }
-    }
 
-    return res.json({
-      count: denominator,
-      conversions,
-      rate: calcConversionRate(denominator, conversions),
-    });
+      return res.json({
+        count: denominator,
+        conversions,
+        rate: calcConversionRate(denominator, conversions),
+      });
+    } catch (error) {
+      console.error('[reports/bulk-email-conversion-rate] Failed:', error);
+      return res.status(500).json({ error: 'Unable to load conversion rate' });
+    }
   },
 );
 

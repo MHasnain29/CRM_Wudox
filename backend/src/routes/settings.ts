@@ -1248,7 +1248,7 @@ settingsRouter.patch('/daily-report', requireSettingsWrite, async (req: Request,
     await tx.dailyReportPolicy.upsert({
       where: { scope_scopeId: { scope: 'agency', scopeId: subCompanyId } },
       create: { scope: 'agency', scopeId: subCompanyId, ...schedule, period: 'today', agencyIds: [subCompanyId], sendToManagers: false },
-      update: schedule,
+      update: { ...schedule, period: 'today' },
     });
     return setting;
   });

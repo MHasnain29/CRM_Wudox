@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Prisma, type DailyReportPolicy, type DailyReportDelivery, type DailyReportSnapshot } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../config/database';
 import { authenticate } from '../middleware/auth';
@@ -7,11 +8,12 @@ import { resolveAgencyScope, resolveAllowedSubCompanyIds } from '../config/agenc
 import { buildAccessContext, canAccessMultipleAgencies, hasPermission } from '../services/accessContext';
 import { REPORT_PROFILES, type DailyReportPayload, type ReportScope } from '../services/dailyReportTypes';
 import { profileResolver } from '../services/dailyReportProfiles';
-import { canReadReport, reportAudience, reportUserSelect, userToken, canConfigureReportDelivery, reportRecipientEmail, resolveReportDeliveryTarget } from '../services/dailyReportRecipients';
-import { localDateKey, shiftDate } from '../services/reportMetrics';
+import { canReadReport, reportAudience, reportUserSelect, userToken, canConfigureReportDelivery, reportRecipientEmail, resolveReportDeliveryTarget, isManualReportDelivery, reportPolicyForDelivery, type ReportUser } from '../services/dailyReportRecipients';
+import { localDateKey } from '../services/reportMetrics';
 import { saveReportSnapshot } from '../services/dailyReportBuilder';
 import { buildDailyReportPresentation } from '../services/dailyReportEmail';
 import { normalizeReportCcEmails, sameReportCcEmails } from '../services/dailyReportAddresses';
+import { processDailyReportDeliveries } from '../jobs/dailyReportEmailer';
 
 export const dailyReportsRouter = Router();
 dailyReportsRouter.use(authenticate);
@@ -22,6 +24,22 @@ const route = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: R
     else { console.error('[dailyReports] Request failed:', error); res.status(500).json({ error: 'Unable to process daily reports. Check that database migrations have been applied.' }); }
   });
 };
+
+async function canSendReport(user: ReportUser, policy: DailyReportPolicy, email = user.email): Promise<boolean> {
+  if (!user.isActive || !canConfigureReportDelivery(await buildAccessContext(userToken(user)))) return false;
+  const target = await resolveReportDeliveryTarget(reportPolicyForDelivery(policy, {
+    deliveryKey: 'manual:', recipientId: user.id, recipientEmail: email,
+  }));
+  return target?.user.id === user.id;
+}
+
+function deliveryResponse(delivery: DailyReportDelivery & { snapshot: DailyReportSnapshot }, alreadyQueued = false) {
+  return {
+    deliveryId: delivery.id, snapshotId: delivery.snapshotId, status: delivery.status,
+    recipientEmail: delivery.recipientEmail, reportDate: delivery.snapshot.reportDate,
+    lastError: delivery.lastError, alreadyQueued,
+  };
+}
 
 async function context(req: Request) {
   const user = await prisma.user.findUnique({ where: { id: req.user!.sub }, select: reportUserSelect });
@@ -58,7 +76,7 @@ async function settingsResponse(req: Request) {
     sendHour: stored?.sendHour ?? (c.scope === 'agency' ? legacy?.sendHour ?? 8 : 8),
     sendMinute: stored?.sendMinute ?? legacy?.sendMinute ?? 0,
     timezone: stored?.timezone ?? legacy?.timezone ?? 'America/Toronto',
-    shiftHours: stored?.shiftHours ?? legacy?.shiftHours ?? 8, period: stored?.period ?? 'previous_day',
+    shiftHours: stored?.shiftHours ?? legacy?.shiftHours ?? 8, period: 'today',
     recipientEmail: stored?.recipientEmail ?? '', authorizedById: stored?.authorizedById ?? null,
     ccEmails: stored?.ccEmails ?? [],
     recipientsConfigured: stored?.recipientsConfigured ?? false, profiles: [...REPORT_PROFILES], agencyIds,
@@ -78,7 +96,9 @@ dailyReportsRouter.get('/settings', requireSettingsWrite, route(async (req, res)
 const policySchema = z.object({
   enabled: z.boolean(), sendHour: z.number().int().min(0).max(23), sendMinute: z.number().int().min(0).max(59),
   timezone: z.string().min(1).max(100).refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; } }, 'Invalid timezone'),
-  shiftHours: z.number().int().min(1).max(24), period: z.enum(['today', 'previous_day']),
+  shiftHours: z.number().int().min(1).max(24),
+  // Normalize older clients while all report schedules now cover the current day.
+  period: z.enum(['today', 'previous_day']).optional().transform(() => 'today' as const),
   recipientEmail: z.union([reportRecipientEmail, z.string().trim().length(0), z.null()]).transform(value => value || null),
   ccEmails: z.array(reportRecipientEmail).optional(),
 }).strict();
@@ -129,9 +149,9 @@ dailyReportsRouter.post('/preview', requireSettingsWrite, route(async (req, res)
   if (!policy?.recipientsConfigured) return res.status(400).json({ error: 'Save a report email address before generating a preview' });
   const target = await resolveReportDeliveryTarget(policy);
   if (!target) return res.status(403).json({ error: 'Report authorization changed. Save settings again with an authorized account.' });
-  const date = parsed.data.date ?? shiftDate(localDateKey(new Date(), policy.timezone), policy.period === 'previous_day' ? -1 : 0);
+  const date = parsed.data.date ?? localDateKey(new Date(), policy.timezone);
   try {
-    const result = await saveReportSnapshot({ ...policy, agencyIds: target.agencyIds, profiles: [...REPORT_PROFILES] }, target.user, date, true, false);
+    const result = await saveReportSnapshot({ ...policy, period: 'today', agencyIds: target.agencyIds, profiles: [...REPORT_PROFILES] }, target.user, date, true, false);
     if (!await canReadReport(c.user, result.report)) {
       await prisma.dailyReportSnapshot.delete({ where: { id: result.id } });
       return res.status(403).json({ error: 'This recipient can see information outside your own report access' });
@@ -156,11 +176,52 @@ dailyReportsRouter.get('/history', requireSettingsWrite, route(async (req, res) 
 
 dailyReportsRouter.get('/snapshots/:id', route(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user!.sub }, select: reportUserSelect });
-  const snapshot = await prisma.dailyReportSnapshot.findUnique({ where: { id: req.params.id } });
+  const snapshot = await prisma.dailyReportSnapshot.findUnique({ where: { id: req.params.id }, include: { policy: true } });
   if (!snapshot) return res.status(404).json({ error: 'Report not found' });
   const payload = snapshot.payload as unknown as DailyReportPayload;
-  if (!user || !await canReadReport(user, payload)) return res.status(403).json({ error: 'You no longer have access to all information in this report' });
-  return res.json({ ...payload, presentation: buildDailyReportPresentation(payload) });
+  if (!user?.isActive || !await canReadReport(user, payload)) return res.status(403).json({ error: 'You no longer have access to all information in this report' });
+  const canSendEmail = snapshot.preview && await canSendReport(user, snapshot.policy);
+  return res.json({ ...payload, presentation: buildDailyReportPresentation(payload), isPreview: snapshot.preview, canSendEmail });
+}));
+
+dailyReportsRouter.post('/snapshots/:id/send', requireSettingsWrite, route(async (req, res) => {
+  const parsed = z.object({ recipientEmail: reportRecipientEmail }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid recipient email address.' });
+  const user = await prisma.user.findUnique({ where: { id: req.user!.sub }, select: reportUserSelect });
+  const source = await prisma.dailyReportSnapshot.findUnique({ where: { id: req.params.id }, include: { policy: true } });
+  if (!source) return res.status(404).json({ error: 'Report not found' });
+  if (!source.preview) return res.status(400).json({ error: 'Only report previews can be sent to a new recipient.' });
+  const report = source.payload as unknown as DailyReportPayload;
+  const email = parsed.data.recipientEmail;
+  if (!user || !await canSendReport(user, source.policy, email) || !await canReadReport(user, report)) {
+    return res.status(403).json({ error: 'You must have access to this report and its report settings to send it.' });
+  }
+  const deliveryKey = `manual:${source.id}:${user.id}:${email}`;
+  const existing = await prisma.dailyReportDelivery.findUnique({ where: { deliveryKey }, include: { snapshot: true } });
+  if (existing) return res.json(deliveryResponse(existing, true));
+
+  let delivery: DailyReportDelivery & { snapshot: DailyReportSnapshot };
+  try {
+    delivery = await prisma.$transaction(async tx => {
+      const snapshot = await tx.dailyReportSnapshot.create({ data: {
+        policyId: source.policyId, recipientId: user.id, reportDate: source.reportDate, preview: false,
+        payload: {
+          ...report, recipient: { id: user.id, name: email, email }, authorizedById: user.id, ccEmails: [],
+        } as unknown as Prisma.InputJsonValue,
+      } });
+      return tx.dailyReportDelivery.create({ data: {
+        deliveryKey, snapshotId: snapshot.id, recipientId: user.id, recipientEmail: email,
+      }, include: { snapshot: true } });
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+    const duplicate = await prisma.dailyReportDelivery.findUnique({ where: { deliveryKey }, include: { snapshot: true } });
+    if (!duplicate) throw error;
+    return res.json(deliveryResponse(duplicate, true));
+  }
+  await processDailyReportDeliveries(new Date(), delivery.id);
+  const latest = await prisma.dailyReportDelivery.findUnique({ where: { id: delivery.id }, include: { snapshot: true } });
+  return res.json(deliveryResponse(latest ?? delivery));
 }));
 
 dailyReportsRouter.post('/deliveries/:id/retry', requireSettingsWrite, route(async (req, res) => {
@@ -173,13 +234,22 @@ dailyReportsRouter.post('/deliveries/:id/retry', requireSettingsWrite, route(asy
     : targetPolicy.scope === 'agency' && targetPolicy.scopeId === c.agency.id;
   if (!managesPolicy) return res.status(403).json({ error: 'Report policy is outside your settings access' });
   if (!canConfigureReportDelivery(c.access)) return res.status(403).json({ error: 'Combined report access is required' });
-  const target = await resolveReportDeliveryTarget(targetPolicy);
+  const manual = isManualReportDelivery(delivery);
+  const deliveryPolicy = reportPolicyForDelivery(targetPolicy, delivery);
+  const target = await resolveReportDeliveryTarget(deliveryPolicy);
   const report = delivery.snapshot.payload as unknown as DailyReportPayload;
   if (!target || target.email !== delivery.recipientEmail || target.user.id !== delivery.recipientId
-    || !sameReportCcEmails(targetPolicy.ccEmails, report.ccEmails, delivery.recipientEmail)) return res.status(409).json({ error: 'The recipient email, CC emails or report authorization changed; this saved delivery cannot be retried' });
+    || report.recipient.id !== target.user.id || (report.authorizedById && report.authorizedById !== target.user.id)
+    || !sameReportCcEmails(deliveryPolicy.ccEmails, report.ccEmails, delivery.recipientEmail)) return res.status(409).json({ error: 'The recipient email, CC emails or report authorization changed; this saved delivery cannot be retried' });
   if (delivery.status !== 'failed') return res.status(409).json({ error: 'Only confirmed failed deliveries may be retried' });
   if (!await canReadReport(c.user, delivery.snapshot.payload as unknown as DailyReportPayload)) return res.status(403).json({ error: 'Report is outside your access' });
-  if (!delivery.snapshot.policy.enabled) return res.status(409).json({ error: 'Enable this report policy before retrying' });
-  await prisma.dailyReportDelivery.updateMany({ where: { id: delivery.id, status: 'failed' }, data: { status: 'pending', attempts: 0, nextAttemptAt: new Date(), lastError: null } });
+  if (!manual && !delivery.snapshot.policy.enabled) return res.status(409).json({ error: 'Enable this report policy before retrying' });
+  const updated = await prisma.dailyReportDelivery.updateMany({ where: { id: delivery.id, status: 'failed' }, data: { status: 'pending', attempts: 0, nextAttemptAt: new Date(), lastError: null } });
+  if (!updated.count) return res.status(409).json({ error: 'This delivery is already being processed.' });
+  if (manual) {
+    await processDailyReportDeliveries(new Date(), delivery.id);
+    const latest = await prisma.dailyReportDelivery.findUnique({ where: { id: delivery.id }, include: { snapshot: true } });
+    if (latest) return res.json({ ok: true, ...deliveryResponse(latest) });
+  }
   return res.json({ ok: true });
 }));

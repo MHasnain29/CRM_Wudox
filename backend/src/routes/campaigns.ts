@@ -21,15 +21,22 @@ import { requestCanUseOwnerIdsFilter } from '../services/accessContext';
 import { expandLinkedOwnerScope, linkedExpansionToWhere, ownerExactFromQuery } from '../services/linkedOwnerExpand';
 import { sendCampaignById } from '../services/campaignSender';
 import { recomputeCampaignStats } from '../services/campaignStats';
+import { applyCampaignDateRange, filterInstantSchema, refineFromBeforeTo } from '../services/campaignDateFilter';
 
-const listQuerySchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-  status: z.nativeEnum(CampaignStatus).optional(),
-  subCompanyId: z.string().uuid().optional(),
-  agencyIds: z.string().optional(),
-  ownerIds: z.string().optional(),
-});
+const listQuerySchema = z
+  .object({
+    // page is capped so `skip` can never overflow Postgres' Int32 (Express 4 has no async error wrapper).
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+    limit: z.coerce.number().int().min(1).default(20).transform((n) => Math.min(n, 100)),
+    status: z.nativeEnum(CampaignStatus).optional(),
+    subCompanyId: z.string().uuid().optional(),
+    agencyIds: z.string().optional(),
+    ownerIds: z.string().optional(),
+    // Inclusive instants; the client sends its local day edges as ISO strings. Either may be omitted.
+    from: filterInstantSchema.optional(),
+    to: filterInstantSchema.optional(),
+  })
+  .superRefine(refineFromBeforeTo);
 
 const createBodySchema = z.object({
   name: z.string().min(1).max(255),
@@ -93,13 +100,18 @@ campaignsRouter.get('/', requirePermission('clients:read'), async (req: Request,
   const allowedIds = await resolveAllowedSubCompanyIds(req.user!);
   if (allowedIds.length === 0) return res.status(403).json({ error: 'Agency context required' });
 
-  const parsed = listQuerySchema.safeParse(req.query);
-  const q = parsed.success ? parsed.data : { page: 1, limit: 20 };
-  const requestedIds = parseAgencyIdsParam((q as any).agencyIds ?? (q as any).subCompanyId);
+  // An invalid query is a 400, never a silent fallback to defaults: falling back used to drop
+  // ownerIds / agency / status and widen the result set beyond what the caller asked for.
+  // Empty values (`?limit=&from=`) mean "absent".
+  const cleanedQuery = Object.fromEntries(Object.entries(req.query).filter(([, v]) => v !== ''));
+  const parsed = listQuerySchema.safeParse(cleanedQuery);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+  const q = parsed.data;
+  const requestedIds = parseAgencyIdsParam(q.agencyIds ?? q.subCompanyId);
   const scopeFilter = buildSubCompanyFilter(allowedIds, requestedIds);
 
   const where: Prisma.EmailCampaignWhereInput = { ...scopeFilter };
-  if ((q as any).status) where.status = (q as any).status;
+  if (q.status) where.status = q.status;
 
   const ownerIdsList = q.ownerIds
     ? q.ownerIds.split(',').filter((id) => /^[0-9a-f-]{36}$/i.test(id))
@@ -116,16 +128,31 @@ campaignsRouter.get('/', requirePermission('clients:read'), async (req: Request,
     }
   }
 
-  const skip = (q.page - 1) * q.limit;
-  const [rows, total] = await Promise.all([
-    prisma.emailCampaign.findMany({ where, skip, take: q.limit, orderBy: { createdAt: 'desc' } }),
-    prisma.emailCampaign.count({ where }),
-  ]);
+  // Date range is ANDed after the owner logic so it never overwrites an owner-scope OR.
+  const range = { from: q.from ? new Date(q.from) : undefined, to: q.to ? new Date(q.to) : undefined };
+  if ((range.from && Number.isNaN(range.from.getTime())) || (range.to && Number.isNaN(range.to.getTime()))) {
+    return res.status(400).json({ error: 'Invalid query', details: { fieldErrors: { from: ['Invalid date'] } } });
+  }
+  applyCampaignDateRange(where, range);
 
-  return res.json({
-    data: rows.map(formatCampaign),
-    pagination: { page: q.page, limit: q.limit, total, totalPages: Math.ceil(total / q.limit) },
-  });
+  const skip = (q.page - 1) * q.limit;
+  // Express 4 does not forward a rejected async handler to the error middleware: an uncaught Prisma error here
+  // would be an unhandled rejection (hung request / process exit on Node 22), so answer it explicitly.
+  try {
+    const [rows, total] = await Promise.all([
+      // id tiebreaker keeps offset paging stable when createdAt ties.
+      prisma.emailCampaign.findMany({ where, skip, take: q.limit, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
+      prisma.emailCampaign.count({ where }),
+    ]);
+
+    return res.json({
+      data: rows.map(formatCampaign),
+      pagination: { page: q.page, limit: q.limit, total, totalPages: Math.ceil(total / q.limit) },
+    });
+  } catch (error) {
+    console.error('[campaigns] List failed:', error);
+    return res.status(500).json({ error: 'Unable to load campaigns' });
+  }
 });
 
 /** GET /campaigns/:id */

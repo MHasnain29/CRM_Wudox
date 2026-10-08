@@ -9,7 +9,7 @@ export interface ReportPolicyInput {
   sendMinute: number;
   timezone: string;
   shiftHours: number;
-  period: 'today' | 'previous_day';
+  period: 'today';
   recipientEmail: string | null;
   ccEmails?: string[];
   authorizedById?: string | null;

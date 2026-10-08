@@ -10,7 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { format } from 'date-fns';
 import { CreateCampaignDialog } from '@/components/CreateCampaignDialog';
 import { CampaignDetailsDialog } from '@/components/CampaignDetailsDialog';
-import { AgencyBulkEmailConversionCard } from '@/components/AgencyBulkEmailConversionCard';
+import { AgencyBulkEmailConversionCard, type ConversionCardRange } from '@/components/AgencyBulkEmailConversionCard';
 import { fetchCampaigns, deleteCampaign, sendCampaign, type ApiCampaign } from '@/lib/api';
 import { toast } from 'sonner';
 import type { Agency } from '@/hooks/useAgencyFilter';
@@ -22,6 +22,59 @@ import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
 import { useScopeQueryParams, EMPTY_OWNER_SENTINEL } from '@/hooks/useScopeQueryParams';
 import { PersonSectionHeader } from '@/components/PersonSectionHeader';
 import { getUserRoleTitle } from '@/lib/roleLabels';
+import { DateRangeFilterRow } from '@/components/DateRangeFilterRow';
+import { useDateRangeFilter } from '@/hooks/useDateRangeFilter';
+import { useTodayKey } from '@/hooks/useTodayKey';
+import { BULK_MAIL_ALLOWED_PRESETS, BULK_MAIL_PERIOD_OPTIONS, dateRangeKey, normalizeRange, resolveDateRange, toDateRangeQuery } from '@/lib/dateRangeFilter';
+import { parseISO } from 'date-fns';
+import { buildCampaignEmptyState, describeCampaignPeriod, getCampaignDisplayDate, type CampaignTab } from '@/lib/campaignDate';
+
+// ─── Date-filter plumbing shared by the single view and every per-person/agency section ──────
+const CAMPAIGN_LIMIT = 100;
+
+/** Bundle handed from the page to each section so one date filter drives every query and caption. */
+interface CampaignDateFilter {
+  dateKey: string;
+  queryRange?: { from: string; to: string };
+  /** Same range for the conversion card: exact instants, or 'all' when unfiltered. */
+  range: ConversionCardRange;
+  isActive: boolean;
+  periodLabel: string;
+  periodCaption: string;
+  onClear: () => void;
+}
+
+/** A 4xx is deterministic (bad query, no permission) — retrying only delays the error by seconds. */
+function campaignQueryRetry(failureCount: number, error: unknown) {
+  const status = (error as { status?: number } | null)?.status;
+  if (status && status >= 400 && status < 500) return false;
+  return failureCount < 2;
+}
+
+/** Poll every 30s, but stop hammering an endpoint that has only ever failed (the user gets a Retry button). */
+function campaignRefetchInterval(status: string, data: unknown): number | false {
+  return status === 'error' && data === undefined ? false : 30_000;
+}
+
+function CampaignQueryError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+      <div className="rounded-full bg-red-50 p-3"><AlertCircle className="h-6 w-6 text-red-600" /></div>
+      <p className="text-sm font-medium">Couldn't load campaigns</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
+    </div>
+  );
+}
+
+/** The server returns at most CAMPAIGN_LIMIT rows (newest created first); say so instead of silently truncating. */
+function TruncationHint({ shown, total }: { shown: number; total: number }) {
+  if (total <= shown) return null;
+  return (
+    <p className="border-b bg-amber-50/60 px-5 py-2 text-xs text-amber-800">
+      Showing {shown.toLocaleString()} of {total.toLocaleString()} matching campaigns. Narrow the date range to see the rest. Totals above reflect these {shown.toLocaleString()}.
+    </p>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function getStatusIcon(status: string) {
@@ -46,10 +99,8 @@ function getStatusBadgeClass(status: string) {
   }
 }
 
-function formatCampaignDate(iso?: string | null) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : format(d, 'MMM d, yyyy');
+function formatCampaignDate(d: Date | null) {
+  return d ? format(d, 'MMM d, yyyy') : null;
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
@@ -111,59 +162,72 @@ function StatCard({ label, value, sub, icon, iconBg, valueColor }: StatCardProps
 }
 
 function CampaignStatCards({
-  totalSent, totalDelivered, totalOpened, totalClicked, totalBounced, totalFailed,
+  totalSent, totalDelivered, totalOpened, totalClicked, totalBounced, totalFailed, caption, isLoading,
 }: {
   totalSent: number; totalDelivered: number; totalOpened: number;
   totalClicked: number; totalBounced: number; totalFailed: number;
+  /** Period the numbers cover, e.g. "Last 7 days · Oct 2 – Oct 8, 2026". */
+  caption?: string;
+  /** While loading, show dashes rather than a misleading 0 / 0%. */
+  isLoading?: boolean;
 }) {
   const deliveryPct = totalSent > 0      ? Math.round((totalDelivered / totalSent)      * 100) : 0;
   const openPct     = totalDelivered > 0 ? Math.round((totalOpened    / totalDelivered)  * 100) : 0;
   const clickPct    = totalOpened > 0    ? Math.round((totalClicked   / totalOpened)     * 100) : 0;
   const bouncePct   = totalSent > 0      ? Math.round((totalBounced   / totalSent)       * 100) : 0;
   const failedPct   = totalSent > 0      ? Math.round((totalFailed    / totalSent)       * 100) : 0;
+  const pct = (n: number) => (isLoading ? '–' : `${n}%`);
+  const sub = (s: string) => (isLoading ? '' : s);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-      <StatCard
-        label="Delivery Rate"
-        value={`${deliveryPct}%`}
-        sub={`${totalDelivered.toLocaleString()} of ${totalSent.toLocaleString()} sent`}
-        icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
-        iconBg="bg-green-100"
-        valueColor="text-green-600"
-      />
-      <StatCard
-        label="Open Rate"
-        value={`${openPct}%`}
-        sub={`${totalOpened.toLocaleString()} emails opened`}
-        icon={<Inbox className="h-5 w-5 text-blue-600" />}
-        iconBg="bg-blue-100"
-        valueColor="text-blue-600"
-      />
-      <StatCard
-        label="Click Rate"
-        value={`${clickPct}%`}
-        sub={`${totalClicked.toLocaleString()} links clicked`}
-        icon={<MousePointerClick className="h-5 w-5 text-orange-600" />}
-        iconBg="bg-orange-100"
-        valueColor="text-orange-600"
-      />
-      <StatCard
-        label="Bounce Rate"
-        value={`${bouncePct}%`}
-        sub={`${totalBounced.toLocaleString()} bounced`}
-        icon={<AlertCircle className="h-5 w-5 text-amber-600" />}
-        iconBg="bg-amber-100"
-        valueColor="text-amber-600"
-      />
-      <StatCard
-        label="Failed Rate"
-        value={`${failedPct}%`}
-        sub={`${totalFailed.toLocaleString()} failed`}
-        icon={<XCircle className="h-5 w-5 text-red-600" />}
-        iconBg="bg-red-100"
-        valueColor="text-red-600"
-      />
+    <div className="space-y-2">
+      {caption && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          Showing <span className="font-medium text-foreground">{caption}</span> · sent campaigns only
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard
+          label="Delivery Rate"
+          value={pct(deliveryPct)}
+          sub={sub(`${totalDelivered.toLocaleString()} of ${totalSent.toLocaleString()} sent`)}
+          icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
+          iconBg="bg-green-100"
+          valueColor="text-green-600"
+        />
+        <StatCard
+          label="Open Rate"
+          value={pct(openPct)}
+          sub={sub(`${totalOpened.toLocaleString()} emails opened`)}
+          icon={<Inbox className="h-5 w-5 text-blue-600" />}
+          iconBg="bg-blue-100"
+          valueColor="text-blue-600"
+        />
+        <StatCard
+          label="Click Rate"
+          value={pct(clickPct)}
+          sub={sub(`${totalClicked.toLocaleString()} links clicked`)}
+          icon={<MousePointerClick className="h-5 w-5 text-orange-600" />}
+          iconBg="bg-orange-100"
+          valueColor="text-orange-600"
+        />
+        <StatCard
+          label="Bounce Rate"
+          value={pct(bouncePct)}
+          sub={sub(`${totalBounced.toLocaleString()} bounced`)}
+          icon={<AlertCircle className="h-5 w-5 text-amber-600" />}
+          iconBg="bg-amber-100"
+          valueColor="text-amber-600"
+        />
+        <StatCard
+          label="Failed Rate"
+          value={pct(failedPct)}
+          sub={sub(`${totalFailed.toLocaleString()} failed`)}
+          icon={<XCircle className="h-5 w-5 text-red-600" />}
+          iconBg="bg-red-100"
+          valueColor="text-red-600"
+        />
+      </div>
     </div>
   );
 }
@@ -193,11 +257,10 @@ function CampaignTableRow({
   const bounceRate   = isSent && campaign.stats.sent > 0       ? (campaign.stats.bounced   / campaign.stats.sent)       * 100 : 0;
   const failedRate   = isSent && campaign.stats.sent > 0       ? (campaign.stats.failed    / campaign.stats.sent)       * 100 : 0;
 
-  const dateStr = isSent
-    ? formatCampaignDate(campaign.sentAt)
-    : campaign.status === 'scheduled'
-    ? formatCampaignDate(campaign.scheduledDate)
-    : formatCampaignDate(campaign.createdAt);
+  // Same date the server filters by, so the label always explains why a row is (or isn't) in the period.
+  const { date: displayDate, kind: dateKind } = getCampaignDisplayDate(campaign);
+  const dateStr = formatCampaignDate(displayDate);
+  const dateLabel = dateKind === 'sent' ? 'Sent' : dateKind === 'scheduled' ? 'Sched.' : 'Created';
 
   return (
     <div
@@ -222,7 +285,7 @@ function CampaignTableRow({
         <p className="text-xs text-muted-foreground truncate">{campaign.subject}</p>
         <p className="text-[11px] text-muted-foreground/70 mt-0.5">
           {campaign.listName} · {campaign.totalRecipients.toLocaleString()} recipients
-          {dateStr && ` · ${isSent ? 'Sent' : campaign.status === 'scheduled' ? 'Sched.' : 'Created'} ${dateStr}`}
+          {dateStr && ` · ${dateLabel} ${dateStr}`}
         </p>
       </div>
 
@@ -374,6 +437,10 @@ function PerformanceReportCard({
   canManage,
   onCreateClick,
   sentCount,
+  loadFailed,
+  onRetry,
+  totalMatching,
+  dateFilter,
 }: {
   campaigns: ApiCampaign[];
   isLoading: boolean;
@@ -383,17 +450,38 @@ function PerformanceReportCard({
   canManage: boolean;
   onCreateClick: () => void;
   sentCount: number;
+  /** The query errored and there is no data to fall back on (a failed background poll keeps the last good rows). */
+  loadFailed: boolean;
+  onRetry: () => void;
+  /** Server-side match count for the active date range (can exceed campaigns.length at the 100-row cap). */
+  totalMatching: number;
+  dateFilter: CampaignDateFilter;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab]   = useState('all');
+  const [activeTab, setActiveTab]   = useState<CampaignTab>('all');
 
+  // `campaigns` is already date-filtered by the server; search and status tab narrow it further here.
   const filtered = campaigns.filter(c => {
     const q = searchTerm.toLowerCase();
     const match = c.name.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q) || c.listName.toLowerCase().includes(q);
     return activeTab === 'all' ? match : match && c.status === activeTab;
   });
 
-  const count = (s: string) => s === 'all' ? campaigns.length : campaigns.filter(c => c.status === s).length;
+  // Dashes (not zeros) while loading or after a failed load, so an error never reads as "0 campaigns".
+  const hideCounts = isLoading || loadFailed;
+  const count = (s: string) => {
+    if (hideCounts) return '–';
+    return s === 'all' ? campaigns.length : campaigns.filter(c => c.status === s).length;
+  };
+
+  const showLoadError = loadFailed;
+  const emptyState = buildCampaignEmptyState({
+    isDateFilterActive: dateFilter.isActive,
+    periodLabel: dateFilter.periodLabel,
+    searchTerm,
+    activeTab,
+    dateFilteredCount: campaigns.length,
+  });
 
   return (
     <Card className="overflow-hidden">
@@ -406,8 +494,9 @@ function PerformanceReportCard({
             </div>
             <div>
               <CardTitle className="text-base font-semibold">Email Performance Report</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''} · {sentCount} sent
+              <p className="text-xs text-muted-foreground mt-0.5" aria-live="polite">
+                {hideCounts ? '–' : campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''} · {hideCounts ? '–' : sentCount} sent
+                {dateFilter.isActive && ` · ${dateFilter.periodLabel}`}
               </p>
             </div>
           </div>
@@ -439,7 +528,7 @@ function PerformanceReportCard({
               { key: 'scheduled', label: 'Scheduled' },
               { key: 'sent',      label: 'Sent'      },
               { key: 'failed',    label: 'Failed'    },
-            ] as const
+            ] as { key: CampaignTab; label: string }[]
           ).map(({ key, label }) => {
             const active = activeTab === key;
             return (
@@ -466,23 +555,36 @@ function PerformanceReportCard({
 
       {/* Campaign list */}
       <CardContent className="p-0">
-        <CampaignList
-          campaigns={filtered}
-          isLoading={isLoading}
-          onViewDetails={onViewDetails}
-          onSend={onSend}
-          onDelete={onDelete}
-          canManage={canManage}
-          emptyMessage={searchTerm ? 'No campaigns match your search' : 'No campaigns yet'}
-          resetKey={`${activeTab}|${searchTerm}`}
-        />
-        {filtered.length === 0 && !isLoading && !searchTerm && canManage && activeTab === 'all' && (
-          <div className="pb-6 flex justify-center">
-            <Button variant="outline" onClick={onCreateClick} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Create your first campaign
-            </Button>
-          </div>
+        {showLoadError ? (
+          <CampaignQueryError onRetry={onRetry} />
+        ) : (
+          <>
+            {!isLoading && <TruncationHint shown={campaigns.length} total={totalMatching} />}
+            <CampaignList
+              campaigns={filtered}
+              isLoading={isLoading}
+              onViewDetails={onViewDetails}
+              onSend={onSend}
+              onDelete={onDelete}
+              canManage={canManage}
+              emptyMessage={emptyState.message}
+              resetKey={`${activeTab}|${searchTerm}`}
+            />
+            {filtered.length === 0 && !isLoading && (emptyState.showClearDate || (emptyState.showCreateCta && canManage)) && (
+              <div className="pb-6 flex justify-center">
+                {emptyState.showClearDate ? (
+                  <Button variant="outline" onClick={dateFilter.onClear} className="gap-2">
+                    Clear date filter
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={onCreateClick} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Create your first campaign
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -497,10 +599,12 @@ function AgencyCampaignsSection({
   onSend,
   onDelete,
   ownerIds,
+  ownerExact,
   scopeKey,
   viewLabel = 'View Agency',
   subtitle,
   person,
+  dateFilter,
 }: {
   agency: Agency;
   onViewAgency: () => void;
@@ -508,20 +612,25 @@ function AgencyCampaignsSection({
   onSend: (c: ApiCampaign) => void;
   onDelete: (id: string) => void;
   ownerIds?: string[];
+  ownerExact?: boolean;
   scopeKey: string;
   viewLabel?: string;
   subtitle?: string;
   person?: { id: string; firstName: string; lastName: string; roleTitle?: string };
+  dateFilter: CampaignDateFilter;
 }) {
   const canManageCampaigns = useHasPermission('calls:read');
-  const { data, isLoading } = useQuery({
-    queryKey: ['campaigns-agency', agency.id, scopeKey],
-    queryFn: () => fetchCampaigns({ subCompanyId: agency.id, ownerIds, limit: 100 }),
+  const { data, isLoading, isError, refetch } = useQuery({
+    // dateKey is the LAST element: invalidateAll() matches on queryKey[0] only.
+    queryKey: ['campaigns-agency', agency.id, scopeKey, dateFilter.dateKey],
+    queryFn: () => fetchCampaigns({ subCompanyId: agency.id, ownerIds, ownerExact, limit: CAMPAIGN_LIMIT, ...dateFilter.queryRange }),
     staleTime: 0,
-    refetchInterval: 30_000,
+    retry: campaignQueryRetry,
+    refetchInterval: (query) => campaignRefetchInterval(query.state.status, query.state.data),
   });
 
   const campaigns    = data?.data ?? [];
+  const totalMatching = data?.pagination?.total ?? campaigns.length;
   const sentC        = campaigns.filter(c => c.status === 'sent');
   const totalSent      = sentC.reduce((a, c) => a + c.stats.sent,       0);
   const totalDelivered = sentC.reduce((a, c) => a + c.stats.delivered,   0);
@@ -535,6 +644,15 @@ function AgencyCampaignsSection({
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.subject.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const loadFailed = isError && data === undefined;
+  const showLoadError = loadFailed;
+  const emptyState = buildCampaignEmptyState({
+    isDateFilterActive: dateFilter.isActive,
+    periodLabel: dateFilter.periodLabel,
+    searchTerm,
+    activeTab: 'all',
+    dateFilteredCount: campaigns.length,
+  });
 
   return (
     <div className="space-y-5 pb-8 border-b last:border-b-0">
@@ -550,9 +668,20 @@ function AgencyCampaignsSection({
         </div>
       )}
 
-      <AgencyBulkEmailConversionCard agencyId={agency.id} title={`${agency.name} — Mail Conversion Rate`} />
+      <AgencyBulkEmailConversionCard
+        agencyId={agency.id}
+        ownerIds={ownerIds}
+        ownerExact={ownerExact}
+        range={dateFilter.range}
+        periodCaption={dateFilter.periodCaption}
+        title={`${person ? `${person.firstName} ${person.lastName}` : agency.name} — Mail Conversion Rate`}
+      />
 
-      <CampaignStatCards totalSent={totalSent} totalDelivered={totalDelivered} totalOpened={totalOpened} totalClicked={totalClicked} totalBounced={totalBounced} totalFailed={totalFailed} />
+      <CampaignStatCards
+        totalSent={totalSent} totalDelivered={totalDelivered} totalOpened={totalOpened}
+        totalClicked={totalClicked} totalBounced={totalBounced} totalFailed={totalFailed}
+        caption={dateFilter.periodCaption} isLoading={isLoading || loadFailed}
+      />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b bg-muted/20 py-3 px-5">
@@ -560,7 +689,7 @@ function AgencyCampaignsSection({
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold">Campaign Performance</span>
-              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{campaigns.length}</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{isLoading || loadFailed ? '–' : campaigns.length}</Badge>
             </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
@@ -574,17 +703,29 @@ function AgencyCampaignsSection({
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <CampaignList
-            campaigns={filtered}
-            isLoading={isLoading}
-            onViewDetails={onViewDetails}
-            onSend={onSend}
-            onDelete={onDelete}
-            canManage={canManageCampaigns}
-            emptyMessage="No campaigns yet"
-            paginate
-            resetKey={`${agency.id}|${scopeKey}|${searchTerm}`}
-          />
+          {showLoadError ? (
+            <CampaignQueryError onRetry={() => { void refetch(); }} />
+          ) : (
+            <>
+              {!isLoading && <TruncationHint shown={campaigns.length} total={totalMatching} />}
+              <CampaignList
+                campaigns={filtered}
+                isLoading={isLoading}
+                onViewDetails={onViewDetails}
+                onSend={onSend}
+                onDelete={onDelete}
+                canManage={canManageCampaigns}
+                emptyMessage={emptyState.message}
+                paginate
+                resetKey={`${agency.id}|${scopeKey}|${searchTerm}|${dateFilter.dateKey}`}
+              />
+              {filtered.length === 0 && !isLoading && emptyState.showClearDate && (
+                <div className="pb-6 flex justify-center">
+                  <Button variant="outline" onClick={dateFilter.onClear}>Clear date filter</Button>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -613,9 +754,35 @@ export default function BulkEmails() {
     selectedUserId, userParamInUrl, getManagersForLeader,
     getAssociatesForManager, selectedLeaderId, leaderParamInUrl,
     managers: allManagers, showAllTeamView, showAgencySections,
-    sectionUsers, showManagerSections,
+    sectionUsers, showManagerSections, agenciesLoading,
   } = scopeFilter;
-  const { ownerIds, scopeKey } = useScopeQueryParams(scopeFilter);
+  const { ownerIds, ownerExact, scopeKey } = useScopeQueryParams(scopeFilter);
+
+  // ── Date filter: one URL-backed state for the whole page (single view, all-agencies and all-team sections) ──
+  const dateState = useDateRangeFilter({ allowedPresets: BULK_MAIL_ALLOWED_PRESETS });
+  const todayKey = useTodayKey();
+  const { period: datePeriod, customRange: dateCustomRange, setPeriod: setDatePeriod, setCustomRange: setDateCustomRange } = dateState;
+  // Resolved relative to todayKey (local midnight of today; every preset is day-aligned so this equals "now"),
+  // which flips once at local midnight so "Today" / "Last 7 days" re-resolve on a page left open.
+  const dateRange = useMemo(
+    () => normalizeRange(resolveDateRange(datePeriod, dateCustomRange, parseISO(todayKey))),
+    [datePeriod, dateCustomRange, todayKey],
+  );
+  const dateKey = dateRangeKey(dateRange);
+  const dateFilter = useMemo<CampaignDateFilter>(() => {
+    const { label, caption } = describeCampaignPeriod(datePeriod, dateRange);
+    const queryRange = toDateRangeQuery(dateRange);
+    return {
+      dateKey,
+      queryRange,
+      range: queryRange ?? 'all',
+      // Active means "a range is really applied" — a 'custom' period without usable dates resolves to null.
+      isActive: dateRange !== null,
+      periodLabel: label,
+      periodCaption: caption,
+      onClear: () => setDatePeriod('all'),
+    };
+  }, [dateRange, dateKey, datePeriod, setDatePeriod]);
 
   const campaignOwnerIds = useMemo(() => {
     if (userParamInUrl && selectedUserId !== 'all') return [selectedUserId];
@@ -639,14 +806,22 @@ export default function BulkEmails() {
     ? selectedAgencyId === 'me' ? (ownSubCompanyId ?? undefined) : selectedAgencyId !== 'all' ? selectedAgencyId : undefined
     : undefined;
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['campaigns', isElevated ? selectedAgencyId : 'own', ownSubCompanyId, scopeKey, campaignOwnerIds?.join(',') ?? ''],
-    queryFn: () => fetchCampaigns({ limit: 100, subCompanyId: querySubCompanyId, ownerIds: campaignOwnerIds }),
+  // "All Agencies" + a person chip renders this view with no single agency: send the accessible set explicitly
+  // (rather than relying on the server default) so the list and the conversion card query the same agencies,
+  // and a stale viewedSubCompanyId auto-injected by apiFetch cannot narrow the list on its own.
+  const singleViewAgencyIds = isElevated && !querySubCompanyId ? agencies.map(a => a.id) : undefined;
+  const { data, isLoading, isError, refetch } = useQuery({
+    // invalidateAll() matches on queryKey[0] only; everything that changes the request is in the key.
+    queryKey: ['campaigns', isElevated ? selectedAgencyId : 'own', ownSubCompanyId, scopeKey, campaignOwnerIds?.join(',') ?? '', singleViewAgencyIds?.join(',') ?? '', dateKey],
+    queryFn: () => fetchCampaigns({ limit: CAMPAIGN_LIMIT, subCompanyId: querySubCompanyId, agencyIds: singleViewAgencyIds, ownerIds: campaignOwnerIds, ownerExact, ...dateFilter.queryRange }),
     enabled: !showAllAgenciesView && !showAllTeamView,
-    refetchInterval: 30_000,
+    retry: campaignQueryRetry,
+    refetchInterval: (query) => campaignRefetchInterval(query.state.status, query.state.data),
   });
 
   const campaigns  = data?.data ?? [];
+  const totalMatching = data?.pagination?.total ?? campaigns.length;
+  const loadFailed = isError && data === undefined;
   const sentC      = campaigns.filter(c => c.status === 'sent');
   const totalSent      = sentC.reduce((a, c) => a + c.stats.sent,       0);
   const totalDelivered = sentC.reduce((a, c) => a + c.stats.delivered,   0);
@@ -656,7 +831,9 @@ export default function BulkEmails() {
   const totalFailed    = sentC.reduce((a, c) => a + c.stats.failed,      0);
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ predicate: q => q.queryKey[0] === 'campaigns' || q.queryKey[0] === 'campaigns-agency' });
+    queryClient.invalidateQueries({
+      predicate: q => q.queryKey[0] === 'campaigns' || q.queryKey[0] === 'campaigns-agency' || q.queryKey[0] === 'bulk-email-conversion',
+    });
   };
 
   const handleViewDetails = (campaign: ApiCampaign) => {
@@ -708,6 +885,16 @@ export default function BulkEmails() {
 
       <StickyHeader zIndex={40}>
         <ScopeFilterBar show={showHierarchyFilters} filterRowProps={filterRowProps} />
+
+        {/* mt-4: the chip rows sit 8px apart, so the same gap here read as a fifth chip row */}
+        <DateRangeFilterRow
+          className="mt-4"
+          options={BULK_MAIL_PERIOD_OPTIONS}
+          period={datePeriod}
+          customRange={dateCustomRange}
+          onPeriodChange={setDatePeriod}
+          onCustomRangeChange={setDateCustomRange}
+        />
       </StickyHeader>
 
       {/* ── People sections ── */}
@@ -747,7 +934,9 @@ export default function BulkEmails() {
                   onSend={c => setSendingCampaign(c)}
                   onDelete={handleDeleteCampaign}
                   ownerIds={[user.id]}
+                  ownerExact={ownerExact}
                   scopeKey={`${scopeKey}|user:${user.id}`}
+                  dateFilter={dateFilter}
                 />
               );
             })}
@@ -764,20 +953,35 @@ export default function BulkEmails() {
               onSend={c => setSendingCampaign(c)}
               onDelete={handleDeleteCampaign}
               ownerIds={campaignOwnerIds}
+              ownerExact={ownerExact}
               scopeKey={`${scopeKey}|${campaignOwnerIds?.join(',') ?? ''}`}
+              dateFilter={dateFilter}
             />
           ))}
         </div>
       ) : (
         <>
           {/* Mail Conversion Rate */}
+          {/* "All Agencies" + a person chip renders this view with no single agency: the list then spans
+              every accessible agency, so the card is given the same set rather than defaulting to one. */}
           {isElevated ? (
             <AgencyBulkEmailConversionCard
               agencyId={querySubCompanyId}
+              agencyIds={singleViewAgencyIds}
+              agenciesLoading={agenciesLoading}
+              ownerIds={campaignOwnerIds}
+              ownerExact={ownerExact}
+              range={dateFilter.range}
+              periodCaption={dateFilter.periodCaption}
               title={selectedAgencyName ? `${selectedAgencyName} — Mail Conversion Rate` : undefined}
             />
           ) : (
-            <AgencyBulkEmailConversionCard />
+            <AgencyBulkEmailConversionCard
+              ownerIds={campaignOwnerIds}
+              ownerExact={ownerExact}
+              range={dateFilter.range}
+              periodCaption={dateFilter.periodCaption}
+            />
           )}
 
           {/* Stat cards */}
@@ -788,6 +992,8 @@ export default function BulkEmails() {
             totalClicked={totalClicked}
             totalBounced={totalBounced}
             totalFailed={totalFailed}
+            caption={dateFilter.periodCaption}
+            isLoading={isLoading || loadFailed}
           />
 
           {/* Performance report card */}
@@ -800,6 +1006,10 @@ export default function BulkEmails() {
             canManage={canManageCampaigns}
             onCreateClick={() => setIsCreateDialogOpen(true)}
             sentCount={sentC.length}
+            loadFailed={loadFailed}
+            onRetry={() => { void refetch(); }}
+            totalMatching={totalMatching}
+            dateFilter={dateFilter}
           />
         </>
       )}

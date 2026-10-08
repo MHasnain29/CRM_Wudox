@@ -1,10 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { sameReportCcEmails } from '../services/dailyReportAddresses';
 import prisma from '../config/database';
-import { resolveReportDeliveryTarget, canReadReport, reportAudience } from '../services/dailyReportRecipients';
+import { resolveReportDeliveryTarget, canReadReport, reportAudience, isManualReportDelivery, reportPolicyForDelivery } from '../services/dailyReportRecipients';
 import { buildDailyReport } from '../services/dailyReportBuilder';
 import { sendReportSnapshot } from '../services/dailyReportEmail';
-import { localDateKey, reportDue, shiftDate } from '../services/reportMetrics';
+import { localDateKey, reportDue } from '../services/reportMetrics';
 import { REPORT_PROFILES, type DailyReportPayload } from '../services/dailyReportTypes';
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -21,17 +21,16 @@ export async function queueDailyReports(now = new Date()): Promise<void> {
   for (const policy of policies) {
     try {
       if (!reportDue(policy, now)) continue;
-      const today = localDateKey(now, policy.timezone);
-      const date = shiftDate(today, policy.period === 'previous_day' ? -1 : 0);
+      const date = localDateKey(now, policy.timezone);
       const target = await resolveReportDeliveryTarget(policy);
       if (!target) continue;
-      const effectivePolicy = { ...policy, agencyIds: target.agencyIds ?? policy.agencyIds, profiles: [...REPORT_PROFILES] };
+      const effectivePolicy = { ...policy, period: 'today', agencyIds: target.agencyIds ?? policy.agencyIds, profiles: [...REPORT_PROFILES] };
       if (!effectivePolicy.agencyIds.length) continue;
       const key = `${policy.id}:${date}`;
       // The policy owns one delivery per day, even when its destination changes.
       // Also recognize deliveries produced by the former per-user scheduler.
       if (await prisma.dailyReportDelivery.findFirst({ where: { OR: [
-        { deliveryKey: key }, { snapshot: { policyId: policy.id, reportDate: date } },
+        { deliveryKey: key }, { deliveryKey: { not: { startsWith: 'manual:' } }, snapshot: { policyId: policy.id, reportDate: date } },
       ] }, select: { id: true } })) continue;
       const report = await buildDailyReport(effectivePolicy, target.user, date, false, now);
       try {
@@ -46,12 +45,14 @@ export async function queueDailyReports(now = new Date()): Promise<void> {
   }
 }
 
-export async function processDailyReportDeliveries(now = new Date()): Promise<void> {
+export async function processDailyReportDeliveries(now = new Date(), deliveryId?: string): Promise<void> {
+  const requestedDelivery = deliveryId ? { id: deliveryId } : {};
   // A worker may have died after provider acceptance. Do not blindly resend its message.
-  await prisma.dailyReportDelivery.updateMany({ where: { status: 'sending', leaseUntil: { lt: now } }, data: { status: 'unknown', leaseUntil: null, lastError: 'Worker stopped during provider submission. Check provider delivery history before any resend.' } });
-  const deliveries = await prisma.dailyReportDelivery.findMany({ where: { status: { in: ['pending', 'failed'] }, nextAttemptAt: { lte: now }, attempts: { lt: 5 } }, include: { snapshot: { include: { policy: true } } }, orderBy: { nextAttemptAt: 'asc' }, take: 100 });
+  await prisma.dailyReportDelivery.updateMany({ where: { ...requestedDelivery, status: 'sending', leaseUntil: { lt: now } }, data: { status: 'unknown', leaseUntil: null, lastError: 'Worker stopped during provider submission. Check provider delivery history before any resend.' } });
+  const deliveries = await prisma.dailyReportDelivery.findMany({ where: { ...requestedDelivery, status: { in: ['pending', 'failed'] }, nextAttemptAt: { lte: now }, attempts: { lt: 5 } }, include: { snapshot: { include: { policy: true } } }, orderBy: { nextAttemptAt: 'asc' }, take: 100 });
   for (const delivery of deliveries) {
-    const policy = delivery.snapshot.policy;
+    const manual = isManualReportDelivery(delivery);
+    const policy = reportPolicyForDelivery(delivery.snapshot.policy, delivery);
     const report = delivery.snapshot.payload as unknown as DailyReportPayload;
     const target = policy.enabled ? await resolveReportDeliveryTarget(policy) : null;
     const effectivePolicy = { ...policy, agencyIds: target?.agencyIds ?? policy.agencyIds, profiles: [...REPORT_PROFILES] };
@@ -60,7 +61,7 @@ export async function processDailyReportDeliveries(now = new Date()): Promise<vo
     const sameAddress = target?.email === delivery.recipientEmail && report.recipient.email === delivery.recipientEmail
       && sameReportCcEmails(policy.ccEmails, report.ccEmails, delivery.recipientEmail);
     const allowedAudience = target && sameAuthorization && sameAddress
-      ? await reportAudience(target.user, effectivePolicy.agencyIds, false, false, policy.scope === 'organization') : null;
+      ? await reportAudience(target.user, effectivePolicy.agencyIds, false, manual, policy.scope === 'organization') : null;
     const policyMatches = report.agencyIds.every(id => effectivePolicy.agencyIds.includes(id)) && report.profiles.every(profile => effectivePolicy.profiles.includes(profile as typeof REPORT_PROFILES[number]));
     const peopleStillIncluded = allowedAudience && report.userIds.every(id => allowedAudience.users.some(user => user.id === id));
     if (!target || !sameAuthorization || !sameAddress || !policyMatches || !peopleStillIncluded || !await canReadReport(target.user, report)) {

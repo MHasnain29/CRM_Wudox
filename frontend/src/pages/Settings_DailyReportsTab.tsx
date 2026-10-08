@@ -251,14 +251,7 @@ function DailyReportsSettings() {
                 <p className="text-muted-foreground">Hubstaff is optional. Daily emails still include available CRM results when it is not connected, with a “Hubstaff not connected” notice. Hubstaff details appear in future reports after connection and synchronization.</p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="report-period">Report period</Label>
-                  <Select value={policy.period} disabled={deliveryLocked} onValueChange={(value) => updatePolicy({ period: value as DailyReportPolicy['period'] })}>
-                    <SelectTrigger id="report-period"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="previous_day">Previous day</SelectItem><SelectItem value="today">Today, as of send time</SelectItem></SelectContent>
-                  </Select>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="report-time">Send time</Label>
                   <Input id="report-time" type="time" disabled={deliveryLocked} value={`${String(policy.sendHour).padStart(2, '0')}:${String(policy.sendMinute).padStart(2, '0')}`} onChange={(event) => {
@@ -277,7 +270,7 @@ function DailyReportsSettings() {
                   <Input id="report-shift" type="number" min={1} max={24} step={1} disabled={deliveryLocked} value={policy.shiftHours} onChange={(event) => updatePolicy({ shiftHours: Number(event.target.value) })} />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">A previous-day report sent the following morning allows time for late uploads. Today’s report includes work recorded before its cutoff. Shift hours provide context; reports do not assign a universal productivity score.</p>
+              <p className="text-xs text-muted-foreground">Daily emails always report today’s work, from midnight until send time in the selected timezone. Shift hours provide context; reports do not assign a universal productivity score.</p>
               <div className="flex flex-wrap items-center gap-3">
                 <Button disabled={deliveryLocked} onClick={() => void perform('save', async () => {
                   const email = policy.recipientEmail?.trim() ?? '';
@@ -354,7 +347,7 @@ function DailyReportsSettings() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Preview a report</CardTitle><CardDescription>Build a saved preview using the saved settings. Previewing does not send an email.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Preview and email a report</CardTitle><CardDescription>Choose a date and create a preview. After reviewing it, enter any recipient email to send that day’s report. Previewing alone does not send an email.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm">Saved recipient: <span className="font-medium">{savedEmail || 'No email address saved'}</span></p>
               {!!data.policy.ccEmails?.length && <p className="text-sm break-words">Saved CC: {data.policy.ccEmails.join(', ')}</p>}
