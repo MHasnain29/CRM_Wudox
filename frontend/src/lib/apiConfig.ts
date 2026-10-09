@@ -1,6 +1,8 @@
 /** Shared API base URL and tunnel helpers (used by api.ts and socket.ts). */
 
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'https://staffing.wudox.ca';
+// Production is served by the backend itself, so default to the page's own origin (e.g. https://crm.wudox.ca).
+export const API_BASE =
+  import.meta.env.VITE_API_URL ?? (typeof window !== 'undefined' ? window.location.origin : '');
 export const API_PREFIX = `${API_BASE}/api/v1`;
 
 /**
