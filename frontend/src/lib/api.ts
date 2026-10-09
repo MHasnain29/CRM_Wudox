@@ -1,6 +1,6 @@
 /**
  * API client for Wudox CRM backend.
- * Base URL from VITE_API_URL (default https://staffing.wudox.ca).
+ * Base URL from VITE_API_URL (default: the page's own origin).
  * Auth: Bearer token from authStore; optional refresh on 401.
  */
 
