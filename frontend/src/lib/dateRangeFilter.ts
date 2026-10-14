@@ -70,6 +70,24 @@ export function getBulkMailPeriodLabel(preset: DatePeriodPreset): string {
   return BULK_MAIL_PERIOD_OPTIONS.find((o) => o.value === preset)?.label ?? getDatePeriodLabel(preset);
 }
 
+/**
+ * Emails page dropdown entries. The same presets as Bulk Mail, but its own list so either page can change
+ * its dropdown without touching the other. Every value is an existing preset, so getDatePeriodLabel already
+ * resolves these labels.
+ */
+export const EMAIL_PERIOD_OPTIONS: { value: DatePeriodPreset; label: string }[] = [
+  { value: 'all', label: 'All Time' },
+  { value: 'today', label: 'Today' },
+  { value: 'last_7_days', label: 'Last 7 Days' },
+  { value: 'last_30_days', label: 'Last 30 Days' },
+  { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'custom', label: 'Custom Range' },
+];
+
+/** Every ?datePeriod value the Emails page accepts. */
+export const EMAIL_ALLOWED_PRESETS: readonly DatePeriodPreset[] = EMAIL_PERIOD_OPTIONS.map((o) => o.value);
+
 export function getDatePeriodLabel(preset: DatePeriodPreset): string {
   return (
     DATE_PERIOD_OPTIONS.find((o) => o.value === preset)?.label ??

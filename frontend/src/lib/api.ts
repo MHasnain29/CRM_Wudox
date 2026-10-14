@@ -2031,6 +2031,9 @@ export async function fetchEmails(params: {
   agencyIds?: string[];
   ownerIds?: string[]; ownerExact?: boolean;
   filterMode?: 'chips';
+  /** Inclusive bounds on the mail's displayed date: ISO instants WITH offset. Either may be omitted. */
+  from?: string;
+  to?: string;
 }, options: { signal?: AbortSignal; throwOnError?: boolean } = {}): Promise<{
   data: ApiEmailListItem[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
@@ -2044,6 +2047,8 @@ export async function fetchEmails(params: {
   if (params.agencyIds?.length) q.set('agencyIds', params.agencyIds.join(','));
   appendOwnerIds(q, params.ownerIds, params.ownerExact);
   if (params.filterMode) q.set('filterMode', params.filterMode);
+  if (params.from) q.set('from', params.from);
+  if (params.to) q.set('to', params.to);
   const res = await apiFetch<{
     data: ApiEmailListItem[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
