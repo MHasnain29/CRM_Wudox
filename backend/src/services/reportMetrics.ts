@@ -1,7 +1,9 @@
 import type { ReportProfile } from './dailyReportTypes';
 
+export const SOFTWARE_REPORT_ROLES = ['it', 'cto', 'project_manager', 'team_lead', 'developer', 'qa_engineer', 'ui_ux_designer', 'business_analyst', 'devops_engineer', 'dev_team'];
+
 export function defaultReportProfile(role: string): ReportProfile {
-  if (['it', 'cto', 'project_manager', 'team_lead', 'developer', 'qa_engineer', 'ui_ux_designer', 'business_analyst', 'devops_engineer', 'dev_team'].includes(role)) return 'software';
+  if (SOFTWARE_REPORT_ROLES.includes(role)) return 'software';
   if (['sales_manager', 'sales_associate', 'sales_executive', 'marketing'].includes(role)) return 'marketing_sales';
   if (['recruitment_manager', 'recruiter', 'sr_recruiter'].includes(role)) return 'recruitment';
   return 'general';

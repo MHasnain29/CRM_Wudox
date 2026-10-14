@@ -6,6 +6,7 @@ import {
   getCurrentSession,
   processHeartbeat,
   processManualBack,
+  processBreak,
   endActivitySession,
   logActivityEvent,
 } from '../services/activitySession';
@@ -33,6 +34,25 @@ const heartbeatSchema = z.object({
   sessionId: z.string().min(1),
   visibilityState: z.enum(['visible', 'hidden']),
   hadActivitySinceLastBeat: z.boolean(),
+  measurementVersion: z.literal(2).optional(),
+  clientId: z.string().min(1).max(200).optional(),
+  clientTime: z.string().datetime().optional(),
+  lastActivityAt: z.string().datetime().nullable().optional(),
+  firstActivityAt: z.string().datetime().nullable().optional(),
+  timeZone: z.string().max(100).refine(value => {
+    try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
+  }).optional(),
+}).superRefine((value, context) => {
+  if (value.measurementVersion !== 2) return;
+  if (!value.clientId || !value.clientTime || !value.timeZone || value.lastActivityAt === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Version 2 requires clientId, clientTime, lastActivityAt and timeZone' });
+  }
+  if (value.lastActivityAt && value.clientTime && Date.parse(value.lastActivityAt) > Date.parse(value.clientTime)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Input time cannot be after clientTime' });
+  }
+  if (value.firstActivityAt && (!value.lastActivityAt || Date.parse(value.firstActivityAt) > Date.parse(value.lastActivityAt))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'First input must precede last input' });
+  }
 });
 
 const eventSchema = z.object({
@@ -50,11 +70,19 @@ const eventSchema = z.object({
 
 const sessionIdSchema = z.object({
   sessionId: z.string().min(1),
+  measurement: z.preprocess(value => value && typeof value === 'object' ? {
+    ...value, sessionId: 'snapshot', visibilityState: 'visible', hadActivitySinceLastBeat: true,
+  } : value, heartbeatSchema.refine(value => value.measurementVersion === 2)).optional(),
 });
+
+function transitionMeasurement(value: z.infer<typeof sessionIdSchema>['measurement']) {
+  return value ? { measurementVersion: 2 as const, clientId: value.clientId!, clientTime: value.clientTime!,
+    lastActivityAt: value.lastActivityAt!, firstActivityAt: value.firstActivityAt, timeZone: value.timeZone! } : undefined;
+}
 
 // ── GET /current-session ───────────────────────────────────────────────────────
 // Called on every app boot. Returns current server-authoritative state.
-// This is what prevents the refresh/reopen bypass.
+// Reopening also recovers a missing session; it never reconstructs unobserved time.
 
 activityRouter.get('/current-session', authenticate, async (req: Request, res: Response) => {
   const userId = req.user!.sub;
@@ -87,7 +115,12 @@ activityRouter.post('/heartbeat', authenticate, async (req: Request, res: Respon
   const { sessionId, visibilityState, hadActivitySinceLastBeat } = parsed.data;
 
   try {
-    const result = await processHeartbeat(sessionId, userId, visibilityState, hadActivitySinceLastBeat);
+    const body = parsed.data;
+    const measurement = body.measurementVersion === 2 ? {
+      measurementVersion: 2 as const, clientId: body.clientId!, clientTime: body.clientTime!, lastActivityAt: body.lastActivityAt!,
+      firstActivityAt: body.firstActivityAt, timeZone: body.timeZone!,
+    } : undefined;
+    const result = await processHeartbeat(sessionId, userId, visibilityState, hadActivitySinceLastBeat, measurement);
     return res.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -117,8 +150,7 @@ activityRouter.post('/event', authenticate, async (req: Request, res: Response) 
 });
 
 // ── POST /manual-back ──────────────────────────────────────────────────────────
-// The ONLY endpoint that can transition state back to active.
-// Frontend must check response.state === 'active' before closing the modal.
+// Explicit return; ordinary measured input also ends CRM inactivity.
 
 activityRouter.post('/manual-back', authenticate, async (req: Request, res: Response) => {
   const userId = req.user!.sub;
@@ -129,7 +161,7 @@ activityRouter.post('/manual-back', authenticate, async (req: Request, res: Resp
   }
 
   try {
-    const result = await processManualBack(parsed.data.sessionId, userId);
+    const result = await processManualBack(parsed.data.sessionId, userId, transitionMeasurement(parsed.data.measurement));
     return res.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -137,8 +169,26 @@ activityRouter.post('/manual-back', authenticate, async (req: Request, res: Resp
   }
 });
 
+const breakSchema = sessionIdSchema.extend({
+  onBreak: z.boolean(),
+  breakType: z.enum(['break', 'coaching', 'meeting']).optional(),
+  timeZone: z.string().max(100).refine(value => {
+    try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
+  }),
+});
+
+activityRouter.post('/break', authenticate, async (req: Request, res: Response) => {
+  const parsed = breakSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Validation error', details: parsed.error.flatten() });
+  try {
+    return res.json(await processBreak(parsed.data.sessionId, req.user!.sub, parsed.data.onBreak, parsed.data.timeZone, transitionMeasurement(parsed.data.measurement), parsed.data.breakType));
+  } catch (err) {
+    return res.status(404).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
 // ── POST /end-session ──────────────────────────────────────────────────────────
-// Called on logout. Flushes final counters and closes the session.
+// Called on logout. Closes the session at its last confirmed measurement.
 
 activityRouter.post('/end-session', authenticate, async (req: Request, res: Response) => {
   const userId = req.user!.sub;

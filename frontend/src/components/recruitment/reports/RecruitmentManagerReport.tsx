@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useStore } from '@/lib/store';
+import RecruitmentTimeSection from './RecruitmentTimeSection';
 import {
   fetchRecruitmentReport,
   type ReportRangeDays,
@@ -125,6 +126,8 @@ export default function RecruitmentManagerReport() {
           </SelectContent>
         </Select>
       </div>
+
+      <RecruitmentTimeSection days={days} />
 
       {isLoading && (
         <div className="flex items-center justify-center py-24 text-muted-foreground">

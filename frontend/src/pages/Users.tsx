@@ -9,6 +9,8 @@ import { fetchUsers, fetchUserHierarchy, fetchSubCompanies, fetchLocations, crea
 import type { InProgressUserItem, PastUserItem, OffboardingHistoryEntry } from '@/lib/api';
 import { UserHierarchyTree, UserHierarchyAgencySections } from '@/components/UserHierarchyTree';
 import { StickyHeader } from '@/components/StickyHeader';
+import { WorkingHoursTimezoneNote } from '@/components/users/WorkingHoursTimezoneNote';
+import { WORKING_HOURS_TIME_ZONE_LABEL } from '@/lib/workingHours';
 import { onTargetsRefresh } from '@/lib/socket';
 import { ROLE_OPTIONS, ALL_LOCATION_ACCESS_ROLES, ASSOCIATE_LEVEL_ROLES } from '@/lib/roleOptions';
 import { formatUserAgencyLabel, isAgencyIndependentRole } from '@/lib/agencyIndependentRoles';
@@ -1093,7 +1095,7 @@ export default function Users() {
           location: u.location ?? u.country,
           country: u.country,
           phone: u.phone ?? undefined,
-          workHours: `${u.workStartTime} – ${u.workEndTime}`,
+          workHours: `${u.workStartTime} – ${u.workEndTime} (${WORKING_HOURS_TIME_ZONE_LABEL})`,
           status: 'In Progress',
           started: new Date(u.offboardingStartedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
           manager: u.managerName ?? undefined,
@@ -1193,7 +1195,7 @@ export default function Users() {
           location: u.location ?? u.country,
           country: u.country,
           phone: u.phone ?? undefined,
-          workHours: `${u.workStartTime} – ${u.workEndTime}`,
+          workHours: `${u.workStartTime} – ${u.workEndTime} (${WORKING_HOURS_TIME_ZONE_LABEL})`,
           departed: new Date(u.departedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
           by: u.adminName,
           tenure: u.startDate ? formatTenure(u.startDate, u.departedAt) : undefined,
@@ -1348,7 +1350,7 @@ export default function Users() {
               <TableHead>Reporting Manager(s)</TableHead>
               <TableHead>Role Title</TableHead>
               <TableHead>Daily Targets</TableHead>
-              <TableHead>Working Hours</TableHead>
+              <TableHead title={WORKING_HOURS_TIME_ZONE_LABEL}>Working Hours (Eastern Time)</TableHead>
               <TableHead>Active</TableHead>
               {canManageUserActions && <TableHead className="w-[50px]"></TableHead>}
             </TableRow>
@@ -1935,6 +1937,7 @@ export default function Users() {
                   />
                 </div>
               </div>
+              <WorkingHoursTimezoneNote />
             </div>
             <div className="flex items-center gap-2">
               <Switch
@@ -2315,6 +2318,7 @@ export default function Users() {
                   />
                 </div>
               </div>
+              <WorkingHoursTimezoneNote />
             </div>
             <div className="flex items-center gap-2">
               <Switch

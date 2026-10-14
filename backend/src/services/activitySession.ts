@@ -1,11 +1,10 @@
 import prisma from '../config/database';
 import { emitToUsers } from '../socket';
 import { getRedis } from '../config/redis';
-import type { ActivityState } from '@prisma/client';
-
-const HEARTBEAT_INTERVAL_S = 20;
-const MAX_NORMAL_ELAPSED_S = HEARTBEAT_INTERVAL_S * 2; // 40s — gap beyond this is treated as offline
-export const OFFLINE_THRESHOLD_S = 90;
+import { WORKING_HOURS_TIME_ZONE } from '../config/workingHours';
+import type { ActivityBreakType, ActivityState, Prisma, UserActivitySession } from '@prisma/client';
+import { MAX_NORMAL_ELAPSED_S, measureActivityWindow, type ActivityMeasurementInterval } from './activityMeasurement';
+import { usesCrmActivityTracking } from './crmActivityEligibility';
 
 // Idle threshold cache — Redis is the source of truth (no TTL, updated on every settings change).
 // The in-memory map is a 5-second micro-dedup so concurrent heartbeats on the same instance
@@ -13,92 +12,6 @@ export const OFFLINE_THRESHOLD_S = 90;
 const localThresholdCache = new Map<string, { thresholdMinutes: number; cachedAt: number }>();
 const LOCAL_TTL_MS = 5 * 1000;
 const REDIS_KEY = (id: string) => `idle_threshold:${id}`;
-
-function parseTimeToMinutes(time: string | null | undefined): number | null {
-  if (!time) return null;
-  const [hRaw, mRaw] = time.split(':');
-  const h = Number(hRaw);
-  const m = Number(mRaw);
-  if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return h * 60 + m;
-}
-
-function isInsideWorkingHoursAt(date: Date, startMin: number, endMin: number): boolean {
-  const nowMin = date.getHours() * 60 + date.getMinutes();
-  if (startMin === endMin) return true; // 24/7
-  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
-  return nowMin >= startMin || nowMin < endMin; // overnight windows
-}
-
-function calculateWorkingHoursSecondsBetween(
-  start: Date,
-  end: Date,
-  workStartTime: string | null | undefined,
-  workEndTime: string | null | undefined,
-): number {
-  if (end <= start) return 0;
-  const startMin = parseTimeToMinutes(workStartTime);
-  const endMin = parseTimeToMinutes(workEndTime);
-  if (startMin === null || endMin === null) {
-    return Math.floor((end.getTime() - start.getTime()) / 1000);
-  }
-
-  // Small-interval approximation: split by minute and only count portions
-  // that fall inside configured working hours.
-  let totalMs = 0;
-  let cursor = new Date(start);
-  while (cursor < end) {
-    const next = new Date(Math.min(end.getTime(), cursor.getTime() + 60_000));
-    if (isInsideWorkingHoursAt(cursor, startMin, endMin)) {
-      totalMs += next.getTime() - cursor.getTime();
-    }
-    cursor = next;
-  }
-  return Math.floor(totalMs / 1000);
-}
-
-/** Dashboard `idle_detected`: only time inside the user's configured working hours (no off-hours wall fallback). */
-async function writeIdleDetectedActivityLog(input: {
-  userId: string;
-  subCompanyId: string;
-  idleStart: Date;
-  now: Date;
-  workStartTime: string | null | undefined;
-  workEndTime: string | null | undefined;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-  source: 'server_manual_back' | 'server_offline_reconnect';
-}): Promise<boolean> {
-  const inHoursSeconds = calculateWorkingHoursSecondsBetween(
-    input.idleStart,
-    input.now,
-    input.workStartTime,
-    input.workEndTime,
-  );
-  if (inHoursSeconds <= 0) return false;
-  let durationMinutes = Math.round(inHoursSeconds / 60);
-  if (durationMinutes < 1) durationMinutes = 1;
-
-  const userName = `${input.firstName ?? ''} ${input.lastName ?? ''}`.trim() || input.email || 'User';
-  await prisma.activityLog.create({
-    data: {
-      type: 'idle_detected',
-      userId: input.userId,
-      userName,
-      subCompanyId: input.subCompanyId,
-      description: `Idle time detected (${durationMinutes} minutes)`,
-      metadata: {
-        duration: durationMinutes,
-        startedAt: input.idleStart.toISOString(),
-        source: input.source,
-        durationBasis: 'working_hours',
-      },
-    },
-  });
-  return true;
-}
 
 export async function getIdleThresholdMinutes(subCompanyId: string): Promise<number> {
   // 1. In-memory micro-dedup (5s)
@@ -151,330 +64,375 @@ export function invalidateThresholdCache(subCompanyId: string): void {
   }
 }
 
-/** Opens a new session on login. Closes any orphaned open sessions first. */
-export async function startActivitySession(userId: string, subCompanyId: string): Promise<string> {
-  const now = new Date();
-  await prisma.userActivitySession.updateMany({
-    where: { userId, endedAt: null },
-    data: { endedAt: now },
-  });
-  const session = await prisma.userActivitySession.create({
-    data: { userId, subCompanyId, lastSeenAt: now, currentState: 'active' },
-  });
-  return session.id;
+export { MAX_NORMAL_ELAPSED_S } from './activityMeasurement';
+export const OFFLINE_THRESHOLD_S = 90;
+
+export interface ActivityMeasurementInput {
+  measurementVersion: 2;
+  clientId: string;
+  clientTime: string;
+  lastActivityAt: string | null;
+  firstActivityAt?: string | null;
+  timeZone: string;
 }
 
-/** Closes session on logout and flushes final elapsed time. */
-export async function endActivitySession(userId: string): Promise<void> {
-  const now = new Date();
-  const session = await prisma.userActivitySession.findFirst({
-    where: { userId, endedAt: null },
-    orderBy: { startedAt: 'desc' },
+const seconds = (milliseconds: bigint) => Number(milliseconds / 1000n);
+
+async function lockUser(tx: Prisma.TransactionClient, userId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`activity:${userId}`}))`;
+}
+
+function stateResponse(session: UserActivitySession, now = new Date(), trackingEnabled = true) {
+  const disconnected = now.getTime() - session.lastSeenAt.getTime() > MAX_NORMAL_ELAPSED_S * 1000;
+  return {
+    sessionId: session.id,
+    trackingEnabled,
+    state: !trackingEnabled ? 'active' as const : disconnected && !session.onBreak ? 'offline_suspected' as const : session.currentState,
+    idleSeconds: trackingEnabled ? seconds(session.measuredIdleMilliseconds) : 0,
+    activeSeconds: trackingEnabled ? seconds(session.measuredActiveMilliseconds) : 0,
+    currentIdleSeconds: !trackingEnabled || disconnected ? 0 : seconds(session.currentIdleMilliseconds),
+    serverTime: now.toISOString(),
+    idleStartedAt: !trackingEnabled || disconnected ? null : session.idleStartedAt?.toISOString() ?? null,
+    onBreak: session.onBreak,
+    breakType: session.onBreak ? session.breakType ?? 'break' : null,
+    breakStartedAt: session.breakStartedAt?.toISOString() ?? null,
+    trackingTimezone: WORKING_HOURS_TIME_ZONE,
+    trackingPaused: !trackingEnabled || disconnected || session.onBreak || session.currentState === 'offline_suspected',
+  };
+}
+
+/** These rows follow an explicit declared break, including time without heartbeats. */
+async function ensureRecordedBreak(tx: Prisma.TransactionClient, session: UserActivitySession, now: Date) {
+  const current = await tx.userActivityBreak.findFirst({ where: { sessionId: session.id, endedAt: null } });
+  if (!current) await tx.userActivityBreak.create({ data: {
+    sessionId: session.id, breakType: session.breakType ?? 'break', startedAt: now,
+  } });
+}
+
+async function closeRecordedBreak(tx: Prisma.TransactionClient, sessionId: string, now: Date) {
+  await tx.userActivityBreak.updateMany({ where: { sessionId, endedAt: null }, data: { endedAt: now } });
+}
+
+/** Preserve the existing coaching/meeting feed, using server-confirmed endpoints. */
+async function finishDeclaredBreak(
+  tx: Prisma.TransactionClient,
+  session: UserActivitySession,
+  now: Date,
+  reason: 'user_returned' | 'session_ended' | 'session_replaced',
+) {
+  await closeRecordedBreak(tx, session.id, now);
+  if (!session.onBreak || !session.breakStartedAt || !session.breakType || session.breakType === 'break') return;
+  const milliseconds = now.getTime() - session.breakStartedAt.getTime();
+  if (milliseconds <= 0) return;
+  const user = await tx.user.findUnique({ where: { id: session.userId }, select: { firstName: true, lastName: true, email: true, subCompanyId: true } });
+  // A session may use the independent user's ID as its context. Do not write
+  // that value into the agency foreign key, or move an old break to a new agency.
+  if (!user?.subCompanyId || user.subCompanyId !== session.subCompanyId) return;
+  const durationSeconds = Math.floor(milliseconds / 1000);
+  const duration = Math.round(milliseconds / 60_000);
+  await tx.activityLog.create({ data: {
+    type: 'break_detected', userId: session.userId, subCompanyId: session.subCompanyId,
+    userName: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || 'User',
+    description: `${session.breakType === 'coaching' ? 'Coaching' : 'Meeting'} break (${duration} minutes)`,
+    metadata: { duration, durationSeconds, durationMilliseconds: milliseconds, breakType: session.breakType,
+      startedAt: session.breakStartedAt.toISOString(), endedAt: now.toISOString(),
+      source: 'server_recorded_break', reason },
+  } });
+}
+
+/** Retain history and break state, but never carry CRM timing through an excluded role. */
+async function disableMeasurement(tx: Prisma.TransactionClient, session: UserActivitySession, now = new Date()) {
+  if (session.onBreak) await closeRecordedBreak(tx, session.id, now);
+  if (session.currentState === 'active' && !session.idleStartedAt && !session.measurementStartedAt
+    && !session.lastClientTime && !session.lastInputAt && !session.measurementClientId
+    && !session.lastReportedInputAt && session.currentIdleMilliseconds === 0n) return session;
+  return tx.userActivitySession.update({ where: { id: session.id }, data: {
+    currentState: 'active', idleStartedAt: null, currentIdleMilliseconds: 0n,
+    measurementStartedAt: null, lastInputAt: null, lastClientTime: null,
+    measurementClientId: null, lastReportedInputAt: null, version: { increment: 1 },
+  } });
+}
+
+/** A previous timezone policy cannot supply a baseline for the Toronto schedule. */
+async function alignWorkingHoursTimezone(tx: Prisma.TransactionClient, session: UserActivitySession) {
+  if (session.trackingTimezone === WORKING_HOURS_TIME_ZONE) return session;
+  return tx.userActivitySession.update({ where: { id: session.id }, data: {
+    trackingTimezone: WORKING_HOURS_TIME_ZONE,
+    currentState: 'active', idleStartedAt: null, currentIdleMilliseconds: 0n,
+    measurementStartedAt: null, lastInputAt: null, lastClientTime: null,
+    measurementClientId: null, lastReportedInputAt: null, version: { increment: 1 },
+  } });
+}
+
+async function newSession(tx: Prisma.TransactionClient, userId: string, subCompanyId: string, now: Date) {
+  // No unobserved tail is added when replacing an old session.
+  const previous = await tx.userActivitySession.findMany({ where: { userId, endedAt: null } });
+  for (const session of previous) await finishDeclaredBreak(tx, session, now, 'session_replaced');
+  await tx.userActivitySession.updateMany({ where: { userId, endedAt: null }, data: {
+    endedAt: now, onBreak: false, breakStartedAt: null, breakType: null, version: { increment: 1 },
+  } });
+  return tx.userActivitySession.create({ data: {
+    userId, subCompanyId, lastSeenAt: now, currentState: 'active', trackingTimezone: WORKING_HOURS_TIME_ZONE,
+  } });
+}
+
+export async function startActivitySession(userId: string, subCompanyId: string): Promise<string> {
+  return prisma.$transaction(async tx => {
+    await lockUser(tx, userId);
+    // A login in another tab/device must not end the user's ongoing measurement.
+    const current = await tx.userActivitySession.findFirst({ where: { userId, endedAt: null }, orderBy: { startedAt: 'desc' } });
+    return (current?.subCompanyId === subCompanyId
+      ? await alignWorkingHoursTimezone(tx, current)
+      : await newSession(tx, userId, subCompanyId, new Date())).id;
   });
-  if (!session) return;
+}
 
-  const elapsedS = Math.floor((now.getTime() - session.lastSeenAt.getTime()) / 1000);
-  const isGap = elapsedS > MAX_NORMAL_ELAPSED_S;
-
-  await prisma.userActivitySession.update({
-    where: { id: session.id },
-    data: {
-      endedAt: now,
-      activeSeconds: !isGap && session.currentState === 'active'
-        ? { increment: elapsedS }
-        : session.activeSeconds,
-      idleSeconds: !isGap && session.currentState === 'idle'
-        ? { increment: elapsedS }
-        : session.idleSeconds,
-      offlineSeconds: isGap
-        ? { increment: elapsedS }
-        : session.currentState === 'offline_suspected'
-          ? { increment: elapsedS }
-          : session.offlineSeconds,
-    },
+export async function endActivitySession(userId: string): Promise<void> {
+  await prisma.$transaction(async tx => {
+    await lockUser(tx, userId);
+    const now = new Date();
+    const sessions = await tx.userActivitySession.findMany({ where: { userId, endedAt: null } });
+    for (const session of sessions) {
+      await finishIdleEpisode(tx, session, session.currentIdleMilliseconds, session.lastSeenAt);
+      await finishDeclaredBreak(tx, session, now, 'session_ended');
+    }
+    await tx.userActivitySession.updateMany({ where: { userId, endedAt: null }, data: {
+      endedAt: now, onBreak: false, breakStartedAt: null, breakType: null, version: { increment: 1 },
+    } });
   });
 }
 
 export async function getCurrentSession(userId: string) {
-  const session = await prisma.userActivitySession.findFirst({
-    where: { userId, endedAt: null },
-    orderBy: { startedAt: 'desc' },
+  return prisma.$transaction(async tx => {
+    await lockUser(tx, userId);
+    const current = await tx.userActivitySession.findFirst({ where: { userId, endedAt: null }, orderBy: { startedAt: 'desc' } });
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { subCompanyId: true, isActive: true, role: true } });
+    if (!user?.isActive) {
+      if (current) await disableMeasurement(tx, await alignWorkingHoursTimezone(tx, current));
+      return null;
+    }
+    let session = current && (!user.subCompanyId || current.subCompanyId === user.subCompanyId)
+      ? current : await newSession(tx, userId, user.subCompanyId ?? userId, new Date());
+    session = await alignWorkingHoursTimezone(tx, session);
+    const trackingEnabled = usesCrmActivityTracking(user.role);
+    if (!trackingEnabled) session = await disableMeasurement(tx, session);
+    else if (session.onBreak) await ensureRecordedBreak(tx, session, new Date());
+    return stateResponse(session, new Date(), trackingEnabled);
   });
-  if (!session) return null;
-  return {
-    sessionId: session.id,
-    state: session.currentState,
-    idleSeconds: session.idleSeconds,
-    activeSeconds: session.activeSeconds,
-    serverTime: new Date().toISOString(),
-    idleStartedAt: session.idleStartedAt?.toISOString() ?? null,
-  };
+}
+
+/** Store adjacent intervals as one range, retaining exact endpoints and atomic counters. */
+async function saveIntervals(tx: Prisma.TransactionClient, sessionId: string, intervals: ActivityMeasurementInterval[]) {
+  let last = await tx.userActivityInterval.findFirst({ where: { sessionId }, orderBy: { endedAt: 'desc' } });
+  for (const interval of intervals) {
+    if (last && last.state === interval.state && last.endedAt.getTime() === interval.startedAt.getTime()) {
+      last = await tx.userActivityInterval.update({ where: { id: last.id }, data: { endedAt: interval.endedAt } });
+    } else {
+      last = await tx.userActivityInterval.create({ data: { sessionId, ...interval } });
+    }
+  }
+}
+
+/** Keep the existing dashboard feed, but derive its duration only from measured intervals. */
+async function finishIdleEpisode(tx: Prisma.TransactionClient, session: UserActivitySession, milliseconds: bigint, endedAt: Date) {
+  if (milliseconds <= 0n) return false;
+  const user = await tx.user.findUnique({ where: { id: session.userId }, select: { subCompanyId: true, firstName: true, lastName: true, email: true, role: true } });
+  if (!user?.subCompanyId || !usesCrmActivityTracking(user.role)) return false;
+  const durationSeconds = seconds(milliseconds);
+  const duration = Math.round(durationSeconds / 60);
+  await tx.activityLog.create({ data: {
+    type: 'idle_detected', userId: session.userId, subCompanyId: user.subCompanyId,
+    userName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+    description: `Measured CRM inactivity (${durationSeconds} seconds)`,
+    metadata: { duration, durationSeconds, durationMilliseconds: Number(milliseconds),
+      startedAt: session.idleStartedAt?.toISOString() ?? null, endedAt: endedAt.toISOString(),
+      source: 'measured_crm_intervals', durationBasis: 'observed_working_hours', measurementVersion: 2 },
+  } });
+  return true;
+}
+
+function validMeasurement(input: ActivityMeasurementInput | undefined): input is ActivityMeasurementInput {
+  if (!input || input.measurementVersion !== 2 || !input.clientId) return false;
+  const clientTime = Date.parse(input.clientTime);
+  if (!Number.isFinite(clientTime)) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: input.timeZone }).format(); } catch { return false; }
+  const latest = input.lastActivityAt === null ? null : Date.parse(input.lastActivityAt);
+  const first = input.firstActivityAt == null ? null : Date.parse(input.firstActivityAt);
+  return (latest === null || (Number.isFinite(latest) && latest <= clientTime))
+    && (first === null || (Number.isFinite(first) && latest !== null && first <= latest));
+}
+
+/** Late input invalidates the affected observations; do not leave known false idle in history. */
+async function discardUncertainTail(tx: Prisma.TransactionClient, session: UserActivitySession, from: Date) {
+  const rows = await tx.userActivityInterval.findMany({ where: { sessionId: session.id, endedAt: { gt: from } } });
+  for (const row of rows) {
+    const removed = BigInt(row.endedAt.getTime() - Math.max(from.getTime(), row.startedAt.getTime()));
+    if (row.state === 'idle') session.measuredIdleMilliseconds -= removed;
+    else session.measuredActiveMilliseconds -= removed;
+    if (row.startedAt >= from) await tx.userActivityInterval.delete({ where: { id: row.id } });
+    else await tx.userActivityInterval.update({ where: { id: row.id }, data: { endedAt: from } });
+  }
+  session.currentIdleMilliseconds = 0n;
 }
 
 export async function processHeartbeat(
   sessionId: string,
   userId: string,
   _visibilityState: 'visible' | 'hidden',
-  hadActivitySinceLastBeat: boolean,
-): Promise<{ state: ActivityState; idleSeconds: number; serverTime: string; idleStartedAt: string | null }> {
-  const now = new Date();
-
-  const session = await prisma.userActivitySession.findFirst({
-    where: { id: sessionId, userId, endedAt: null },
-  });
-  if (!session) throw new Error('Session not found');
-
-  const elapsedS = Math.floor((now.getTime() - session.lastSeenAt.getTime()) / 1000);
-  const isGap = elapsedS > MAX_NORMAL_ELAPSED_S;
-
-  const thresholdMinutes = await getIdleThresholdMinutes(session.subCompanyId);
-  const thresholdS = thresholdMinutes * 60;
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      workStartTime: true,
-      workEndTime: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      subCompanyId: true,
-    },
-  });
-  const inHoursElapsedS = calculateWorkingHoursSecondsBetween(
-    session.lastSeenAt,
-    now,
-    user?.workStartTime,
-    user?.workEndTime,
-  );
-
-  let newState: ActivityState = session.currentState;
-  let newIdleStartedAt: Date | null = session.idleStartedAt;
-  let activeInc = 0;
-  let idleInc = 0;
-  let offlineInc = 0;
-  const logIdleAfterOfflineReconnect =
-    !isGap && session.currentState === 'offline_suspected';
-  const idleStartForActivityLog = logIdleAfterOfflineReconnect
-    ? (session.idleStartedAt ?? session.lastSeenAt)
-    : null;
-
-  if (isGap) {
-    offlineInc = elapsedS;
-    if (newState !== 'offline_suspected') {
-      // Only trigger offline_suspected (which shows the idle modal) if the gap itself
-      // exceeds the director-configured threshold. Smaller gaps (laptop sleep, browser
-      // throttling, network hiccups) are recorded as offline time but don't interrupt the user.
-      if (elapsedS >= thresholdS) {
-        newState = 'offline_suspected';
-      }
-      // Start idle clock from lastSeenAt so cumulative idle time is tracked correctly
-      if (!newIdleStartedAt) newIdleStartedAt = session.lastSeenAt;
+  _hadActivitySinceLastBeat: boolean,
+  measurement?: ActivityMeasurementInput,
+) {
+  let refreshDashboard = false;
+  const response = await prisma.$transaction(async tx => {
+    await lockUser(tx, userId);
+    const now = new Date();
+    let session = await tx.userActivitySession.findFirst({ where: { id: sessionId, userId, endedAt: null } });
+    if (!session) throw new Error('Session not found');
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { workStartTime: true, workEndTime: true, subCompanyId: true, role: true, isActive: true } });
+    if (user?.subCompanyId && user.subCompanyId !== session.subCompanyId) throw new Error('Session not found');
+    session = await alignWorkingHoursTimezone(tx, session);
+    if (!usesCrmActivityTracking(user?.role) || user?.isActive === false) {
+      return stateResponse(await disableMeasurement(tx, session), now, false);
     }
-  } else if (session.currentState === 'offline_suspected') {
-    activeInc = inHoursElapsedS;
-    newState = 'active';
-    newIdleStartedAt = null;
-  } else if (session.currentState === 'idle') {
-    // Only manual_back clears idle state
-    idleInc = inHoursElapsedS;
-  } else {
-    // State is 'active'
-    if (hadActivitySinceLastBeat) {
-      // Activity resets idle clock regardless of tab visibility
-      activeInc = inHoursElapsedS;
-      newIdleStartedAt = null;
-    } else {
-      activeInc = inHoursElapsedS;
-      if (!newIdleStartedAt) {
-        newIdleStartedAt = now; // start idle clock from now, not stale lastSeenAt
-      }
-      const idleForS = Math.floor((now.getTime() - newIdleStartedAt.getTime()) / 1000);
-      if (idleForS >= thresholdS) {
-        newState = 'idle';
-        const idlePortionS = Math.min(inHoursElapsedS, activeInc);
-        activeInc -= idlePortionS;
-        idleInc += idlePortionS;
-      }
+    if (session.onBreak) await ensureRecordedBreak(tx, session, now);
+    const thresholdSeconds = (await getIdleThresholdMinutes(session.subCompanyId)) * 60;
+    const elapsedMs = now.getTime() - session.lastSeenAt.getTime();
+    const valid = validMeasurement(measurement);
+    const clientTime = valid ? new Date(measurement.clientTime) : null;
+    // Duplicate or reordered packets cannot mutate coverage or revive an old input.
+    const sameClient = valid && session.measurementClientId === measurement.clientId;
+    if (sameClient && clientTime && session.lastClientTime && clientTime <= session.lastClientTime) return stateResponse(session, now);
+    const clientElapsed = clientTime && session.lastClientTime ? clientTime.getTime() - session.lastClientTime.getTime() : null;
+    const reportedInput = valid && measurement.lastActivityAt ? new Date(measurement.lastActivityAt) : null;
+    const newlyReportedInput = !!reportedInput && (!sameClient || !session.lastReportedInputAt || reportedInput > session.lastReportedInputAt);
+    const lateInput = sameClient && newlyReportedInput && !!session.lastClientTime && reportedInput! < session.lastClientTime;
+    if (lateInput && session.measurementStartedAt) {
+      const first = measurement!.firstActivityAt ? new Date(measurement!.firstActivityAt) : reportedInput!;
+      const newFirstKnown = !session.lastReportedInputAt || first > session.lastReportedInputAt;
+      const mapped = new Date(session.lastSeenAt.getTime() + first.getTime() - session.lastClientTime!.getTime());
+      const uncertainFrom = newFirstKnown && mapped > session.measurementStartedAt ? mapped : session.measurementStartedAt;
+      await discardUncertainTail(tx, session, uncertainFrom);
     }
-  }
-
-  // Optimistic concurrency — prevents double-counting from concurrent tab heartbeats
-  const updated = await prisma.userActivitySession.updateMany({
-    where: { id: session.id, version: session.version },
-    data: {
-      lastSeenAt: now,
-      currentState: newState,
-      idleStartedAt: newIdleStartedAt,
-      activeSeconds: { increment: activeInc },
-      idleSeconds: { increment: idleInc },
-      offlineSeconds: { increment: offlineInc },
+    // Advance by the client's observed elapsed time, never by delivery latency.
+    // If a packet arrives slightly earlier than this prediction, retain the
+    // observation but trim its uncertain tail at receipt. The next anchor uses
+    // that clipped end, so discarded milliseconds are never counted later.
+    const predictedObservedAt = clientElapsed === null ? now : new Date(session.lastSeenAt.getTime() + clientElapsed);
+    const observedAt = new Date(Math.min(predictedObservedAt.getTime(), now.getTime()));
+    const continuous = valid && sameClient && !lateInput && !!session.lastClientTime && !!session.lastInputAt
+      && elapsedMs > 0 && elapsedMs <= MAX_NORMAL_ELAPSED_S * 1000
+      && clientElapsed !== null && clientElapsed > 0 && clientElapsed <= MAX_NORMAL_ELAPSED_S * 1000
+      && Math.abs(now.getTime() - predictedObservedAt.getTime()) <= 5000
+      && session.trackingTimezone === WORKING_HOURS_TIME_ZONE;
+    const freshInput = continuous && newlyReportedInput && measurement.lastActivityAt !== null
+      && Date.parse(measurement.lastActivityAt) >= session.lastClientTime!.getTime();
+    const mapInput = (value: string) => new Date(Math.max(session.lastSeenAt.getTime(), Math.min(observedAt.getTime(), session.lastSeenAt.getTime() + Date.parse(value) - session.lastClientTime!.getTime())));
+    const lastInput = freshInput ? mapInput(measurement!.lastActivityAt!) : null;
+    const firstInput = freshInput && measurement!.firstActivityAt && Date.parse(measurement!.firstActivityAt) >= session.lastClientTime!.getTime()
+      ? mapInput(measurement!.firstActivityAt) : null;
+    const intervals = continuous ? measureActivityWindow({
+      from: session.lastSeenAt, to: observedAt, previousInputAt: session.lastInputAt!, lastInputAt: lastInput,
+      firstInputAt: firstInput, thresholdSeconds, timeZone: WORKING_HOURS_TIME_ZONE,
+      workStartTime: user?.workStartTime, workEndTime: user?.workEndTime, onBreak: session.onBreak,
+    }).intervals : [];
+    const inputAt = continuous ? lastInput ?? session.lastInputAt! : now;
+    const measuredThrough = continuous ? observedAt : now;
+    let activeMs = session.measuredActiveMilliseconds;
+    let idleMs = session.measuredIdleMilliseconds;
+    let currentIdleMs = continuous && !freshInput && !session.onBreak ? session.currentIdleMilliseconds : 0n;
+    for (const interval of intervals) {
+      const ms = BigInt(interval.endedAt.getTime() - interval.startedAt.getTime());
+      if (interval.state === 'idle') { idleMs += ms; if (!freshInput) currentIdleMs += ms; }
+      else activeMs += ms;
+    }
+    if (!continuous || freshInput) {
+      const finalIdleMs = intervals.filter(interval => interval.state === 'idle')
+        .reduce((sum, interval) => sum + BigInt(interval.endedAt.getTime() - interval.startedAt.getTime()), 0n);
+      refreshDashboard = await finishIdleEpisode(tx, session, session.currentIdleMilliseconds + finalIdleMs, firstInput ?? session.lastSeenAt);
+    }
+    // Test the actual current instant, including exact shift boundaries, without extrapolating duration.
+    const insideHours = valid && measureActivityWindow({
+      from: measuredThrough, to: new Date(measuredThrough.getTime() + 1), previousInputAt: inputAt, lastInputAt: null,
+      thresholdSeconds, timeZone: WORKING_HOURS_TIME_ZONE, workStartTime: user?.workStartTime,
+      workEndTime: user?.workEndTime, onBreak: session.onBreak,
+    }).intervals.length > 0;
+    const idle = continuous && insideHours && !session.onBreak && measuredThrough.getTime() - inputAt.getTime() >= thresholdSeconds * 1000;
+    const currentState: ActivityState = idle ? 'idle' : 'active';
+    const updated = await tx.userActivitySession.update({ where: { id: session.id }, data: {
+      lastSeenAt: measuredThrough, lastClientTime: clientTime, lastInputAt: inputAt,
+      measurementClientId: valid ? measurement.clientId : null,
+      lastReportedInputAt: sameClient && session.lastReportedInputAt && (!reportedInput || reportedInput < session.lastReportedInputAt)
+        ? session.lastReportedInputAt : reportedInput,
+      trackingTimezone: WORKING_HOURS_TIME_ZONE,
+      measurementStartedAt: continuous ? session.measurementStartedAt : valid ? now : null,
+      currentState, idleStartedAt: idle ? new Date(inputAt.getTime() + thresholdSeconds * 1000) : null,
+      measuredActiveMilliseconds: activeMs, measuredIdleMilliseconds: idleMs, currentIdleMilliseconds: currentIdleMs,
+      activeSeconds: seconds(activeMs), idleSeconds: seconds(idleMs),
+      offlineSeconds: { increment: elapsedMs > MAX_NORMAL_ELAPSED_S * 1000 ? Math.floor(elapsedMs / 1000) : 0 },
       version: { increment: 1 },
-    },
+    } });
+    if (intervals.length) await saveIntervals(tx, session.id, intervals);
+    if (currentState !== session.currentState) await tx.userActivityEvent.create({ data: {
+      sessionId, eventType: 'state_change', reasonCode: idle ? 'measured_inactivity' : 'observed_input_or_measurement_reset',
+      metadata: { previousState: session.currentState, newState: currentState, measurementVersion: 2 },
+    } });
+    return { ...stateResponse(updated, now), trackingPaused: !valid || !insideHours || session.onBreak };
   });
-
-  if (updated.count === 0) {
-    // Version conflict — return current state from DB
-    const fresh = await prisma.userActivitySession.findUnique({ where: { id: session.id } });
-    if (fresh) {
-      return {
-        state: fresh.currentState,
-        idleSeconds: fresh.idleSeconds,
-        serverTime: now.toISOString(),
-        idleStartedAt: fresh.idleStartedAt?.toISOString() ?? null,
-      };
-    }
-  }
-
-  if (updated.count > 0 && logIdleAfterOfflineReconnect && idleStartForActivityLog && user?.subCompanyId) {
-    const wrote = await writeIdleDetectedActivityLog({
-      userId,
-      subCompanyId: user.subCompanyId,
-      idleStart: idleStartForActivityLog,
-      now,
-      workStartTime: user.workStartTime,
-      workEndTime: user.workEndTime,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      source: 'server_offline_reconnect',
-    });
-    if (wrote) {
-      emitToUsers([userId], 'call:refresh', { subCompanyId: user.subCompanyId });
-    }
-  }
-
-  if (newState !== session.currentState) {
-    await prisma.userActivityEvent.create({
-      data: {
-        sessionId: session.id,
-        eventType: 'state_change',
-        reasonCode: isGap
-          ? 'heartbeat_gap'
-          : newState === 'idle'
-            ? 'idle_threshold_exceeded'
-            : 'heartbeat_reconnect',
-        metadata: {
-          previousState: session.currentState,
-          newState,
-          elapsedSeconds: elapsedS,
-          idleThresholdUsed: thresholdMinutes,
-        },
-      },
-    });
-    emitToUsers([userId], 'activity:state_changed', {
-      state: newState,
-      idleSeconds: session.idleSeconds + idleInc,
-      idleStartedAt: newIdleStartedAt?.toISOString() ?? null,
-      serverTime: now.toISOString(),
-    });
-  }
-
-  return {
-    state: newState,
-    idleSeconds: session.idleSeconds + idleInc,
-    serverTime: now.toISOString(),
-    idleStartedAt: newIdleStartedAt?.toISOString() ?? null,
-  };
+  // Broadcast every confirmed measurement so all tabs display the same measured total/break state.
+  emitToUsers([userId], 'activity:state_changed', response);
+  if (refreshDashboard) emitToUsers([userId], 'call:refresh', {});
+  return response;
 }
 
-/** Only backend path to clear idle state. Returns 'active' on success. */
-export async function processManualBack(
-  sessionId: string,
-  userId: string,
-): Promise<{ state: ActivityState; serverTime: string }> {
-  const now = new Date();
-
-  const session = await prisma.userActivitySession.findFirst({
-    where: { id: sessionId, userId, endedAt: null },
+/** Explicit return/break transitions never invent activity between the last observation and this request. */
+async function transitionSession(sessionId: string, userId: string, onBreak?: boolean, breakType?: ActivityBreakType) {
+  const response = await prisma.$transaction(async tx => {
+    await lockUser(tx, userId);
+    let session = await tx.userActivitySession.findFirst({ where: { id: sessionId, userId, endedAt: null } });
+    if (!session) throw new Error('Session not found');
+    const now = new Date();
+    const nextBreak = onBreak ?? session.onBreak;
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true, subCompanyId: true } });
+    if (user?.subCompanyId && user.subCompanyId !== session.subCompanyId) throw new Error('Session not found');
+    session = await alignWorkingHoursTimezone(tx, session);
+    const trackingEnabled = usesCrmActivityTracking(user?.role) && user?.isActive !== false;
+    const eligibleSession = !trackingEnabled ? await disableMeasurement(tx, session, now) : session;
+    if (onBreak !== undefined && onBreak === session.onBreak) {
+      if (onBreak && trackingEnabled) await ensureRecordedBreak(tx, session, now);
+      return stateResponse(eligibleSession, now, trackingEnabled);
+    }
+    await finishIdleEpisode(tx, session, session.currentIdleMilliseconds, session.lastSeenAt);
+    if (session.onBreak && !nextBreak) await finishDeclaredBreak(tx, session, now, 'user_returned');
+    const nextBreakType = nextBreak ? session.onBreak ? session.breakType ?? 'break' : breakType ?? 'break' : null;
+    const updated = await tx.userActivitySession.update({ where: { id: sessionId }, data: {
+      currentState: 'active', idleStartedAt: null, currentIdleMilliseconds: 0n,
+      lastInputAt: trackingEnabled ? now : null, lastClientTime: null, lastSeenAt: now,
+      onBreak: nextBreak, breakStartedAt: nextBreak ? session.breakStartedAt ?? now : null,
+      breakType: nextBreakType,
+      trackingTimezone: WORKING_HOURS_TIME_ZONE, version: { increment: 1 },
+    } });
+    if (nextBreak && trackingEnabled) await ensureRecordedBreak(tx, updated, now);
+    await tx.userActivityEvent.create({ data: { sessionId,
+      eventType: onBreak === undefined ? 'manual_back' : onBreak ? 'break_started' : 'break_ended',
+      reasonCode: 'user_confirmed', metadata: { measurementVersion: 2 },
+    } });
+    return stateResponse(updated, now, trackingEnabled);
   });
-  if (!session) throw new Error('Session not found');
-
-  if (session.currentState === 'active') {
-    const u = await prisma.user.findUnique({ where: { id: userId }, select: { subCompanyId: true } });
-    if (u?.subCompanyId) emitToUsers([userId], 'call:refresh', { subCompanyId: u.subCompanyId });
-    return { state: 'active', serverTime: now.toISOString() };
-  }
-
-  const prevState = session.currentState;
-  const idleStart = session.idleStartedAt ?? session.lastSeenAt;
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { workStartTime: true, workEndTime: true, email: true, subCompanyId: true, firstName: true, lastName: true },
-  });
-  if (!user?.subCompanyId) {
-    await prisma.userActivitySession.update({
-      where: { id: session.id },
-      data: {
-        currentState: 'active',
-        idleStartedAt: null,
-        lastSeenAt: now,
-        version: { increment: 1 },
-      },
-    });
-    emitToUsers([userId], 'activity:state_changed', {
-      state: 'active',
-      idleSeconds: 0,
-      idleStartedAt: null,
-      serverTime: now.toISOString(),
-    });
-    emitToUsers([userId], 'call:refresh', { subCompanyId: session.subCompanyId });
-    return { state: 'active', serverTime: now.toISOString() };
-  }
-
-  await prisma.userActivitySession.update({
-    where: { id: session.id },
-    data: {
-      currentState: 'active',
-      idleStartedAt: null,
-      lastSeenAt: now,
-      version: { increment: 1 },
-    },
-  });
-
-  await prisma.userActivityEvent.create({
-    data: {
-      sessionId: session.id,
-      eventType: 'manual_back',
-      reasonCode: 'user_confirmed_active',
-      metadata: { previousState: prevState },
-    },
-  });
-
-  await writeIdleDetectedActivityLog({
-    userId,
-    subCompanyId: user.subCompanyId,
-    idleStart,
-    now,
-    workStartTime: user.workStartTime,
-    workEndTime: user.workEndTime,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    source: 'server_manual_back',
-  });
-
-  emitToUsers([userId], 'call:refresh', { subCompanyId: user.subCompanyId });
-
-  emitToUsers([userId], 'activity:state_changed', {
-    state: 'active',
-    idleSeconds: 0,
-    idleStartedAt: null,
-    serverTime: now.toISOString(),
-  });
-
-  return { state: 'active', serverTime: now.toISOString() };
+  emitToUsers([userId], 'activity:state_changed', response);
+  emitToUsers([userId], 'call:refresh', {});
+  return response;
 }
 
-export async function logActivityEvent(
-  sessionId: string,
-  userId: string,
-  eventType: string,
-): Promise<void> {
-  const session = await prisma.userActivitySession.findFirst({
-    where: { id: sessionId, userId, endedAt: null },
-  });
-  if (!session) return;
-  await prisma.userActivityEvent.create({
-    data: { sessionId, eventType },
-  });
+export async function processManualBack(sessionId: string, userId: string, measurement?: ActivityMeasurementInput) {
+  if (measurement) await processHeartbeat(sessionId, userId, 'visible', true, measurement);
+  return transitionSession(sessionId, userId);
+}
+export async function processBreak(sessionId: string, userId: string, onBreak: boolean, _timeZone: string, measurement?: ActivityMeasurementInput, breakType?: ActivityBreakType) {
+  if (measurement) await processHeartbeat(sessionId, userId, 'visible', true, measurement);
+  return transitionSession(sessionId, userId, onBreak, breakType);
+}
+
+export async function logActivityEvent(sessionId: string, userId: string, eventType: string): Promise<void> {
+  const session = await prisma.userActivitySession.findFirst({ where: { id: sessionId, userId, endedAt: null }, select: { id: true } });
+  if (session) await prisma.userActivityEvent.create({ data: { sessionId, eventType } });
 }

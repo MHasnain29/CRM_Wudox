@@ -6749,6 +6749,8 @@ export async function disableEmailSendWindowSettings(): Promise<EmailSendWindowS
 
 // ── Activity session API (server-authoritative idle tracking) ─────────────────
 
+export type ActivityBreakType = 'break' | 'coaching' | 'meeting';
+
 export interface ActivitySessionState {
   sessionId: string;
   state: 'active' | 'idle' | 'offline_suspected';
@@ -6756,18 +6758,39 @@ export interface ActivitySessionState {
   activeSeconds: number;
   serverTime: string;
   idleStartedAt: string | null;
+  currentIdleSeconds: number;
+  onBreak: boolean;
+  breakStartedAt: string | null;
+  breakType: ActivityBreakType | null;
+  trackingEnabled: boolean;
+  trackingPaused: boolean;
+  trackingTimezone?: string | null;
 }
 
-export interface HeartbeatResponse {
-  state: 'active' | 'idle' | 'offline_suspected';
-  idleSeconds: number;
-  serverTime: string;
-  idleStartedAt: string | null;
+export type HeartbeatResponse = ActivitySessionState;
+
+export interface ActivityMeasurement {
+  measurementVersion: 2;
+  clientId: string;
+  clientTime: string;
+  firstActivityAt: string | null;
+  lastActivityAt: string | null;
+  timeZone: string;
+}
+
+async function activityApiFetch<T>(path: string, options: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    return await apiFetch<T>(path, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /** GET /activity/current-session — called on every app boot to restore authoritative state. */
 export async function fetchCurrentActivitySession(): Promise<ActivitySessionState | null> {
-  const res = await apiFetch<ActivitySessionState>('/activity/current-session');
+  const res = await activityApiFetch<ActivitySessionState>('/activity/current-session');
   if (!res.ok || !res.data) return null;
   return res.data;
 }
@@ -6777,13 +6800,29 @@ export async function sendActivityHeartbeat(
   sessionId: string,
   visibilityState: 'visible' | 'hidden',
   hadActivitySinceLastBeat: boolean,
+  measurement: ActivityMeasurement,
 ): Promise<HeartbeatResponse | null> {
-  const res = await apiFetch<HeartbeatResponse>('/activity/heartbeat', {
+  const res = await activityApiFetch<HeartbeatResponse>('/activity/heartbeat', {
     method: 'POST',
-    body: JSON.stringify({ sessionId, visibilityState, hadActivitySinceLastBeat }),
+    body: JSON.stringify({ sessionId, visibilityState, hadActivitySinceLastBeat, ...measurement }),
   });
   if (!res.ok || !res.data) return null;
   return res.data;
+}
+
+/** Persist break boundaries before excluding them from CRM inactivity. */
+export async function sendActivityBreak(
+  sessionId: string,
+  onBreak: boolean,
+  timeZone: string,
+  measurement?: ActivityMeasurement,
+  breakType?: ActivityBreakType,
+): Promise<ActivitySessionState | null> {
+  const res = await activityApiFetch<ActivitySessionState>('/activity/break', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, onBreak, timeZone, measurement, breakType }),
+  });
+  return res.ok && res.data ? res.data : null;
 }
 
 /** POST /activity/event — lifecycle events (tab_hidden, tab_visible, etc.). */
@@ -6797,12 +6836,12 @@ export async function sendActivityEvent(
   });
 }
 
-/** POST /activity/manual-back — the ONLY way to clear idle state.
+/** POST /activity/manual-back — explicitly confirm a return to CRM activity.
  *  Returns state; caller must check state === 'active' before closing modal. */
-export async function sendManualBack(sessionId: string): Promise<{ state: string; serverTime: string } | null> {
-  const res = await apiFetch<{ state: string; serverTime: string }>('/activity/manual-back', {
+export async function sendManualBack(sessionId: string, measurement?: ActivityMeasurement): Promise<{ state: string; serverTime: string } | null> {
+  const res = await activityApiFetch<{ state: string; serverTime: string }>('/activity/manual-back', {
     method: 'POST',
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, measurement }),
   });
   if (!res.ok || !res.data) return null;
   return res.data;

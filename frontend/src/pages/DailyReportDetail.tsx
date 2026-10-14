@@ -23,6 +23,10 @@ function duration(seconds: number | null): string {
   const minutes = Math.round(seconds / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
 }
+function measuredDuration(seconds: number): string {
+  const whole = Math.floor(seconds);
+  return `${whole >= 3600 ? `${Math.floor(whole / 3600)}h ` : ''}${Math.floor((whole % 3600) / 60)}m ${whole % 60}s`;
+}
 
 function timestamp(value: string | null, timezone: string): string {
   if (!value) return 'Unavailable';
@@ -48,6 +52,7 @@ function SourceLink({ url, children }: { url: string | null; children: ReactNode
 
 function EmployeeReport({ person, timezone, embedded = false }: { person: ReportEmployee; timezone: string; embedded?: boolean }) {
   const software = person.profile === 'software';
+  const crmTime = (person.timeSource ?? (software ? 'hubstaff' : 'crm')) === 'crm';
   const evidence = software ? person.evidence.filter((item) => item.type.startsWith('hubstaff')) : person.evidence;
   const metrics = software ? person.metrics.filter((metric) => metric.key.startsWith('hubstaff')) : person.metrics;
   return (
@@ -55,21 +60,32 @@ function EmployeeReport({ person, timezone, embedded = false }: { person: Report
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           {!embedded && <div><CardTitle className="text-lg">{person.name}</CardTitle><CardDescription>{person.agencyName} · <span className="capitalize">{person.role.replace(/_/g, ' ')}</span></CardDescription></div>}
-          <div className="flex flex-wrap gap-2"><Badge variant="secondary">{software ? 'Hubstaff' : 'Hubstaff + CRM'}</Badge><Badge variant={person.time.status === 'complete' ? 'secondary' : 'outline'}>Time data: {person.time.status}</Badge></div>
+          <div className="flex flex-wrap gap-2"><Badge variant="secondary">{crmTime ? 'CRM time' : 'Hubstaff time'}</Badge><Badge variant={(crmTime ? person.crmInactivity?.status === 'measured' : person.time.status === 'complete') ? 'secondary' : 'outline'}>{crmTime ? 'Active/idle' : 'Time data'}: {crmTime ? person.crmInactivity?.status ?? 'unavailable' : person.time.status}</Badge></div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
         {person.warnings.length > 0 && <ul className="list-disc space-y-1 rounded-md bg-amber-50 p-3 pl-7 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{person.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
-        <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {!crmTime && <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {[
             ['Recorded time', duration(person.time.trackedSeconds)],
             ['Manual time', duration(person.time.manualSeconds)],
-            ['Idle time', duration(person.time.idleSeconds)],
+            ['Hubstaff recorded idle', duration(person.time.idleSeconds)],
             ['Without a task', duration(person.time.unallocatedSeconds)],
             ['Input activity', person.time.inputActivityPercent === null ? 'Unavailable' : `${person.time.inputActivityPercent.toFixed(1)}%`],
           ].map(([label, value]) => <div key={label} className="rounded-md bg-muted/50 p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold">{value}</dd></div>)}
-        </dl>
-        {person.time.categories?.length > 0 && <div><h4 className="mb-2 text-sm font-semibold">Time by project and work category</h4><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Work category</TableHead><TableHead>Recorded time</TableHead></TableRow></TableHeader><TableBody>{person.time.categories.map((category, index) => <TableRow key={`${category.project}:${category.profile}:${index}`}><TableCell>{category.project}</TableCell><TableCell>{REPORT_PROFILES.find((profile) => profile.key === category.profile)?.label ?? category.profile.replace(/_/g, ' ')}</TableCell><TableCell>{duration(category.trackedSeconds)}</TableCell></TableRow>)}</TableBody></Table></div>}
+        </dl>}
+        {crmTime && <div className="rounded-md border p-3 text-sm">
+          <h4 className="font-semibold">CRM active, idle and break time</h4>
+          {person.crmInactivity?.status === 'measured' && person.crmInactivity.idleSeconds !== null
+            ? <p className="mt-1">{typeof person.crmInactivity.activeSeconds === 'number' ? measuredDuration(person.crmInactivity.activeSeconds) : 'Unavailable'} active · {measuredDuration(person.crmInactivity.idleSeconds)} idle during {measuredDuration(person.crmInactivity.observedSeconds)} of observed CRM time.</p>
+            : <p className="mt-1">Unavailable — {person.crmInactivity ? 'no measured CRM intervals in this reporting period.' : 'not measured in this saved report.'}</p>}
+          <p className="mt-2"><span className="font-medium">Recorded break:</span> {typeof person.crmInactivity?.breakSeconds === 'number'
+            ? <>{measuredDuration(person.crmInactivity.breakSeconds)}{person.crmInactivity.breakOngoing && ' · Ongoing at report cutoff'}</>
+            : 'Unavailable — not recorded in this saved report.'}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Recorded breaks run from explicit start to explicit end or logout, including offline time, and are excluded from active, idle and observed CRM time. An ongoing break is counted only up to the report cutoff.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Only measured CRM intervals are counted; active includes the configured inactivity grace period. Unobserved time is unknown. These values do not measure total working time, computer inactivity or work quality, and are separate from Hubstaff time.</p>
+        </div>}
+        {!crmTime && person.time.categories?.length > 0 && <div><h4 className="mb-2 text-sm font-semibold">Time by project and work category</h4><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Work category</TableHead><TableHead>Recorded time</TableHead></TableRow></TableHeader><TableBody>{person.time.categories.map((category, index) => <TableRow key={`${category.project}:${category.profile}:${index}`}><TableCell>{category.project}</TableCell><TableCell>{REPORT_PROFILES.find((profile) => profile.key === category.profile)?.label ?? category.profile.replace(/_/g, ' ')}</TableCell><TableCell>{duration(category.trackedSeconds)}</TableCell></TableRow>)}</TableBody></Table></div>}
         {!software && person.crmUsage && <div className="rounded-md border p-3 text-sm"><h4 className="font-semibold">CRM activity</h4><p className="mt-1">{person.crmUsage.recordedEvents.toLocaleString()} recorded work events</p>{person.crmUsage.firstActivityAt && <p className="mt-1 text-xs text-muted-foreground">First: {timestamp(person.crmUsage.firstActivityAt, timezone)} · Last: {timestamp(person.crmUsage.lastActivityAt, timezone)}</p>}<p className="mt-1 text-xs text-muted-foreground">These events show recorded actions in CRM. They do not measure time spent in CRM and are not added to Hubstaff working hours.</p></div>}
         {metrics.length > 0 && <div><h4 className="mb-2 text-sm font-semibold">Work results</h4><dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{metrics.map((metric) => <div key={metric.key} className="rounded-md border p-3"><dt className="text-xs text-muted-foreground">{metric.label}</dt><dd className="mt-1 text-lg font-semibold">{metricValue(metric)}</dd></div>)}</dl></div>}
         <div>

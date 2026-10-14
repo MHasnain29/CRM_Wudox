@@ -17,6 +17,16 @@ export interface ReportPolicyInput {
   agencyIds: string[];
 }
 export interface ReportMetric { key: string; label: string; value: number | null; unit?: string }
+export interface CrmInactivity {
+  /** Absent in older snapshots; never inferred from other saved totals. */
+  activeSeconds?: number | null;
+  /** Server-recorded declared breaks; absent on older saved reports. */
+  breakSeconds?: number;
+  breakOngoing?: boolean;
+  idleSeconds: number | null;
+  observedSeconds: number;
+  status: 'measured' | 'unavailable';
+}
 export interface ReportTask {
   id: string; title: string; projectName: string; status: string;
   completedAt: string | null; dueAt: string | null; estimateSeconds: number | null;
@@ -25,6 +35,8 @@ export interface ReportTask {
 }
 export interface ReportPerson {
   userId: string; name: string; role: string; profile: ReportProfile;
+  /** Role-selected timing source, independent of editable reporting profiles. */
+  timeSource?: 'crm' | 'hubstaff';
   agencyId: string | null; agencyName: string;
   metrics: ReportMetric[];
   time: {
@@ -34,6 +46,8 @@ export interface ReportPerson {
     categories: { project: string; profile: string; trackedSeconds: number }[];
   };
   crmUsage?: { recordedEvents: number; firstActivityAt: string | null; lastActivityAt: string | null };
+  /** Absent on older snapshots. Measures CRM inactivity only, independently of Hubstaff. */
+  crmInactivity?: CrmInactivity;
   tasks: ReportTask[];
   evidence: { type: string; title: string; at: string; url: string | null }[];
   warnings: string[];
