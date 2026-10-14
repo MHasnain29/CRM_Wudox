@@ -25,7 +25,7 @@ export function Layout() {
   const currentSubCompany = useStore((s) => s.currentSubCompany);
   const isAssociateScope = useIsOwnScope();
 
-  const { isIdle, idleSeconds, isTrackingPaused, handleImBack } = useIdleDetection(isOnBreak);
+  const { isIdle, idleSeconds, isTrackingPaused, handleImBack, handleBreakChange } = useIdleDetection();
   const actAs = useActAs();
 
   useEffect(() => {
@@ -42,14 +42,13 @@ export function Layout() {
     <div className="flex h-screen w-full bg-white overflow-hidden">
       <Sidebar />
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden bg-white">
-        <TopBar />
+        <TopBar onBreakChange={handleBreakChange} />
         <main className="flex-1 px-6 pb-6 pt-0 overflow-y-auto overflow-x-clip bg-white">
           <Outlet />
         </main>
       </div>
 
-      {/* Idle overlay — only dismissable via "I'm Back" + backend confirmation.
-          When shift ends while idle, timer freezes and modal persists until user confirms. */}
+      {/* Display confirmed CRM inactivity seconds; never extrapolate unobserved time. */}
       {isIdle && !isOnBreak && isAssociateScope && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center space-y-6">
@@ -62,12 +61,12 @@ export function Layout() {
 
             <div>
               <h2 className="text-lg font-semibold text-foreground">
-                {isTrackingPaused ? 'Shift Ended' : "You're Inactive"}
+                {isTrackingPaused ? 'Measurement Paused' : 'CRM Inactivity'}
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
                 {isTrackingPaused
-                  ? 'Your shift has ended. Timer is paused.'
-                  : 'Your idle time is being tracked'}
+                  ? 'Showing the last confirmed inactivity measurement.'
+                  : 'No recent interaction was recorded in CRM.'}
               </p>
             </div>
 
@@ -80,7 +79,7 @@ export function Layout() {
                 isTrackingPaused
                   ? 'text-xs text-red-600 font-medium uppercase tracking-wider mb-1'
                   : 'text-xs text-amber-600 font-medium uppercase tracking-wider mb-1'
-              }>Idle Time</p>
+              }>Measured CRM Inactivity</p>
               <p className={
                 isTrackingPaused
                   ? 'text-4xl font-mono font-bold text-red-600'
@@ -89,7 +88,7 @@ export function Layout() {
                 {formatIdleTime(idleSeconds)}
               </p>
               {isTrackingPaused && (
-                <p className="text-xs text-red-600 mt-2 font-medium">Timer is frozen — working hours are over</p>
+                <p className="text-xs text-red-600 mt-2 font-medium">Time is counted only while measurement is available and within working hours.</p>
               )}
             </div>
 
@@ -103,9 +102,7 @@ export function Layout() {
             </Button>
 
             <p className="text-[11px] text-muted-foreground">
-              {isTrackingPaused
-                ? 'Working hours have ended — timer will resume at next start time'
-                : 'This time will be recorded in your activity report'}
+              Confirmed time updates about every 20 seconds. This measures CRM interaction, not activity in other apps.
             </p>
           </div>
         </div>

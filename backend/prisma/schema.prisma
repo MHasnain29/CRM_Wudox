@@ -2923,6 +2923,12 @@ enum ActivityState {
   offline_suspected
 }
 
+enum ActivityBreakType {
+  break
+  coaching
+  meeting
+}
+
 model UserActivitySession {
   id             String              @id @default(cuid())
   userId         String              @map("user_id")
@@ -2936,14 +2942,56 @@ model UserActivitySession {
   idleSeconds    Int                 @default(0) @map("idle_seconds")
   offlineSeconds Int                 @default(0) @map("offline_seconds")
   version        Int                 @default(0)
+  measurementStartedAt DateTime?     @map("measurement_started_at")
+  lastInputAt    DateTime?           @map("last_input_at")
+  lastClientTime DateTime?           @map("last_client_time")
+  lastReportedInputAt DateTime?      @map("last_reported_input_at")
+  measurementClientId String?       @map("measurement_client_id")
+  trackingTimezone String?          @map("tracking_timezone")
+  onBreak        Boolean            @default(false) @map("on_break")
+  breakType      ActivityBreakType?  @map("break_type")
+  breakStartedAt DateTime?           @map("break_started_at")
+  measuredActiveMilliseconds BigInt @default(0) @map("measured_active_milliseconds")
+  measuredIdleMilliseconds BigInt   @default(0) @map("measured_idle_milliseconds")
+  currentIdleMilliseconds BigInt    @default(0) @map("current_idle_milliseconds")
   user           User                @relation(fields: [userId], references: [id])
   events         UserActivityEvent[]
+  intervals      UserActivityInterval[]
+  breaks         UserActivityBreak[]
 
   @@index([userId, endedAt])
   @@index([subCompanyId, startedAt])
   @@index([lastSeenAt])
   @@index([currentState, lastSeenAt])
   @@map("user_activity_sessions")
+}
+
+/// Observed CRM interaction intervals; never extend an interval beyond a received heartbeat.
+model UserActivityInterval {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  state     String
+  startedAt DateTime @map("started_at")
+  endedAt   DateTime @map("ended_at")
+  session   UserActivitySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, endedAt])
+  @@index([startedAt, endedAt])
+  @@map("user_activity_intervals")
+}
+
+/// Explicitly recorded CRM breaks; historical on-break state is not backfilled.
+model UserActivityBreak {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  breakType ActivityBreakType @default(break) @map("break_type")
+  startedAt DateTime @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  session   UserActivitySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, endedAt])
+  @@index([startedAt, endedAt])
+  @@map("user_activity_breaks")
 }
 
 model ReviewTemplate {

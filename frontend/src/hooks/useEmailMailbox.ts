@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { fetchEmails, fetchEmailById, markEmailRead, type ApiEmailDetail, type ApiEmailListItem } from '@/lib/api';
 import { onEmailRefresh } from '@/lib/socket';
+import { emailDateKey } from '@/lib/emailDateRange';
 import { toast } from 'sonner';
 
-export type EmailMailboxScope = Pick<Parameters<typeof fetchEmails>[0], 'agencyIds' | 'ownerIds' | 'ownerExact' | 'filterMode'>;
+export type EmailMailboxScope = Pick<Parameters<typeof fetchEmails>[0], 'agencyIds' | 'ownerIds' | 'ownerExact' | 'filterMode' | 'from' | 'to'>;
 
-/** All email views use the same exact scope for the list and Inbox count. */
+/**
+ * All email views use the same exact scope for the list and Inbox count. The date range (scope.from/to)
+ * is part of that scope: it keys the list and the Inbox count, and resets the open email, but not search.
+ */
 export function useEmailMailbox(
   scope: EmailMailboxScope,
   scopeKey: string,
@@ -14,7 +18,10 @@ export function useEmailMailbox(
   enabled = true,
   onRead?: () => void,
 ) {
-  const viewKey = `${scopeKey}|${folder}`;
+  // The range is a request param but not part of scopeKey (search is keyed by that and must survive a range
+  // change), so it is derived here from the params themselves.
+  const dateKey = emailDateKey(scope);
+  const viewKey = `${scopeKey}|${folder}|${dateKey}`;
   const activeView = useRef(viewKey);
   activeView.current = viewKey;
   const requestId = useRef(0);
@@ -25,6 +32,8 @@ export function useEmailMailbox(
   });
   // Clear state when the scope changes, including a switch back to a prior
   // scope. Keying the visible values also prevents a one-frame stale detail.
+  // A date-range change takes the viewKey path only: it drops the open email
+  // (and invalidates its in-flight request) but leaves the search text alone.
   useEffect(() => {
     setSearch({ scopeKey, value: '' });
   }, [scopeKey]);
@@ -38,7 +47,8 @@ export function useEmailMailbox(
   }, [viewKey]);
 
   const list = useInfiniteQuery({
-    queryKey: ['email-mailbox', scopeKey, folder, 'infinite'],
+    // A new range is a new query: page 1 again, and no rows from the previous range while it loads.
+    queryKey: ['email-mailbox', scopeKey, folder, dateKey, 'infinite'],
     initialPageParam: 1,
     queryFn: ({ pageParam, signal }) => fetchEmails(
       { ...scope, folder, page: pageParam, limit: 50 },
@@ -65,7 +75,7 @@ export function useEmailMailbox(
   }, [list.data]);
   const firstPage = list.data?.pages[0];
   const inbox = useQuery({
-    queryKey: ['email-mailbox-unread', scopeKey],
+    queryKey: ['email-mailbox-unread', scopeKey, dateKey],
     queryFn: ({ signal }) => fetchEmails(
       { ...scope, folder: 'inbox', limit: 1 },
       { signal, throwOnError: true },

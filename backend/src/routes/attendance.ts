@@ -4,13 +4,18 @@
  * attendance:view_all → view all employees + export.
  */
 import { Router, Request, Response } from 'express';
-import { z } from 'zod';
 import prisma from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { actAsMiddleware } from '../middleware/actAs';
 import { resolveAgencyScope, resolveAllowedSubCompanyIds } from '../config/agencyScope';
 import { ensureAccessContext } from '../utils/requestPermission';
 import { hasPermission } from '../services/accessContext';
+import {
+  ATTENDANCE_MAX_ROWS,
+  attendanceDateWhere,
+  attendanceOwnerIds,
+  parseAttendanceQuery,
+} from '../services/attendanceDateFilter';
 
 export const attendanceRouter = Router();
 attendanceRouter.use(authenticate);
@@ -108,32 +113,24 @@ attendanceRouter.post('/checkout', async (req: Request, res: Response) => {
 });
 
 // ── GET /attendance/me ─────────────────────────────────────────────────────
-// Own history — month query param (YYYY-MM), defaults to current month.
+// Own history — ?from=yyyy-MM-dd&to=yyyy-MM-dd (inclusive), or the legacy ?month=YYYY-MM; defaults to current month.
 attendanceRouter.get('/me', async (req: Request, res: Response) => {
   const userId = req.user!.sub;
 
-  const monthSchema = z.string().regex(/^\d{4}-\d{2}$/).optional();
-  const parsed = monthSchema.safeParse(req.query.month);
-  const monthStr = parsed.success && parsed.data ? parsed.data : null;
-
-  let from: Date;
-  let to: Date;
-  if (monthStr) {
-    const [y, m] = monthStr.split('-').map(Number);
-    from = new Date(y, m - 1, 1);
-    to = new Date(y, m, 1);
-  } else {
-    const now = new Date();
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const query = parseAttendanceQuery(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: 'Invalid query', details: query.error.flatten() });
+    return;
   }
 
   try {
     const records = await prisma.attendance.findMany({
-      where: { userId, date: { gte: from, lt: to } },
+      where: { userId, date: attendanceDateWhere(query.data) },
       orderBy: { date: 'desc' },
+      take: ATTENDANCE_MAX_ROWS + 1,
     });
-    res.json({ data: records });
+    const truncated = records.length > ATTENDANCE_MAX_ROWS;
+    res.json({ data: truncated ? records.slice(0, ATTENDANCE_MAX_ROWS) : records, truncated });
   } catch (err) {
     console.error('[attendance] me error', err);
     res.status(500).json({ error: 'Failed to fetch attendance' });
@@ -141,7 +138,8 @@ attendanceRouter.get('/me', async (req: Request, res: Response) => {
 });
 
 // ── GET /attendance ────────────────────────────────────────────────────────
-// All employees (attendance:view_all only). Supports ?month=YYYY-MM&userId=...
+// All employees (attendance:view_all only). Supports ?from=yyyy-MM-dd&to=yyyy-MM-dd (inclusive; legacy
+// ?month=YYYY-MM; default current month), ?ownerIds=<uuid>,<uuid> (the page's scope chips) and ?subCompanyId=.
 attendanceRouter.get('/', async (req: Request, res: Response) => {
   try {
     // Authentication captures the real caller's authority before act-as mutates req.user.
@@ -208,36 +206,30 @@ attendanceRouter.get('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const monthSchema = z.string().regex(/^\d{4}-\d{2}$/).optional();
-    const parsed = monthSchema.safeParse(req.query.month);
-    const monthStr = parsed.success && parsed.data ? parsed.data : null;
-
-    let from: Date;
-    let to: Date;
-    if (monthStr) {
-      const [y, m] = monthStr.split('-').map(Number);
-      from = new Date(y, m - 1, 1);
-      to = new Date(y, m, 1);
-    } else {
-      const now = new Date();
-      from = new Date(now.getFullYear(), now.getMonth(), 1);
-      to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const query = parseAttendanceQuery(req.query);
+    if (!query.success) {
+      res.status(400).json({ error: 'Invalid query', details: query.error.flatten() });
+      return;
     }
 
-    const filterUserId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    // Owner ids only ever NARROW the list: the agency clause below is the ceiling, so an id from another
+    // agency (or a hand-edited URL) matches nothing rather than widening what this caller may see.
+    const ownerIds = attendanceOwnerIds(query.data);
     const records = await prisma.attendance.findMany({
       where: {
         subCompanyId: { in: agencyIds },
-        date: { gte: from, lt: to },
-        ...(filterUserId ? { userId: filterUserId } : {}),
+        date: attendanceDateWhere(query.data),
+        ...(ownerIds.length ? { userId: { in: ownerIds } } : {}),
       },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, role: true } },
         subCompany: { select: { id: true, name: true } },
       },
       orderBy: [{ date: 'desc' }, { user: { firstName: 'asc' } }],
+      take: ATTENDANCE_MAX_ROWS + 1,
     });
-    res.json({ data: records });
+    const truncated = records.length > ATTENDANCE_MAX_ROWS;
+    res.json({ data: truncated ? records.slice(0, ATTENDANCE_MAX_ROWS) : records, truncated });
   } catch (err) {
     console.error('[attendance] list error', err);
     res.status(500).json({ error: 'Failed to fetch attendance' });

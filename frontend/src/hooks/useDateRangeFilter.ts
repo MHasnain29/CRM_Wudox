@@ -11,14 +11,17 @@ import {
 
 /**
  * `allowedPresets` lets a page accept extra ?datePeriod values (Bulk Mail adds last_7_days /
- * last_30_days). Omitted, behaviour is identical to before, so existing pages are unaffected.
+ * last_30_days). `defaultPeriod` is what a missing or unrecognised ?datePeriod means (Attendance opens on
+ * 'this_month'); choosing it again removes the params, keeping the URL clean. Both omitted, behaviour is
+ * identical to before, so existing pages are unaffected.
  */
-export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriodPreset[] }) {
+export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriodPreset[]; defaultPeriod?: DatePeriodPreset }) {
   const allowedPresets = opts?.allowedPresets;
+  const defaultPeriod: DatePeriodPreset = opts?.defaultPeriod ?? 'all';
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawPeriod = searchParams.get('datePeriod');
-  const period: DatePeriodPreset = isValidDatePeriodPreset(rawPeriod, allowedPresets) ? rawPeriod : 'all';
+  const period: DatePeriodPreset = isValidDatePeriodPreset(rawPeriod, allowedPresets) ? rawPeriod : defaultPeriod;
 
   const customFrom = searchParams.get('dateFrom');
   const customTo = searchParams.get('dateTo');
@@ -41,7 +44,7 @@ export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriod
   const setPeriod = useCallback((next: DatePeriodPreset) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (next === 'all') {
+      if (next === defaultPeriod) {
         params.delete('datePeriod');
         params.delete('dateFrom');
         params.delete('dateTo');
@@ -54,7 +57,7 @@ export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriod
       }
       return params;
     }, { replace: true });
-  }, [setSearchParams]);
+  }, [setSearchParams, defaultPeriod]);
 
   const setCustomRange = useCallback((range: DateRange | undefined) => {
     setSearchParams((prev) => {
@@ -72,7 +75,7 @@ export function useDateRangeFilter(opts?: { allowedPresets?: readonly DatePeriod
   }, [setSearchParams]);
 
   const periodLabel = getDatePeriodLabel(period);
-  const isActive = period !== 'all';
+  const isActive = period !== defaultPeriod;
 
   return {
     period,

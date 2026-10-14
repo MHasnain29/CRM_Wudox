@@ -12,7 +12,6 @@ import {
   fetchLeads,
   fetchActivityLogs,
   fetchMyActivityLogs,
-  fetchMyTimeLogs,
   fetchUserPositions,
   type ApiCall,
   type ApiMeeting,
@@ -31,8 +30,6 @@ export interface ReportRawData {
   leadsLost: ApiLead[];
   emailLogs: ActivityLog[];
   pipelineLogs: ActivityLog[];
-  breakLogs: ActivityLog[];
-  idleLogs: ActivityLog[];
   /** userId → total positions closed for Closed Won leads in the report date range. */
   positionsClosedByUser: Record<string, number>;
 }
@@ -190,9 +187,7 @@ export function useReportData({
         emailLogFetch,
         // 7: Pipeline movement logs — same pattern as emails
         pipelineLogFetch,
-        // 8: Break & idle logs — /my-time requires no settings:read; managers see all agency users
-        fetchMyTimeLogs({ from, to, limit: 500, subCompanyId: effectiveSubCompanyId }),
-        // 9: Positions closed per user — server-side date filter via closedAt on closed_won leads
+        // 8: Positions closed per user — server-side date filter via closedAt on closed_won leads
         fetchUserPositions({ startDate, endDate, agencyIds }),
       ]);
 
@@ -204,8 +199,6 @@ export function useReportData({
 
       const paginatedFallback = { data: [] as any[], pagination: { page: 1, limit: 0, total: 0, totalPages: 0 } };
 
-      const timeLogs: ActivityLog[] = extract(results[8], []);
-
       setData({
         calls:        extract(results[0], paginatedFallback).data,
         meetings:     extract(results[1], paginatedFallback).data,
@@ -215,9 +208,7 @@ export function useReportData({
         leadsLost:    extract(results[5], paginatedFallback).data,
         emailLogs:    extract(results[6], []),
         pipelineLogs: extract(results[7], []),
-        breakLogs:    timeLogs.filter(l => l.type === 'break_detected'),
-        idleLogs:     timeLogs.filter(l => l.type === 'idle_detected'),
-        positionsClosedByUser: extract(results[9], {}),
+        positionsClosedByUser: extract(results[8], {}),
       });
 
       // Check if any critical fetches failed

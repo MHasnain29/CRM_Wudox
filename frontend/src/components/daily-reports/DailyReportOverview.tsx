@@ -61,9 +61,8 @@ function EmployeeSummary({ person, view, expanded, onToggle, details }: {
           {view.trackedLabel && <span className="text-xs text-muted-foreground">{view.trackedLabel}</span>}
         </div>
       </div>
-      {view.empty
-        ? <p className="px-4 py-2.5 text-xs text-muted-foreground">No activity recorded.</p>
-        : <dl className="border-t px-4 py-1">{view.lines.map((line) => <MetricLine key={line.name} line={line} />)}</dl>}
+      {view.empty && <p className="px-4 py-2.5 text-xs text-muted-foreground">No work activity recorded.</p>}
+      {view.lines.length > 0 && <dl className="border-t px-4 py-1">{view.lines.map((line) => <MetricLine key={line.name} line={line} />)}</dl>}
       <Button
         type="button"
         variant="ghost"

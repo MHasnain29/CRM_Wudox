@@ -1,449 +1,420 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/lib/authStore';
+import { useStore } from '@/lib/store';
+import { confirmBreakTransition } from '@/lib/activityBreak';
+import { WORKING_HOURS_TIME_ZONE } from '@/lib/workingHours';
+import {
+  ActivityTrackingScope,
+  canClaimActivityLease,
+  ownsActivityLease,
+  type ActivityInputBuffer,
+  type ActivityLease,
+  type ScopedActivitySnapshot,
+} from '@/lib/activityMeasurement';
 import {
   fetchCurrentActivitySession,
   sendActivityHeartbeat,
-  sendActivityEvent,
+  sendActivityBreak,
   sendManualBack,
-  sendActivityEndSession,
+  type ActivityMeasurement,
+  type ActivitySessionState,
+  type ActivityBreakType,
 } from '@/lib/api';
 
-const HEARTBEAT_INTERVAL_MS = 20 * 1000;
-const FALLBACK_POLL_INTERVAL_MS = 30 * 1000;
-const ACTIVITY_THROTTLE_MS = 5 * 1000;
-const LEADER_KEY = 'activity_leader';
-const LEADER_TTL_MS = 25 * 1000;
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const FALLBACK_POLL_INTERVAL_MS = 30_000;
+const LEADER_CHECK_MS = 5_000;
+const LEADER_TTL_MS = 30_000;
 
 export interface IdleState {
   isIdle: boolean;
   idleSeconds: number;
   isTrackingPaused: boolean;
   handleImBack: () => Promise<void>;
+  handleBreakChange: (onBreak: boolean, breakType?: ActivityBreakType) => Promise<void>;
 }
 
-function tryClaimLeader(): boolean {
-  try {
-    const now = Date.now();
-    const raw = localStorage.getItem(LEADER_KEY);
-    if (raw) {
-      const { ts } = JSON.parse(raw) as { ts: number };
-      if (now - ts < LEADER_TTL_MS) return false;
-    }
-    localStorage.setItem(LEADER_KEY, JSON.stringify({ ts: now }));
-    const confirmed = JSON.parse(localStorage.getItem(LEADER_KEY) ?? '{}') as { ts?: number };
-    return confirmed.ts === now;
-  } catch {
-    return true;
-  }
-}
+type ActivityMessage =
+  | { type: 'input'; at: number }
+  | { type: 'request_inputs' }
+  | { type: 'inputs'; observations: ReturnType<ActivityInputBuffer['share']> }
+  | { type: 'acknowledged'; through: number | null }
+  | { type: 'leader_released' }
+  | { type: 'resume_tracking' }
+  | { type: 'state'; state: ActivitySessionState };
 
-function renewLeader(): void {
-  try {
-    localStorage.setItem(LEADER_KEY, JSON.stringify({ ts: Date.now() }));
-  } catch { /* ignore */ }
-}
-
-function releaseLeader(): void {
-  try {
-    localStorage.removeItem(LEADER_KEY);
-  } catch { /* ignore */ }
-}
-
-// Returns true when `now` falls inside [startStr, endStr) interpreted as wall-clock HH:mm
-// in the browser's local timezone — matches how working hours are entered/displayed elsewhere
-// in the app (no per-user timezone field exists). When either field is missing, returns true
-// so behavior is unchanged for users without configured working hours.
-function isInsideWorkingHours(
-  startStr: string | undefined,
-  endStr: string | undefined,
-  now: Date,
-): boolean {
-  if (!startStr || !endStr) return true;
-  const [sH, sM] = startStr.split(':').map(Number);
-  const [eH, eM] = endStr.split(':').map(Number);
-  if (Number.isNaN(sH) || Number.isNaN(sM) || Number.isNaN(eH) || Number.isNaN(eM)) return true;
-  const startMin = sH * 60 + sM;
-  const endMin = eH * 60 + eM;
-  if (startMin === endMin) return true; // 24/7
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
-  return nowMin >= startMin || nowMin < endMin; // overnight window
-}
-
-export function useIdleDetection(isOnBreak: boolean): IdleState {
+/** CRM inactivity is measured by the server from observed input boundaries, not UI timers. */
+export function useIdleDetection(): IdleState {
+  const userId = useAuthStore((state) => state.user?.id);
   const [isIdle, setIsIdle] = useState(false);
   const [idleSeconds, setIdleSeconds] = useState(0);
   const [isTrackingPaused, setIsTrackingPaused] = useState(false);
+  const manualBackRef = useRef<() => Promise<void>>(async () => {});
+  const changeBreakRef = useRef<IdleState['handleBreakChange']>(async () => { throw new Error('Activity session is loading. Please try again.'); });
 
-  const workStartTime = useAuthStore((s) => s.user?.workStartTime);
-  const workEndTime = useAuthStore((s) => s.user?.workEndTime);
-
-  const sessionIdRef = useRef<string | null>(null);
-  const isLeaderRef = useRef(false);
-  const hadActivityRef = useRef(false);
-  const lastActivityThrottleRef = useRef(0);
-  const idleStartedAtRef = useRef<Date | null>(null);
-  const isIdleRef = useRef(false);
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const prevIsOnBreakRef = useRef(isOnBreak);
-
-  // Frozen state — set when the live working-hours check (every tick) flips outside hours.
-  // `frozenIdleSecondsRef` is the carry-over total of in-hours seconds across freeze cycles;
-  // it is preserved across unfreezes and only zeroed on full return-to-active. This is what
-  // makes edge case D (idle across an entire off-hours gap) log the correct cumulative total.
-  const isManuallyFrozenRef = useRef(false);
-  const frozenIdleSecondsRef = useRef(0);
-
-  // Freeze the segment at the working-hours boundary: fold the current segment into
-  // the carry-over and stop the visible timer.
-  const freezeIdleModal = useCallback(() => {
-    const segmentSeconds = idleStartedAtRef.current
-      ? Math.floor((Date.now() - idleStartedAtRef.current.getTime()) / 1000)
-      : 0;
-    frozenIdleSecondsRef.current += segmentSeconds;
-    idleStartedAtRef.current = null;
-    isManuallyFrozenRef.current = true;
-    setIsTrackingPaused(true);
-    setIdleSeconds(frozenIdleSecondsRef.current);
-  }, []);
-
-  const clearFrozenState = useCallback(() => {
-    isManuallyFrozenRef.current = false;
-    frozenIdleSecondsRef.current = 0;
-    setIsTrackingPaused(false);
-  }, []);
-
-  // 1s tick: re-evaluates working hours every second so freeze/unfreeze transitions are
-  // automatic and require no user action. This is the single source of truth for the
-  // "only count if idle AND inside hours" rule.
-  const syncIdleTimer = useCallback(() => {
-    if (!isIdleRef.current) return;
-
-    const insideHours = isInsideWorkingHours(workStartTime, workEndTime, new Date());
-
-    if (!insideHours) {
-      if (!isManuallyFrozenRef.current) freezeIdleModal();
-      return;
-    }
-
-    if (isManuallyFrozenRef.current) {
-      // Inside hours again while still idle — start a fresh visual segment from this moment.
-      // Carry-over is preserved so the eventual log total covers all in-hours portions.
-      isManuallyFrozenRef.current = false;
-      setIsTrackingPaused(false);
-      idleStartedAtRef.current = new Date();
-      setIdleSeconds(0);
-      return;
-    }
-
-    if (!idleStartedAtRef.current) return;
-    const elapsed = Math.floor((Date.now() - idleStartedAtRef.current.getTime()) / 1000);
-    setIdleSeconds(elapsed);
-  }, [workStartTime, workEndTime, freezeIdleModal]);
-
-  const applyServerState = useCallback(
-    (state: string, idleStartedAt: string | null, serverTime: string) => {
-      const shouldBeIdle = state === 'idle' || state === 'offline_suspected';
-      if (shouldBeIdle) {
-        const insideHours = isInsideWorkingHours(workStartTime, workEndTime, new Date());
-
-        if (insideHours) {
-          if (isManuallyFrozenRef.current) {
-            // Frozen → active-idle transition. Fresh anchor; carry-over preserved.
-            isManuallyFrozenRef.current = false;
-            setIsTrackingPaused(false);
-            idleStartedAtRef.current = new Date();
-          } else if (!idleStartedAtRef.current) {
-            // First idle entry inside hours — adopt server's authoritative timestamp.
-            // Guard prevents a later applyServerState (e.g. from the 30s fallback poll)
-            // from overwriting a fresh post-unfreeze anchor with the server's stale value.
-            const serverTs = new Date(serverTime).getTime();
-            const clockDriftMs = Date.now() - serverTs;
-            idleStartedAtRef.current = idleStartedAt
-              ? new Date(new Date(idleStartedAt).getTime() + clockDriftMs)
-              : new Date(serverTs);
-          }
-        } else {
-          // Edge cases B & E: entering idle while already outside hours — leave anchor null
-          // and don't start a local timer segment yet. The first counted segment doesn't begin
-          // until working hours resume (handled by syncIdleTimer's unfreeze branch).
-          idleStartedAtRef.current = null;
-        }
-
-        isIdleRef.current = true;
-        setIsIdle(true);
-        syncIdleTimer();
-      } else {
-        // Server says active. If we're frozen, ignore (manual back is still required).
-        if (isManuallyFrozenRef.current) return;
-        idleStartedAtRef.current = null;
-        isIdleRef.current = false;
-        setIsIdle(false);
-        setIdleSeconds(0);
-        frozenIdleSecondsRef.current = 0;
-      }
-    },
-    [syncIdleTimer, workStartTime, workEndTime],
-  );
-
-  // Boot: fetch authoritative state before rendering idle UI
   useEffect(() => {
+    if (!userId) return;
+    const key = `crm-activity:v2:${userId}`;
+    const leaderKey = `${key}:leader`;
+    const messageKey = `${key}:message`;
+    const owner = crypto.randomUUID();
+    let clientId: string = crypto.randomUUID();
+    try {
+      const stored = localStorage.getItem(`${key}:client`);
+      if (stored) clientId = stored;
+      else {
+        localStorage.setItem(`${key}:client`, clientId);
+        clientId = localStorage.getItem(`${key}:client`) || clientId;
+      }
+    } catch { /* A separate observer ID makes unavailable cross-tab storage conservative. */ }
+    let observerId = clientId;
+    const timeZone = WORKING_HOURS_TIME_ZONE;
+    const inputs = new ActivityTrackingScope();
+    let channel: BroadcastChannel | null = null;
+    let sessionId: string | null = null;
     let cancelled = false;
-    async function boot() {
-      const session = await fetchCurrentActivitySession();
-      if (cancelled || !session) return;
-      sessionIdRef.current = session.sessionId;
-      applyServerState(session.state, session.idleStartedAt, session.serverTime);
-      await sendActivityEvent(session.sessionId, 'session_start');
+    let isLeader = false;
+    let pageHidden = false;
+    let storageAvailable = true;
+    let leadershipRequest: Promise<void> | null = null;
+    let heartbeatInFlight = false;
+    let heartbeatRequested = false;
+    let breakInFlight = false;
+    let confirmedOnBreak: boolean | null = null;
+    let lastServerTime = 0;
+    let sessionRequest: Promise<ActivitySessionState | null> | null = null;
+
+    setIsIdle(false);
+    setIdleSeconds(0);
+    setIsTrackingPaused(false);
+
+    function broadcast(message: ActivityMessage) {
+      if (cancelled || (message.type !== 'state' && !inputs.enabled)) return;
+      try {
+        if (channel) channel.postMessage(message);
+        else localStorage.setItem(messageKey, JSON.stringify({ ...message, nonce: crypto.randomUUID() }));
+      } catch { /* Other tabs can still report their own inputs when storage is unavailable. */ }
     }
-    void boot();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Socket.IO: receive server-pushed state changes
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    const onStateChanged = (payload: { state: string; idleStartedAt: string | null; serverTime: string }) => {
-      applyServerState(payload.state, payload.idleStartedAt, payload.serverTime);
-    };
-    // Shift ended — freeze modal if idle, otherwise suppress.
-    const onTrackingPaused = () => {
-      if (isIdleRef.current) {
-        if (!isManuallyFrozenRef.current) freezeIdleModal();
-      } else {
-        idleStartedAtRef.current = null;
-        isIdleRef.current = false;
-        setIsIdle(false);
-        setIdleSeconds(0);
+    function applyState(state: ActivitySessionState, relay = false) {
+      if (cancelled) return;
+      const serverTime = Date.parse(state.serverTime);
+      // An earlier HTTP response must not undo a newer socket update or break change.
+      if (!Number.isFinite(serverTime) || serverTime < lastServerTime) return;
+      lastServerTime = serverTime;
+      if (state.sessionId) sessionId = state.sessionId;
+      const scopeChanged = inputs.setEnabled(state.trackingEnabled, Date.now());
+      if (scopeChanged && !inputs.enabled) releaseLease();
+      const breakChanged = confirmedOnBreak !== null && confirmedOnBreak !== state.onBreak;
+      const resumed = confirmedOnBreak === true && state.onBreak === false;
+      confirmedOnBreak = state.onBreak;
+      if (breakChanged) inputs.reset(Date.now());
+      if (scopeChanged || breakChanged) observerId = `${clientId}:${crypto.randomUUID()}`;
+      const measuredIdle = inputs.enabled && state.state === 'idle' && !state.onBreak;
+      setIsIdle(measuredIdle);
+      setIdleSeconds(measuredIdle && Number.isFinite(state.currentIdleSeconds)
+        ? Math.max(0, Math.floor(state.currentIdleSeconds)) : 0);
+      setIsTrackingPaused(inputs.enabled && (state.trackingPaused === true || state.state === 'offline_suspected'));
+      if (typeof state.onBreak === 'boolean') {
+        useStore.getState().setIsOnBreak(state.onBreak);
+        window.dispatchEvent(new CustomEvent('activity:break_state', {
+          detail: { onBreak: state.onBreak, startedAt: state.breakStartedAt, breakType: state.breakType, serverTime: state.serverTime },
+        }));
       }
-    };
-    socket.on('activity:state_changed', onStateChanged);
-    socket.on('activity:tracking_paused', onTrackingPaused);
-    return () => {
-      socket.off('activity:state_changed', onStateChanged);
-      socket.off('activity:tracking_paused', onTrackingPaused);
-    };
-  }, [applyServerState, freezeIdleModal]);
+      if (relay) broadcast({ type: 'state', state });
+      if (scopeChanged && inputs.enabled) {
+        broadcast({ type: 'request_inputs' });
+      }
+      if ((scopeChanged || resumed) && inputs.enabled) requestHeartbeat();
+    }
 
-  // Activity listeners — all tabs track activity; non-leaders relay to leader via BroadcastChannel
-  useEffect(() => {
-    if (isOnBreak) return;
-    const onActivity = () => {
-      const now = Date.now();
-      if (now - lastActivityThrottleRef.current >= ACTIVITY_THROTTLE_MS) {
-        hadActivityRef.current = true;
-        lastActivityThrottleRef.current = now;
-        if (!isLeaderRef.current && broadcastChannelRef.current) {
-          try { broadcastChannelRef.current.postMessage({ type: 'activity_detected' }); } catch { /* ignore */ }
+    function requestHeartbeat() {
+      if (cancelled || !inputs.enabled) return;
+      heartbeatRequested = true;
+      queueMicrotask(() => {
+        void checkLeadership().then(() => heartbeat());
+      });
+    }
+
+    function captureMeasurement() {
+      const captured = inputs.capture();
+      if (!captured) return null;
+      const { snapshot } = captured;
+      const measurement: ActivityMeasurement = {
+        measurementVersion: 2,
+        clientId: observerId,
+        clientTime: new Date().toISOString(),
+        firstActivityAt: snapshot.firstActivityAt,
+        lastActivityAt: snapshot.lastActivityAt,
+        timeZone,
+      };
+      return { ...captured, measurement };
+    }
+
+    function acknowledge(captured: ScopedActivitySnapshot) {
+      if (inputs.acknowledge(captured)) {
+        broadcast({ type: 'acknowledged', through: captured.snapshot.acknowledgedThrough });
+      }
+    }
+
+    async function refreshSession(force = false): Promise<ActivitySessionState | null> {
+      if (sessionRequest) {
+        if (!force) return sessionRequest;
+        await sessionRequest;
+        if (cancelled) return null;
+      }
+      sessionRequest = fetchCurrentActivitySession()
+        .then((state) => {
+          if (state && !cancelled) {
+            applyState(state);
+          }
+          return state;
+        })
+        .catch(() => null)
+        .finally(() => { sessionRequest = null; });
+      return sessionRequest;
+    }
+
+    async function changeBreak(onBreak: boolean, breakType?: ActivityBreakType) {
+      if (cancelled) throw new Error('Activity session is unavailable. Please reload and try again.');
+      if (breakInFlight) throw new Error('A break update is already in progress.');
+      breakInFlight = true;
+      try {
+        if (!sessionId) await refreshSession();
+        if (!sessionId || cancelled) throw new Error('Could not load your activity session. Please try again.');
+        const captured = captureMeasurement();
+        const state = await confirmBreakTransition(onBreak,
+          () => sendActivityBreak(sessionId!, onBreak, timeZone, captured?.measurement, breakType),
+          () => refreshSession(true));
+        if (cancelled) throw new Error('Activity session changed. Please reload to confirm your break status.');
+        applyState(state, true);
+        if (captured) acknowledge(captured);
+        if (!onBreak) {
+          // Establish the resumed observation now, including when another tab owns heartbeats.
+          broadcast({ type: 'resume_tracking' });
+          requestHeartbeat();
         }
+      } finally {
+        breakInFlight = false;
+        if (heartbeatRequested) requestHeartbeat();
       }
-    };
-    const bubbleEvents = ['mousemove', 'keydown', 'click', 'touchstart', 'input', 'focus'] as const;
-    bubbleEvents.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
-    window.addEventListener('scroll', onActivity, { passive: true, capture: true });
-    return () => {
-      bubbleEvents.forEach((e) => window.removeEventListener(e, onActivity));
-      window.removeEventListener('scroll', onActivity, { capture: true });
-    };
-  }, [isOnBreak]);
+    }
 
-  // Visibility change: re-fetch state on focus; mark activity when switching back
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      const sid = sessionIdRef.current;
-      if (document.visibilityState === 'hidden') {
-        if (sid) void sendActivityEvent(sid, 'tab_hidden');
+    async function heartbeat() {
+      if (cancelled || !inputs.enabled || !isLeader || heartbeatInFlight || breakInFlight) return;
+      if (!verifyLeadership()) return;
+      heartbeatRequested = false;
+      heartbeatInFlight = true;
+      try {
+        if (!sessionId) await refreshSession();
+        if (!sessionId || cancelled || !inputs.enabled || !verifyLeadership() || breakInFlight) return;
+        const captured = captureMeasurement();
+        if (!captured) return;
+        const { snapshot, measurement } = captured;
+        const state = await sendActivityHeartbeat(
+          sessionId,
+          document.visibilityState === 'visible' ? 'visible' : 'hidden',
+          snapshot.firstActivityAt !== null,
+          measurement,
+        );
+        if (cancelled) return;
+        if (!state) {
+          setIsTrackingPaused(true);
+          sessionId = null;
+          await refreshSession();
+          return; // Keep pending observations for a retry; never discard input on failure.
+        }
+        applyState(state, true);
+        acknowledge(captured);
+      } catch {
+        if (!cancelled) setIsTrackingPaused(true);
+      } finally {
+        heartbeatInFlight = false;
+        if (heartbeatRequested) requestHeartbeat();
+      }
+    }
+
+    function receive(message: ActivityMessage) {
+      if (cancelled || !message || typeof message !== 'object') return;
+      if (message.type === 'state') { applyState(message.state); return; }
+      if (!inputs.enabled) return;
+      if (message.type === 'leader_released') {
+        if (document.visibilityState === 'visible') void checkLeadership();
         return;
       }
-      hadActivityRef.current = true;
-      void fetchCurrentActivitySession().then((session) => {
-        if (!session) return;
-        if (!sessionIdRef.current) {
-          sessionIdRef.current = session.sessionId;
-          void sendActivityEvent(session.sessionId, 'session_start');
-        } else if (sid) {
-          void sendActivityEvent(sid, 'tab_visible');
-        }
-        applyServerState(session.state, session.idleStartedAt, session.serverTime);
-      });
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [applyServerState]);
-
-  // Best-effort end-session on page close
-  useEffect(() => {
-    const onUnload = () => {
-      const sid = sessionIdRef.current;
-      if (sid) sendActivityEndSession(sid);
-      if (isLeaderRef.current && !('locks' in navigator)) releaseLeader();
-    };
-    window.addEventListener('beforeunload', onUnload);
-    return () => window.removeEventListener('beforeunload', onUnload);
-  }, []);
-
-  // Heartbeat loop — one leader tab only.
-  // Uses Web Locks API for a true cross-tab exclusive lock (no race conditions).
-  // Falls back to the localStorage CAS approach on browsers that lack Web Locks.
-  useEffect(() => {
-    if (isOnBreak) return;
-    let cancelled = false;
-    // Refs to cancel the inter-beat sleep early when the effect is torn down,
-    // so the lock is released promptly instead of waiting up to 20 s.
-    let wakeUp: (() => void) | null = null;
-    let sleepTimer: ReturnType<typeof setTimeout> | null = null;
-
-    async function runHeartbeats() {
-      while (!cancelled) {
-        await new Promise<void>((resolve) => {
-          wakeUp = resolve;
-          sleepTimer = setTimeout(resolve, HEARTBEAT_INTERVAL_MS);
-        });
-        wakeUp = null;
-        sleepTimer = null;
-        if (cancelled) break;
-
-        const sid = sessionIdRef.current;
-        if (!sid) {
-          const session = await fetchCurrentActivitySession();
-          if (!cancelled && session) {
-            sessionIdRef.current = session.sessionId;
-            applyServerState(session.state, session.idleStartedAt, session.serverTime);
-            void sendActivityEvent(session.sessionId, 'session_start');
-          }
-          continue;
-        }
-
-        const visibilityState = document.visibilityState === 'visible' ? 'visible' : 'hidden';
-        const hadActivity = hadActivityRef.current;
-        const result = await sendActivityHeartbeat(sid, visibilityState, hadActivity);
-        if (!result) {
-          if (hadActivity) hadActivityRef.current = true;
-          continue;
-        }
-        hadActivityRef.current = false;
-        applyServerState(result.state, result.idleStartedAt, result.serverTime);
+      if (message.type === 'resume_tracking') { requestHeartbeat(); return; }
+      if (confirmedOnBreak) return;
+      if (message.type === 'input' && Number.isFinite(message.at)) inputs.record(message.at);
+      else if (message.type === 'request_inputs') {
+        const observations = inputs.share();
+        if (observations) broadcast({ type: 'inputs', observations });
       }
-      isLeaderRef.current = false;
+      else if (message.type === 'inputs' && Array.isArray(message.observations?.pending)) inputs.merge(message.observations);
+      else if (message.type === 'acknowledged') inputs.acknowledgeRelay(message.through);
     }
 
-    function cancelSleep() {
-      if (sleepTimer !== null) { clearTimeout(sleepTimer); sleepTimer = null; }
-      if (wakeUp) { wakeUp(); wakeUp = null; }
+    function onStorage(event: StorageEvent) {
+      if (event.key !== messageKey || !event.newValue) return;
+      try { receive(JSON.parse(event.newValue) as ActivityMessage); } catch { /* Ignore invalid messages. */ }
     }
 
-    if ('locks' in navigator) {
-      const ac = new AbortController();
-      void navigator.locks.request(
-        'activity_leader',
-        { mode: 'exclusive', signal: ac.signal },
-        async () => {
-          if (cancelled) return;
-          isLeaderRef.current = true;
-          await runHeartbeats();
-        },
-      ).catch(() => {});
-      return () => {
-        cancelled = true;
-        cancelSleep();
-        ac.abort();
-        isLeaderRef.current = false;
+    try {
+      channel = new BroadcastChannel(key);
+      channel.onmessage = (event: MessageEvent<ActivityMessage>) => receive(event.data);
+    } catch { /* The storage event transport supports browsers without BroadcastChannel. */ }
+    window.addEventListener('storage', onStorage);
+    broadcast({ type: 'request_inputs' });
+
+    function recordInput(event: Event) {
+      if (!inputs.enabled || confirmedOnBreak || !event.isTrusted) return;
+      const at = Date.now();
+      if (!inputs.record(at)) return; // Only confirmed non-IT scope may retain input.
+      broadcast({ type: 'input', at });
+      if (!isLeader) void checkLeadership();
+    }
+    const inputEvents = ['pointermove', 'pointerdown', 'keydown', 'click', 'touchstart', 'touchmove', 'wheel', 'input'] as const;
+    inputEvents.forEach((name) => window.addEventListener(name, recordInput, { passive: true, capture: true }));
+    // Visibility/focus alone is not evidence of a user input and never resets inactivity.
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void refreshSession();
+        void checkLeadership();
+      } else releaseLease();
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    function readLease(): ActivityLease | null {
+      try {
+        const raw = localStorage.getItem(leaderKey);
+        storageAvailable = true;
+        return raw ? JSON.parse(raw) as ActivityLease : null;
+      } catch { storageAvailable = false; return null; }
+    }
+    function verifyLeadership() {
+      if (cancelled || pageHidden || !inputs.enabled || !isLeader) return false;
+      const lease = readLease();
+      if (storageAvailable && !ownsActivityLease(lease, owner, Date.now())) isLeader = false;
+      return isLeader;
+    }
+    function claimLease() {
+      if (cancelled || pageHidden || !inputs.enabled) return;
+      const now = Date.now();
+      const visibility = document.visibilityState === 'visible' ? 'visible' : 'hidden';
+      const previous = readLease();
+      const wasLeader = isLeader && (!storageAvailable || ownsActivityLease(previous, owner, now));
+      try {
+        if (canClaimActivityLease(previous, owner, now, visibility)) {
+          localStorage.setItem(leaderKey, JSON.stringify({ owner, expiresAt: now + LEADER_TTL_MS, visibility }));
+          storageAvailable = true;
+          isLeader = ownsActivityLease(readLease(), owner, Date.now());
+        } else isLeader = false;
+      } catch {
+        // Independent observer IDs keep storage-blocked tabs conservative on the server.
+        storageAvailable = false;
+        isLeader = true;
+      }
+      if (cancelled || pageHidden || !inputs.enabled) { releaseLease(); return; }
+      if (isLeader && !wasLeader) {
+        // Peer inputs arrive asynchronously. A handoff is unmeasured until this
+        // leader establishes its own observation, even when all tabs share a browser.
+        observerId = `${clientId}:${crypto.randomUUID()}`;
+        broadcast({ type: 'request_inputs' });
+        void heartbeat();
+      }
+    }
+    function checkLeadership(): Promise<void> {
+      if (cancelled || pageHidden || !inputs.enabled) return Promise.resolve();
+      if (leadershipRequest) return leadershipRequest;
+      // Hold the Web Lock only for this synchronous lease update. A frozen tab
+      // cannot retain it and block the visible tab for the lifetime of the page.
+      const claim = async () => {
+        if ('locks' in navigator) {
+          try {
+            await navigator.locks.request(`${leaderKey}:claim`, {
+              mode: 'exclusive', ifAvailable: true,
+            }, (lock) => { if (lock) claimLease(); });
+            return;
+          } catch {
+            if (cancelled) return;
+            // The renewable lease also works where Web Locks are denied.
+          }
+        }
+        claimLease();
       };
+      leadershipRequest = claim().finally(() => { leadershipRequest = null; });
+      return leadershipRequest;
+    }
+    function releaseLease() {
+      const wasLeader = isLeader;
+      isLeader = false;
+      if (readLease()?.owner === owner) {
+        try { localStorage.removeItem(leaderKey); } catch { /* Best effort on unload. */ }
+      }
+      if (wasLeader) broadcast({ type: 'leader_released' });
     }
 
-    // Fallback: localStorage CAS (has a rare multi-tab race but still works)
-    isLeaderRef.current = tryClaimLeader();
-    if (isLeaderRef.current) void runHeartbeats();
+    const heartbeatTimer = setInterval(() => { void heartbeat(); }, HEARTBEAT_INTERVAL_MS);
+    const leaderTimer = setInterval(() => { void checkLeadership(); }, LEADER_CHECK_MS);
+    const pollTimer = setInterval(() => {
+      void refreshSession();
+    }, FALLBACK_POLL_INTERVAL_MS);
+    // Unloading one tab must never close the shared user session.
+    function onPageHide() { pageHidden = true; releaseLease(); }
+    function onPageShow() { pageHidden = false; void checkLeadership(); void refreshSession(); }
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pageshow', onPageShow);
+
+    const socket = getSocket();
+    const onServerState = (state: ActivitySessionState) => applyState(state);
+    const onReconnect = () => { void refreshSession(); };
+    const onTrackingPaused = () => { void refreshSession(); };
+    socket?.on('activity:state_changed', onServerState);
+    socket?.on('activity:tracking_paused', onTrackingPaused);
+    socket?.on('connect', onReconnect);
+
+    manualBackRef.current = async () => {
+      // The explicit return button is a real interaction; its timestamp joins the next heartbeat.
+      const at = Date.now();
+      if (inputs.record(at)) broadcast({ type: 'input', at });
+      if (!sessionId) await refreshSession();
+      if (!sessionId || cancelled) return;
+      const captured = captureMeasurement();
+      const result = await sendManualBack(sessionId, captured?.measurement);
+      if (cancelled) return;
+      if (result?.state === 'active') {
+        await refreshSession();
+        if (captured) acknowledge(captured);
+      }
+      else {
+        sessionId = null;
+        await refreshSession();
+      }
+    };
+    changeBreakRef.current = changeBreak;
+    void refreshSession();
+
     return () => {
       cancelled = true;
-      cancelSleep();
-      if (isLeaderRef.current) releaseLeader();
-      isLeaderRef.current = false;
+      manualBackRef.current = async () => {};
+      changeBreakRef.current = async () => { throw new Error('Activity session is unavailable. Please reload and try again.'); };
+      clearInterval(heartbeatTimer);
+      clearInterval(leaderTimer);
+      clearInterval(pollTimer);
+      inputEvents.forEach((name) => window.removeEventListener(name, recordInput, { capture: true }));
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
+      socket?.off('activity:state_changed', onServerState);
+      socket?.off('activity:tracking_paused', onTrackingPaused);
+      socket?.off('connect', onReconnect);
+      releaseLease();
+      channel?.close();
     };
-  }, [isOnBreak, applyServerState, freezeIdleModal]);
+  }, [userId]);
 
-  // BroadcastChannel: leader re-election + cross-tab activity relay
-  useEffect(() => {
-    let bc: BroadcastChannel | null = null;
-    try {
-      bc = new BroadcastChannel('activity');
-      broadcastChannelRef.current = bc;
-      bc.onmessage = (e: MessageEvent<{ type: string }>) => {
-        if (e.data?.type === 'leader_released' && !('locks' in navigator)) {
-          isLeaderRef.current = tryClaimLeader();
-        } else if (e.data?.type === 'activity_detected') {
-          hadActivityRef.current = true;
-        }
-      };
-    } catch {
-      // BroadcastChannel unavailable (Firefox private mode) — ignore
-    }
-    const onUnload = () => {
-      if (isLeaderRef.current && bc && !('locks' in navigator)) {
-        bc.postMessage({ type: 'leader_released' });
-      }
-    };
-    window.addEventListener('beforeunload', onUnload);
-    return () => {
-      window.removeEventListener('beforeunload', onUnload);
-      bc?.close();
-      broadcastChannelRef.current = null;
-    };
-  }, []);
-
-  // When break ends while idle — clear idle state silently (break time logged separately).
-  useEffect(() => {
-    const wasOnBreak = prevIsOnBreakRef.current;
-    prevIsOnBreakRef.current = isOnBreak;
-    if (wasOnBreak && !isOnBreak && isIdleRef.current) {
-      const sid = sessionIdRef.current;
-      if (sid) {
-        void sendManualBack(sid).then((result) => {
-          if (result?.state === 'active') {
-            idleStartedAtRef.current = null;
-            isIdleRef.current = false;
-            setIsIdle(false);
-            setIdleSeconds(0);
-            clearFrozenState();
-          }
-        });
-      }
-    }
-  }, [isOnBreak, clearFrozenState]);
-
-  // Idle timer: tick every second while modal is open
-  useEffect(() => {
-    if (!isIdle) return;
-    const interval = setInterval(syncIdleTimer, 1000);
-    return () => clearInterval(interval);
-  }, [isIdle, syncIdleTimer]);
-
-  // Fallback poll: re-sync if Socket.IO is down
-  useEffect(() => {
-    if (!isIdle) return;
-    const interval = setInterval(async () => {
-      const session = await fetchCurrentActivitySession();
-      if (!session) return;
-      applyServerState(session.state, session.idleStartedAt, session.serverTime);
-    }, FALLBACK_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [isIdle, applyServerState]);
-
-  const handleImBack = useCallback(async () => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-
-    const result = await sendManualBack(sid);
-    if (result?.state === 'active') {
-      idleStartedAtRef.current = null;
-      isIdleRef.current = false;
-      setIsIdle(false);
-      setIdleSeconds(0);
-      clearFrozenState();
-    }
-  }, [clearFrozenState]);
-
-  return { isIdle, idleSeconds, isTrackingPaused, handleImBack };
+  const handleImBack = useCallback(() => manualBackRef.current(), []);
+  const handleBreakChange = useCallback<IdleState['handleBreakChange']>((onBreak, breakType) => changeBreakRef.current(onBreak, breakType), []);
+  return { isIdle, idleSeconds, isTrackingPaused, handleImBack, handleBreakChange };
 }

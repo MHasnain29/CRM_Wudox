@@ -34,6 +34,13 @@ import { invalidateClientListCache } from '../services/clientListCache';
 import { resolveEmailChipScope, buildEmailChipWhere } from '../services/emailChipScope';
 import { emitIncomingEmailRefresh } from '../services/incomingEmailRefresh';
 import { compareEmailListEntries, emailListPageWindow } from '../services/emailListPagination';
+import {
+  applyEmailDateRange,
+  emailDateQueryShape,
+  parseEmailDateRange,
+  proposalDateWhere,
+  refineEmailDateQuery,
+} from '../services/emailDateFilter';
 
 type InboundUploadFile = {
   fieldname: string;
@@ -73,7 +80,9 @@ const listQuerySchema = z.object({
   agencyIds: z.string().optional(), // elevated roles only, sent folder only
   ownerIds: z.string().optional(),  // multi-user filter: comma-separated UUIDs (sent folder, elevated roles)
   filterMode: z.literal('chips').optional(), // Emails page only; legacy callers keep their current scope.
-});
+  // Inclusive ISO instants (the client sends its local day edges); either may be omitted.
+  ...emailDateQueryShape,
+}).superRefine(refineEmailDateQuery);
 
 const sendBodySchema = z.object({
   to: z.array(z.object({
@@ -236,11 +245,13 @@ async function emailAccessAgencyIds(req: Request): Promise<string[]> {
  *  - inbox/drafts/sent + ownerIds (elevated/manager): scoped to those users (multi-agency when agencyScope allows).
  *  - inbox without ownerIds: personal to caller.
  *  - sent + elevated: can view across agencies via agencyIds.
+ *  - optional from/to (inclusive ISO instants): list, total and unreadCount all follow the range.
  */
 emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: Response) => {
   const parsed = listQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
   const { folder, page, limit, agencyIds: agencyIdsRaw, ownerIds: ownerIdsRaw } = parsed.data;
+  const dateRange = parseEmailDateRange(parsed.data);
 
   const idsSchema = z.array(z.string().uuid());
   const chipAgencyIds = agencyIdsRaw === undefined ? undefined : agencyIdsRaw.split(',');
@@ -368,6 +379,10 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
     }
   }
 
+  // Owner scope above stays untouched: `where` is the undated mailbox (PandaDoc de-dupe below needs it),
+  // `listWhere` is what the list, total and unread count are computed from.
+  const listWhere = applyEmailDateRange(where, dateRange);
+
   // Backfill compatibility: include PandaDoc "sent" proposals that were sent before
   // we started persisting them into the emails table.
   let syntheticItems: Array<{ id: string; timestamp: Date } & Record<string, unknown>> = [];
@@ -401,8 +416,10 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
       proposalWhereBase.lead.ownerId = { in: ownerFilterIds };
     }
 
+    // Range applies here, before take: 200 and before emailListPageWindow counts the synthetic items.
+    const proposalRange = proposalDateWhere(dateRange);
     const pandaProposals = await prisma.proposal.findMany({
-      where: proposalWhereBase,
+      where: proposalRange ? { AND: [proposalWhereBase, proposalRange] } : proposalWhereBase,
       select: {
         id: true,
         pandaDocId: true,
@@ -488,7 +505,7 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
   const window = emailListPageWindow(page, limit, syntheticItems.length);
   const [list, persistedTotal, unreadCount] = await Promise.all([
     prisma.email.findMany({
-      where,
+      where: listWhere,
       orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
       skip: window.skip,
       take: window.take,
@@ -500,8 +517,8 @@ emailsRouter.get('/', authenticate, actAsMiddleware, async (req: Request, res: R
         _count: { select: { attachments: true } },
       },
     }),
-    prisma.email.count({ where }),
-    prisma.email.count({ where: { ...where, isRead: false } }),
+    prisma.email.count({ where: listWhere }),
+    prisma.email.count({ where: { ...listWhere, isRead: false } }),
   ]);
   const total = persistedTotal + syntheticItems.length;
 

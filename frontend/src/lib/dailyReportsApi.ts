@@ -85,6 +85,7 @@ export interface ReportEmployee {
   name: string;
   role: string;
   profile: ReportProfile;
+  timeSource?: 'crm' | 'hubstaff';
   agencyId: string | null;
   agencyName: string;
   metrics: ReportMetric[];
@@ -98,6 +99,7 @@ export interface ReportEmployee {
     categories: { project: string; profile: string; trackedSeconds: number }[];
   };
   crmUsage?: { recordedEvents: number; firstActivityAt: string | null; lastActivityAt: string | null };
+  crmInactivity?: { activeSeconds?: number | null; breakSeconds?: number; breakOngoing?: boolean; idleSeconds: number | null; observedSeconds: number; status: 'measured' | 'unavailable' };
   tasks: ReportTask[];
   evidence: { type: string; title: string; at: string; url: string | null }[];
   warnings: string[];

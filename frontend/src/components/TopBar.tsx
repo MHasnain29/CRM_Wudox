@@ -31,11 +31,12 @@ import {
   fetchNotificationUnreadCount,
   fetchDailyActivityTodayCount,
   getNotificationStreamUrl,
-  logBreak,
   markNotificationRead,
   markAllNotificationsRead,
   type ApiNotification,
+  type ActivityBreakType,
 } from '@/lib/api';
+import { confirmedBreakSeconds } from '@/lib/activityBreak';
 import { format } from 'date-fns';
 import { BugReportDialog } from '@/components/BugReportDialog';
 import { DailyActivityModal } from '@/components/DailyActivityModal';
@@ -47,14 +48,14 @@ import { useCanSubmitBugReports, useCanViewGlobalScope } from '@/lib/access';
 import { getUserRoleTitle } from '@/lib/roleLabels';
 
 const breakTypes = [
+  { id: 'break', label: 'Break', icon: Pause, color: 'text-amber-600' },
   { id: 'coaching', label: 'Coaching/Training', icon: GraduationCap, color: 'text-blue-500' },
   { id: 'meeting', label: 'Meeting', icon: Users2, color: 'text-green-500' },
-];
+] satisfies { id: ActivityBreakType; label: string; icon: typeof Pause; color: string }[];
 /** Types with dedicated real-time handlers — skip generic TopBar toasts to avoid duplicates. */
 const SKIP_REALTIME_TOAST_TYPES = new Set(['task_assigned']);
 /** Fixed indigo color for the logged-in user's own notifications. */
 const SELF_COLOR = '#4F46E5';
-const BREAK_STORAGE_KEY = 'activeBreak';
 const DAILY_AGENDA_AUTO_OPEN_PREFIX = 'daily-agenda-auto-opened';
 
 function dailyAgendaAutoOpenKey(userId: string): string {
@@ -77,7 +78,7 @@ function markDailyAgendaAutoOpened(userId: string): void {
   }
 }
 
-export function TopBar() {
+export function TopBar({ onBreakChange }: { onBreakChange: (onBreak: boolean, breakType?: ActivityBreakType) => Promise<void> }) {
   const navigate = useNavigate();
   const currentSubCompany = useStore((s) => s.currentSubCompany);
   const subCompanies = useStore((s) => s.subCompanies);
@@ -85,7 +86,6 @@ export function TopBar() {
   const unreadNotificationsCount = useStore((s) => s.unreadNotificationsCount);
   const setUnreadNotificationsCount = useStore((s) => s.setUnreadNotificationsCount);
   const isOnBreak = useStore((s) => s.isOnBreak);
-  const setIsOnBreak = useStore((s) => s.setIsOnBreak);
 
   const setViewedSubCompanyId = useStore((s) => s.setViewedSubCompanyId);
   const setLeads = useStore((s) => s.setLeads);
@@ -106,6 +106,9 @@ export function TopBar() {
   const [currentBreakType, setCurrentBreakType] = useState<string | null>(null);
   const [breakStartTime, setBreakStartTime] = useState<Date | null>(null);
   const [breakDuration, setBreakDuration] = useState(0);
+  const [breakSaving, setBreakSaving] = useState(false);
+  const breakSavingRef = useRef(false);
+  const breakClockRef = useRef<{ seconds: number; receivedAt: number } | null>(null);
 
   const [dailyActivityOpen, setDailyActivityOpen] = useState(false);
   const [todayActivityCount, setTodayActivityCount] = useState(0);
@@ -524,66 +527,50 @@ export function TopBar() {
   }, []);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(BREAK_STORAGE_KEY);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as { breakType?: string; startTime?: string };
-      if (!parsed.breakType || !parsed.startTime) return;
-      const start = new Date(parsed.startTime);
-      if (Number.isNaN(start.getTime())) {
-        sessionStorage.removeItem(BREAK_STORAGE_KEY);
-        return;
+    const onBreakState = (event: Event) => {
+      const { onBreak, startedAt, serverTime, breakType } = (event as CustomEvent<{
+        onBreak: boolean; startedAt: string | null; serverTime: string; breakType: ActivityBreakType | null;
+      }>).detail;
+      if (onBreak) {
+        const seconds = confirmedBreakSeconds(startedAt, serverTime);
+        setCurrentBreakType(breakType ?? 'break');
+        setBreakStartTime(seconds !== null ? new Date(startedAt!) : null);
+        breakClockRef.current = seconds !== null ? { seconds, receivedAt: performance.now() } : null;
+        setBreakDuration(seconds ?? 0);
+      } else {
+        setCurrentBreakType(null);
+        setBreakStartTime(null);
+        setBreakDuration(0);
+        breakClockRef.current = null;
       }
-      setIsOnBreak(true);
-      setCurrentBreakType(parsed.breakType);
-      setBreakStartTime(start);
-      setBreakDuration(Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000)));
-    } catch {
-      sessionStorage.removeItem(BREAK_STORAGE_KEY);
-    }
-  }, [setIsOnBreak]);
+    };
+    window.addEventListener('activity:break_state', onBreakState);
+    return () => window.removeEventListener('activity:break_state', onBreakState);
+  }, []);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
     if (isOnBreak && breakStartTime) {
       interval = setInterval(() => {
-        setBreakDuration((d) => Math.floor((Date.now() - breakStartTime.getTime()) / 1000));
+        const clock = breakClockRef.current;
+        if (clock) setBreakDuration(clock.seconds + Math.floor((performance.now() - clock.receivedAt) / 1000));
       }, 1000);
     }
     return () => clearInterval(interval);
   }, [isOnBreak, breakStartTime]);
 
-  const startBreak = (breakType: string) => {
-    const now = new Date();
-    setIsOnBreak(true);
-    setCurrentBreakType(breakType);
-    setBreakStartTime(now);
-    setBreakDuration(0);
-    sessionStorage.setItem(
-      BREAK_STORAGE_KEY,
-      JSON.stringify({
-        breakType,
-        startTime: now.toISOString(),
-      })
-    );
-  };
-
-  const endBreak = async () => {
-    if (breakStartTime && currentBreakType) {
-      const durationSeconds = Math.max(0, Math.floor((Date.now() - breakStartTime.getTime()) / 1000));
-      if (durationSeconds > 0 && (currentBreakType === 'coaching' || currentBreakType === 'meeting')) {
-        try {
-          await logBreak(currentBreakType, durationSeconds, breakStartTime.toISOString());
-        } catch (err) {
-          console.error('Failed to log break:', err);
-        }
-      }
+  const changeBreak = async (onBreak: boolean, breakType?: ActivityBreakType) => {
+    if (breakSavingRef.current) return;
+    breakSavingRef.current = true;
+    setBreakSaving(true);
+    try {
+      await onBreakChange(onBreak, breakType);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not update your break. Please try again.');
+    } finally {
+      breakSavingRef.current = false;
+      setBreakSaving(false);
     }
-    setIsOnBreak(false);
-    setCurrentBreakType(null);
-    setBreakStartTime(null);
-    setBreakDuration(0);
-    sessionStorage.removeItem(BREAK_STORAGE_KEY);
   };
 
   const formatBreakTime = (seconds: number) => {
@@ -622,34 +609,35 @@ export function TopBar() {
       <div className="flex items-center gap-4">
         {isOnBreak ? (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-            {currentBreakInfo && (
+            {currentBreakInfo ? (
               <>
                 <currentBreakInfo.icon className={cn('h-4 w-4', currentBreakInfo.color)} />
                 <span className="text-sm font-medium text-amber-800">{currentBreakInfo.label}</span>
               </>
-            )}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 rounded">
+            ) : <span className="text-sm font-medium text-amber-800">Break</span>}
+            {breakStartTime && <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 rounded">
               <Clock className="h-3.5 w-3.5 text-amber-600" />
               <span className="text-sm font-mono font-bold text-amber-700">{formatBreakTime(breakDuration)}</span>
-            </div>
-            <Button size="sm" variant="destructive" onClick={endBreak} className="gap-1.5 h-7 text-xs">
-              <Play className="h-3.5 w-3.5" />
-              End
+            </div>}
+            <Button size="sm" variant="destructive" disabled={breakSaving} onClick={() => void changeBreak(false)} className="gap-1.5 h-7 text-xs">
+              {breakSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              {breakSaving ? 'Saving…' : 'End Break'}
             </Button>
           </div>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Pause className="h-4 w-4" />
-                Start Break
+              <Button variant="outline" size="sm" disabled={breakSaving} className="gap-2">
+                {breakSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                {breakSaving ? 'Saving…' : 'Start Break'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {breakTypes.map((breakType) => (
                 <DropdownMenuItem
                   key={breakType.id}
-                  onClick={() => startBreak(breakType.id)}
+                  disabled={breakSaving}
+                  onClick={() => void changeBreak(true, breakType.id)}
                   className="gap-3 cursor-pointer"
                 >
                   <breakType.icon className={cn('h-4 w-4', breakType.color)} />

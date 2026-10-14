@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, FileText, Calendar as CalendarIcon, Users, Phone, Mail, Calendar, CheckSquare, TrendingUp, Clock, Target, UserCheck, X, User, Coffee, Timer, Loader2, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, FileText, Calendar as CalendarIcon, Users, Phone, Mail, Calendar, CheckSquare, TrendingUp, Clock, Target, UserCheck, X, User, Loader2, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useStore } from '@/lib/store';
 import { fetchUsers, fetchPerformanceReport, fetchMyPerformanceReport, fetchConversionRates, fetchMyLinkedAccounts, type ApiUser, type LinkedAccount, type PerformanceReportUserResult, type MyPerformanceResult, type ConversionRateUserResult } from '@/lib/api';
@@ -11,6 +11,8 @@ import { DatabaseManagerReportSection } from '@/components/DatabaseManagerReport
 import { AgencyBulkEmailConversionCard } from '@/components/AgencyBulkEmailConversionCard';
 import { MyConversionRateCard } from '@/components/MyConversionRateCard';
 import { useReportData, type ReportRawData } from '@/hooks/useReportData';
+import { CrmTimeReportCard } from '@/components/reports/CrmTimeReportCard';
+import { EmailActivityReportCard } from '@/components/reports/EmailActivityReportCard';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { PersonCardIdentity } from '@/components/PersonSectionHeader';
 import { StickyHeader } from '@/components/StickyHeader';
@@ -81,12 +83,6 @@ interface UserReportData {
     won: number;
     lost: number;
   };
-  breakTime: {
-    total: number;
-    coaching: number;
-    meeting: number;
-  };
-  idleTime: number;
   positionsClosed: number;
 }
 
@@ -129,9 +125,6 @@ function computeSingleUserReport(
   const wonLeads     = reportData.leadsWon.filter(l => l.ownerId === user.id && l.closedAt && inRange(l.closedAt));
   const lostLeads    = reportData.leadsLost.filter(l => l.ownerId === user.id && l.closedAt && inRange(l.closedAt));
   const pipeMoves    = reportData.pipelineLogs.filter(l => l.userId === user.id);
-  const idleTime     = reportData.idleLogs.filter(l => l.userId === user.id).reduce((s, l) => s + (l.metadata?.duration || 0), 0);
-  const coaching     = reportData.breakLogs.filter(l => l.userId === user.id && l.metadata?.breakType === 'coaching').reduce((s, l) => s + (l.metadata?.duration || 0), 0);
-  const meetBrk      = reportData.breakLogs.filter(l => l.userId === user.id && l.metadata?.breakType === 'meeting').reduce((s, l) => s + (l.metadata?.duration || 0), 0);
 
   return {
     user,
@@ -157,8 +150,6 @@ function computeSingleUserReport(
       },
     },
     pipeline: { movements: pipeMoves.length, won: wonLeads.length, lost: lostLeads.length },
-    breakTime: { total: coaching + meetBrk, coaching, meeting: meetBrk },
-    idleTime,
     positionsClosed: reportData.positionsClosedByUser?.[user.id] ?? 0,
   };
 }
@@ -200,13 +191,14 @@ function UserFullReportSection({
   );
 
   const agencyId = user.subCompanyId || undefined;
+  const ownerIds = useMemo(() => [user.id], [user.id]);
   const { data: reportData, loading } = useReportData({
     dateFrom,
     dateTo,
     subCompanyId: agencyId,
     scope: 'all',
     agencyId,
-    ownerIds: [user.id],
+    ownerIds,
   });
 
   const report = useMemo(() => {
@@ -228,6 +220,14 @@ function UserFullReportSection({
       </div>
 
       <CardContent className="pt-4 space-y-4">
+        <CrmTimeReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" userIds={[user.id]}
+          names={{ [user.id]: fullName }}
+        />
+        <EmailActivityReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" userIds={[user.id]}
+          names={{ [user.id]: fullName }}
+        />
         {loading || !report ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -311,35 +311,6 @@ function UserFullReportSection({
                       <p className="text-2xl font-bold text-orange-600">{report.calls.busy}</p>
                       <p className="text-xs text-muted-foreground">Busy</p>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Coffee className="h-5 w-5 text-purple-500" />
-                  Break & Idle Time
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Coaching</p>
-                    <p className="text-3xl font-bold text-blue-600">{report.breakTime.coaching}m</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Meeting</p>
-                    <p className="text-3xl font-bold text-green-600">{report.breakTime.meeting}m</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Total Break</p>
-                    <p className="text-3xl font-bold text-purple-600">{report.breakTime.total}m</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Idle Time</p>
-                    <p className="text-3xl font-bold text-amber-600">{report.idleTime}m</p>
                   </div>
                 </div>
               </CardContent>
@@ -576,6 +547,14 @@ function AgencyReportSection({
       </div>
 
       <CardContent className="pt-4 space-y-3">
+        <CrmTimeReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" agencyIds={[agency.id]}
+          userIds={ownerIds} names={Object.fromEntries(users.map(user => [user.id, user.name]))}
+        />
+        <EmailActivityReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" agencyIds={[agency.id]}
+          userIds={ownerIds} names={Object.fromEntries(users.map(user => [user.id, user.name]))}
+        />
         {(reportLoading || usersLoading) ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -653,7 +632,7 @@ function AgencyReportSection({
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border/50 bg-muted/30">
-                          {['User', 'Calls', 'Ans%', 'Emails', 'Meetings', 'Tasks', 'F/U', 'Won', 'Pos', 'Idle'].map(h => (
+                          {['User', 'Calls', 'Ans%', 'Emails', 'Meetings', 'Tasks', 'F/U', 'Won', 'Pos'].map(h => (
                             <th key={h} className={cn('py-2.5 px-2 font-medium text-xs text-muted-foreground uppercase tracking-wider', h === 'User' ? 'text-left px-3' : 'text-center')}>{h}</th>
                           ))}
                         </tr>
@@ -700,7 +679,6 @@ function AgencyReportSection({
                                 {r.pipeline.lost > 0 && <span className="text-red-400 text-xs ml-1">-{r.pipeline.lost}</span>}
                               </td>
                               <td className="text-center py-2.5 px-2 font-bold text-teal-600">{r.positionsClosed}</td>
-                              <td className="text-center py-2.5 px-2 text-amber-500 text-xs font-medium">{r.idleTime}m</td>
                             </tr>
                           );
                         })}
@@ -1422,19 +1400,6 @@ function SalesReports() {
       const userPipelineMovements = reportData.pipelineLogs.filter(log => log.userId === user.id);
 
       // Break and idle time — already date-filtered server-side
-      const userIdleTime = reportData.idleLogs
-        .filter(log => log.userId === user.id)
-        .reduce((acc, log) => acc + (log.metadata?.duration || 0), 0);
-
-      const coachingTime = reportData.breakLogs
-        .filter(log => log.metadata?.breakType === 'coaching' && log.userId === user.id)
-        .reduce((acc, log) => acc + (log.metadata?.duration || 0), 0);
-
-      const meetingBreakTime = reportData.breakLogs
-        .filter(log => log.metadata?.breakType === 'meeting' && log.userId === user.id)
-        .reduce((acc, log) => acc + (log.metadata?.duration || 0), 0);
-      const totalBreak = coachingTime + meetingBreakTime;
-
       return {
         user,
         calls: {
@@ -1471,12 +1436,6 @@ function SalesReports() {
           won: userWonLeads.length,
           lost: userLostLeads.length,
         },
-        breakTime: {
-          total: totalBreak,
-          coaching: coachingTime,
-          meeting: meetingBreakTime,
-        },
-        idleTime: userIdleTime,
         positionsClosed: reportData.positionsClosedByUser?.[user.id] ?? 0,
       };
     });
@@ -1597,32 +1556,11 @@ function SalesReports() {
           </div>
         </div>
         
-        {/* Break & Idle Time */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Break & Idle Time</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-2 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-1 mb-1">
-                <Coffee className="h-3 w-3 text-purple-500" />
-                <span className="text-xs text-muted-foreground">Break</span>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-sm font-bold">{report.breakTime.total}m</span>
-                <span className="text-[10px] text-muted-foreground">({report.breakTime.coaching}m coaching, {report.breakTime.meeting}m meeting)</span>
-              </div>
-            </div>
-            <div className="p-2 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-1 mb-1">
-                <Timer className="h-3 w-3 text-amber-500" />
-                <span className="text-xs text-muted-foreground">Idle</span>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-sm font-bold">{report.idleTime}m</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
+        <CrmTimeReportCard
+          dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
+          userIds={[report.user.id]} names={{ [report.user.id]: report.user.name }}
+        />
+
         {/* Pipeline */}
         <div className="space-y-2">
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Pipeline</h4>
@@ -1994,9 +1932,30 @@ function SalesReports() {
       {canViewDbManagerReport && (useGlobalDbReports || reportView === 'database_managers') && (
         <DatabaseManagerReportSection startDate={perfStartDate} endDate={perfEndDate} />
       )}
+      {useGlobalDbReports && (
+        <CrmTimeReportCard dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope="mine" title="My measured CRM time" />
+      )}
       
       {/* ── Activity Report content (agency-scoped roles only) ───────────────── */}
       {reportView === 'activity' && !useGlobalDbReports && (<>
+
+      {!showAgencySections && !showAllTeamView && (
+        <>
+          <CrmTimeReportCard
+            dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
+            agencyIds={reportAgencyId ? [reportAgencyId] : undefined}
+            userIds={isElevated ? reportOwnerIds : selectedUserIds}
+            names={Object.fromEntries(activeSelectedUsers.map(user => [user.id, user.name]))}
+          />
+          {/* Same scope as the time card, so the agency / manager / user filters pick whose email counts show. */}
+          <EmailActivityReportCard
+            dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
+            agencyIds={reportAgencyId ? [reportAgencyId] : undefined}
+            userIds={isElevated ? reportOwnerIds : selectedUserIds}
+            names={Object.fromEntries(activeSelectedUsers.map(user => [user.id, user.name]))}
+          />
+        </>
+      )}
 
       {/* Loading State — hidden in "All agencies" mode (each section has its own loader) */}
       {reportLoading && !showAgencySections && !showAllTeamView && (
@@ -2501,59 +2460,7 @@ function SalesReports() {
                 </CardContent>
               </Card>
 
-              {/* Break & Idle Time Chart */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2">
-                    <Coffee className="h-4 w-4 text-purple-500" />
-                    Break & Idle Time
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                  <div style={{ minWidth: Math.max(480, userReports.length * 65) }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart
-                      data={userReports.map(r => ({
-                        name: r.user.firstName || r.user.name.split(' ')[0],
-                        coaching: r.breakTime.coaching,
-                        meeting: r.breakTime.meeting,
-                        idle: r.idleTime,
-                      }))}
-                      margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="name" 
-                        stroke="#6b7280" 
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis 
-                        stroke="#6b7280" 
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          fontSize: '12px'
-                        }}
-                        formatter={(value: number) => [`${value}m`, '']}
-                      />
-                      <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      <Bar dataKey="coaching" fill="#8b5cf6" name="Coaching" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="meeting" fill="#22c55e" name="Meeting" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="idle" fill="#f59e0b" name="Idle" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                  </div></div>
-                </CardContent>
-              </Card>
+
             </div>
           )}
           
@@ -2606,36 +2513,6 @@ function SalesReports() {
                         <p className="text-2xl font-bold text-orange-600">{userReports[0].calls.busy}</p>
                         <p className="text-xs text-muted-foreground">Busy</p>
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              {/* Break & Idle Time */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Coffee className="h-5 w-5 text-purple-500" />
-                    Break & Idle Time
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Coaching</p>
-                      <p className="text-3xl font-bold text-blue-600">{userReports[0].breakTime.coaching}m</p>
-                    </div>
-                    <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Meeting</p>
-                      <p className="text-3xl font-bold text-green-600">{userReports[0].breakTime.meeting}m</p>
-                    </div>
-                    <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Total Break</p>
-                      <p className="text-3xl font-bold text-purple-600">{userReports[0].breakTime.total}m</p>
-                    </div>
-                    <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Idle Time</p>
-                      <p className="text-3xl font-bold text-amber-600">{userReports[0].idleTime}m</p>
                     </div>
                   </div>
                 </CardContent>

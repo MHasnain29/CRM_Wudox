@@ -34,6 +34,8 @@ import { activityLogsRouter } from './routes/activityLogs';
 import { dashboardRouter } from './routes/dashboard';
 import { dailyActivityRouter } from './routes/dailyActivity';
 import { dailyReportsRouter } from './routes/dailyReports';
+import { crmTimeReportRouter } from './routes/crmTimeReport';
+import { emailActivityReportRouter } from './routes/emailActivityReport';
 import { bugReportsRouter } from './routes/bugReports';
 import proposalsRouter from './routes/proposals';
 import reviewTemplatesRouter from './routes/reviewTemplates';
@@ -248,6 +250,8 @@ app.use(`${prefix}/webhooks`, webhooksRouter);
 // Public unsubscribe — no auth, called via link in campaign emails
 app.use(`${prefix}/unsubscribe`, unsubscribeRouter);
 app.use(`${prefix}/pandadoc`, pandaDocRouter);
+app.use(`${prefix}/reports`, crmTimeReportRouter);
+app.use(`${prefix}/reports`, emailActivityReportRouter);
 app.use(`${prefix}/reports`, performanceReportRouter);
 app.use(`${prefix}/reports`, databaseManagerReportRouter);
 app.use(`${prefix}/offboarding`, offboardingRouter);

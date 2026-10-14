@@ -7,6 +7,8 @@ import { profileResolver } from './dailyReportProfiles';
 import { hubstaffTaskIsOpen, inputActivityPercent, localDateKey, reportDayBounds, uniqueCompletedCount } from './reportMetrics';
 import type { DailyReportPayload, ReportPerson, ReportTask } from './dailyReportTypes';
 import { EMAIL_DELIVERY_RESULTS, hasEmailDeliveryResult, summarizeEmailDelivery } from './reportEmailDelivery';
+import { loadCrmInactivityForAudience } from './crmInactivityReport';
+import { usesCrmActivityTracking } from './crmActivityEligibility';
 
 function inPeriod(date: Date | null, start: Date, end: Date): boolean {
   return !!date && date >= start && date < end;
@@ -34,6 +36,8 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
   const agencies = await prisma.subCompany.findMany({ where: { id: { in: agencyIds } }, select: { id: true, name: true, mainOrgId: true } });
   const resolveProfile = await profileResolver([...new Set(agencies.map(a => a.mainOrgId))], end);
   const userIds = users.map(u => u.id);
+  // Timing eligibility follows the actual role, never an editable report profile.
+  const crmInactivity = await loadCrmInactivityForAudience(users, agencyIds, bounds.start, end);
   const primaryProfiles = new Map(users.map(user => [user.id, resolveProfile(user, (agencies.find(a => a.id === user.subCompanyId) ?? agencies[0])!.mainOrgId)]));
   // Project mappings categorize time; they never opt software staff into CRM measurement.
   const crmUserIds = users.filter(user => primaryProfiles.get(user.id) !== 'software' && policy.profiles.includes(primaryProfiles.get(user.id)!)).map(user => user.id);
@@ -149,9 +153,11 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
     const crmProfileIncluded = profile !== 'software' && policy.profiles.includes(profile);
     const record: ReportPerson = {
       userId: user.id, name: `${user.firstName} ${user.lastName}`.trim(), role: user.role, profile,
+      timeSource: usesCrmActivityTracking(user.role) ? 'crm' : 'hubstaff',
       agencyId: user.subCompanyId, agencyName: user.subCompanyId ? (agencies.find(a => a.id === user.subCompanyId)?.name ?? 'Agency') : 'Company',
       metrics: [], time: { status: 'unavailable', trackedSeconds: null, manualSeconds: null, idleSeconds: null, inputActivityPercent: null, unallocatedSeconds: null, categories: [] },
       tasks: [], evidence: [], warnings: [],
+      crmInactivity: crmInactivity.get(user.id),
     };
     const metric = (key: string, label: string, value: number | null, unit?: string) => record.metrics.push({ key, label, value, ...(unit ? { unit } : {}) });
     metric('referenceShift', 'Configured reference shift', policy.shiftHours, 'hours');
@@ -390,6 +396,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
   }
   const metricTotal = (key: string) => total(people, p => p.metrics.find(m => m.key === key)?.value ?? 0);
   const software = people.filter(p => p.profile === 'software');
+  const hubstaffTimePeople = people.filter(person => person.timeSource === 'hubstaff');
   const teamTask = (kind: keyof typeof teamTasks, key: string) => ({
     count: teamTasks[kind].size, complete: software.every(p => typeof p.metrics.find(m => m.key === key)?.value === 'number'),
   });
@@ -422,7 +429,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
   if (policy.period === 'today' || end < bounds.end) warnings.push(`This report is a snapshot as of ${end.toISOString()}; later activity is not included.`);
   if (reportDate !== localDateKey(now, policy.timezone)) warnings.push('Overdue counts and task status reflect the state when this snapshot was generated; completion events retain their original dates.');
   if (people.some(p => p.profile !== 'software')) warnings.push('Only recorded completion transitions are counted. Historical records without reliable completion evidence are excluded.');
-  if (people.some(p => p.time.trackedSeconds === null)) warnings.push('Recorded-time totals include only available records; check individual coverage before interpreting company totals.');
+  if (hubstaffTimePeople.some(p => p.time.trackedSeconds === null)) warnings.push('Hubstaff tracked-time totals include only available IT records; check individual coverage before interpreting company totals.');
   return {
     version: 1, title: policy.scope === 'organization' ? 'Daily Company Report' : `Daily Report — ${agencies[0]?.name ?? 'Agency'}`,
     reportDate, timezone: policy.timezone, periodStart: bounds.start.toISOString(), periodEnd: end.toISOString(), generatedAt: now.toISOString(),
@@ -430,7 +437,7 @@ export async function buildDailyReport(policy: DailyReportPolicy, recipient: Rep
     ccEmails: normalizeReportCcEmails(policy.ccEmails, policy.recipientEmail || recipient.email),
     authorizedById: policy.authorizedById ?? recipient.id,
     scope: policy.scope as 'agency' | 'organization', agencyIds, userIds: people.map(p => p.userId), requiredPermissions: [...new Set(sourcePermissions)], profiles: policy.profiles,
-    people, summary: { people: new Set(people.map(p => p.userId)).size, trackedSeconds: people.some(p => p.time.trackedSeconds !== null) ? total(people, p => p.time.trackedSeconds ?? 0) : null,
+    people, summary: { people: new Set(people.map(p => p.userId)).size, trackedSeconds: hubstaffTimePeople.some(p => p.time.trackedSeconds !== null) ? total(hubstaffTimePeople, p => p.time.trackedSeconds ?? 0) : null,
       // CRM tasks for CRM staff plus de-duplicated Hubstaff tasks for software staff, as each card shows.
       completedTasks: hubstaffTasks && !hubstaffTasks.completed.complete ? null : (hubstaffTasks?.completed.count ?? 0) + metricTotal('crmTasksCompleted'), hubstaffTasks, personalEmails: metricTotal('personalEmails'), followUpsCompleted: metricTotal('followUpsCompleted'), repliesReceived: metricTotal('replies') },
     sources,

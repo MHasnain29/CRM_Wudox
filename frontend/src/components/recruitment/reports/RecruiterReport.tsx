@@ -29,6 +29,7 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import RecruitmentTimeSection from './RecruitmentTimeSection';
 import {
   Select,
   SelectContent,
@@ -135,6 +136,8 @@ export default function RecruiterReport({ senior = false }: Props) {
           </SelectContent>
         </Select>
       </div>
+
+      <RecruitmentTimeSection days={days} mine />
 
       {isLoading && (
         <div className="flex items-center justify-center py-24 text-muted-foreground">

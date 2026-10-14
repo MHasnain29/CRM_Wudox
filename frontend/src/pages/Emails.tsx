@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { EmailMailboxScrollArea } from '@/components/email/EmailMailboxScrollArea';
+import { EmailListEmptyState } from '@/components/email/EmailListEmptyState';
+import { DateRangeFilterRow } from '@/components/DateRangeFilterRow';
 import { Separator } from '@/components/ui/separator';
 import { EmailComposeDialog } from '@/components/EmailComposeDialog';
 import { CustomEmailTemplatesSheet } from '@/components/email/CustomEmailTemplatesSheet';
@@ -48,6 +50,9 @@ import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { StickyHeader } from '@/components/StickyHeader';
 import { useEmailScopeFilter } from '@/hooks/useEmailScopeFilter';
 import { useEmailMailbox, type EmailMailboxScope } from '@/hooks/useEmailMailbox';
+import { useEmailDateFilter } from '@/hooks/useEmailDateFilter';
+import { EMAIL_PERIOD_OPTIONS } from '@/lib/dateRangeFilter';
+import type { EmailDateSummary } from '@/lib/emailDateRange';
 import { useActAs } from '@/hooks/useActAs';
 import { useWriteAgencyId } from '@/hooks/useWriteAgencyId';
 import { useSearchParams } from 'react-router-dom';
@@ -186,11 +191,13 @@ function AgencyEmailsSection({
   onViewAgency,
   scope,
   scopeKey,
+  dateFilter,
 }: {
   agency: { id: string; name: string };
   onViewAgency: () => void;
   scope: EmailMailboxScope;
   scopeKey: string;
+  dateFilter: EmailDateSummary;
 }) {
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
@@ -203,7 +210,8 @@ function AgencyEmailsSection({
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
-  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey]);
+  // dateKey too: a range change (a rolling preset re-resolving at midnight) drops the open email, so an open reply dialog would turn into a blank compose.
+  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey, dateFilter.dateKey]);
   const canDeleteEmail = useHasPermission('emails:delete');
 
   const handleDeleteEmail = async (id: string) => {
@@ -239,6 +247,7 @@ function AgencyEmailsSection({
             <p className="text-xs text-muted-foreground mt-0.5">
               {totalCount} in {currentFolder}
               {unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
+              {dateFilter.isActive ? ` · ${dateFilter.caption}` : ''}
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={onViewAgency}>
@@ -281,7 +290,7 @@ function AgencyEmailsSection({
                 <TabsContent value={currentFolder} className="mt-3">
                   <EmailMailboxScrollArea
                     className="h-[calc(90vh-240px)]"
-                    viewKey={JSON.stringify([scopeKey, agency.id, currentFolder])}
+                    viewKey={JSON.stringify([scopeKey, agency.id, currentFolder, dateFilter.dateKey])}
                     loadedCount={emails.length}
                     totalCount={totalCount}
                     hasNextPage={hasNextPage}
@@ -296,10 +305,13 @@ function AgencyEmailsSection({
                       ) : isLoading ? (
                         <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>
                       ) : filteredEmails.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground">
-                          <Mail className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
-                        </div>
+                        <EmailListEmptyState
+                          compact
+                          folder={currentFolder}
+                          searchQuery={searchQuery}
+                          hasNextPage={hasNextPage}
+                          dateFilter={dateFilter}
+                        />
                       ) : filteredEmails.map((email) => {
                         const isSelected = selectedEmail?.id === email.id;
                         return (
@@ -747,7 +759,7 @@ function AllAgenciesEmailsSection({
 
 // ─── Combined All-Team email view (manager "All Team" view) ─────────────────
 // Inbox / sent / drafts all honor ownerIds for elevated + managers (backend).
-function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[]; scope: EmailMailboxScope; scopeKey: string }) {
+function TeamEmailsSection({ teamUsers, scope, scopeKey, dateFilter }: { teamUsers: ApiUser[]; scope: EmailMailboxScope; scopeKey: string; dateFilter: EmailDateSummary }) {
   const { currentUser } = useStore();
   const [currentFolder, setCurrentFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
   const { emails, totalCount, hasNextPage, isFetching, isFetchingNextPage, nextPageError, loadNextPage,
@@ -758,7 +770,8 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
 
   const [deletingEmailId, setDeletingEmailId] = useState<string | null>(null);
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
-  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey]);
+  // dateKey too: a range change (a rolling preset re-resolving at midnight) drops the open email, so an open reply dialog would turn into a blank compose.
+  useEffect(() => { setReplyDialogOpen(false); setEmailToDelete(null); }, [scopeKey, dateFilter.dateKey]);
   const canDeleteEmail = useHasPermission('emails:delete');
 
   const handleDeleteEmail = async (id: string) => {
@@ -793,7 +806,10 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
         <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b">
           <div>
             <h3 className="font-semibold text-base">Emails</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{totalCount} emails · {unreadCount} unread</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {totalCount} emails · {unreadCount} unread
+              {dateFilter.isActive ? ` · ${dateFilter.caption}` : ''}
+            </p>
           </div>
         </div>
         <CardContent className="flex-1 overflow-hidden flex flex-col p-4" style={{ minHeight: 0 }}>
@@ -831,7 +847,7 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
                 <TabsContent value={currentFolder} className="mt-3">
                   <EmailMailboxScrollArea
                     className="h-[calc(90vh-240px)]"
-                    viewKey={JSON.stringify([scopeKey, ownerKey, currentFolder])}
+                    viewKey={JSON.stringify([scopeKey, ownerKey, currentFolder, dateFilter.dateKey])}
                     loadedCount={emails.length}
                     totalCount={totalCount}
                     hasNextPage={hasNextPage}
@@ -846,10 +862,13 @@ function TeamEmailsSection({ teamUsers, scope, scopeKey }: { teamUsers: ApiUser[
                       ) : isLoading ? (
                         <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>
                       ) : filteredEmails.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground">
-                          <Mail className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
-                        </div>
+                        <EmailListEmptyState
+                          compact
+                          folder={currentFolder}
+                          searchQuery={searchQuery}
+                          hasNextPage={hasNextPage}
+                          dateFilter={dateFilter}
+                        />
                       ) : filteredEmails.map((email) => {
                         const isSelected = selectedEmail?.id === email.id;
                         return (
@@ -1024,6 +1043,8 @@ export default function Emails() {
   const [emailToDelete, setEmailToDelete] = useState<string | null>(null);
 
   const scopeFilter = useEmailScopeFilter();
+  // One URL-backed range for the whole page: the single view, every agency section and every team section.
+  const dateFilter = useEmailDateFilter();
   const {
     isElevated,
     showHierarchyFilters,
@@ -1079,10 +1100,17 @@ export default function Emails() {
     setUnreadEmailsCount(count);
   }, [setUnreadEmailsCount]);
 
+  // The people/agency scope plus the date range: every mailbox view queries (and keys its cache) by this.
+  const { ownerIds: queryOwnerIds, agencyIds: queryAgencyIds, ownerExact: queryOwnerExact, filterMode: queryFilterMode } = scopeFilter.query;
+  const mailboxScope = useMemo<EmailMailboxScope>(
+    () => ({ ownerIds: queryOwnerIds, agencyIds: queryAgencyIds, ownerExact: queryOwnerExact, filterMode: queryFilterMode, ...dateFilter.query }),
+    [queryOwnerIds, queryAgencyIds, queryOwnerExact, queryFilterMode, dateFilter.query],
+  );
+
   const { emails, totalCount, hasNextPage, isFetching, isFetchingNextPage, nextPageError, loadNextPage,
     unreadCount, isLoading: loading, error: mailboxError, refetch: loadList,
     selectedEmail, setSelectedEmail, loadingDetail, selectEmail, searchQuery, setSearchQuery } = useEmailMailbox(
-      scopeFilter.query, scopeKey, currentFolder,
+      mailboxScope, scopeKey, currentFolder,
       scopeFilter.ready && !showAgencySections && !showAllTeamView,
       loadInboxUnreadCount,
     );
@@ -1092,6 +1120,12 @@ export default function Emails() {
     setEditDraftEmail(null);
     setEmailToDelete(null);
   }, [scopeKey]);
+  // A range change (a rolling preset re-resolving at midnight) drops the open email, so an open reply dialog
+  // would turn into a blank compose. The draft editor does not depend on the open email, so it stays.
+  useEffect(() => {
+    setReplyDialogOpen(false);
+    setEmailToDelete(null);
+  }, [dateFilter.dateKey]);
 
   const loadSignatures = useCallback(async () => {
     setSigLoading(true);
@@ -1262,10 +1296,21 @@ export default function Emails() {
         </div>
       </div>
 
-      {/* Agency / Manager / User tabs — 3-row filter for elevated roles, emails view only */}
+      {/* Agency / Manager / User tabs — 3-row filter for elevated roles, emails view only. The date range
+          sits under it and shows for every role, including those whose scope bar is hidden. */}
       {view === 'emails' && (
         <StickyHeader zIndex={40}>
           <ScopeFilterBar show={showHierarchyFilters} filterRowProps={filterRowProps} />
+
+          {/* mt-4: the chip rows sit 8px apart, so the same gap here read as another chip row */}
+          <DateRangeFilterRow
+            className="mt-4"
+            options={EMAIL_PERIOD_OPTIONS}
+            period={dateFilter.period}
+            customRange={dateFilter.customRange}
+            onPeriodChange={dateFilter.setPeriod}
+            onCustomRangeChange={dateFilter.setCustomRange}
+          />
         </StickyHeader>
       )}
 
@@ -1287,8 +1332,9 @@ export default function Emails() {
                 key={agency.id}
                 agency={agency}
                 onViewAgency={() => setSelectedAgencyId(agency.id)}
-                scope={scopeFilter.query}
+                scope={mailboxScope}
                 scopeKey={`${scopeKey}|agency=${agency.id}`}
+                dateFilter={dateFilter}
               />
             ))}
           </div>
@@ -1312,7 +1358,7 @@ export default function Emails() {
                     showManagerSections ? setSelectedManagerId(user.id) : setSelectedUserId(user.id)
                   }
                 />
-                <TeamEmailsSection teamUsers={[user]} scope={{ ...scopeFilter.query, ownerIds: [user.id] }} scopeKey={`${scopeKey}|person=${user.id}`} />
+                <TeamEmailsSection teamUsers={[user]} scope={{ ...mailboxScope, ownerIds: [user.id] }} scopeKey={`${scopeKey}|person=${user.id}`} dateFilter={dateFilter} />
               </div>
             ))}
           </div>
@@ -1527,7 +1573,7 @@ export default function Emails() {
             <TabsContent value={currentFolder} className="mt-4">
               <EmailMailboxScrollArea
                 className="h-[calc(100vh-20rem)]"
-                viewKey={JSON.stringify([scopeKey, currentFolder])}
+                viewKey={JSON.stringify([scopeKey, currentFolder, dateFilter.dateKey])}
                 loadedCount={emails.length}
                 totalCount={totalCount}
                 hasNextPage={hasNextPage}
@@ -1542,10 +1588,12 @@ export default function Emails() {
                   ) : loading ? (
                     <div className="text-center py-12 text-muted-foreground">Loading…</div>
                   ) : filteredEmails.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Mail className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{searchQuery ? (hasNextPage ? 'No matching emails loaded yet' : 'No matching emails') : `No emails in ${currentFolder}`}</p>
-                    </div>
+                    <EmailListEmptyState
+                      folder={currentFolder}
+                      searchQuery={searchQuery}
+                      hasNextPage={hasNextPage}
+                      dateFilter={dateFilter}
+                    />
                   ) : (
                     filteredEmails.map((email) => {
                       const isSelected = selectedEmail?.id === email.id;

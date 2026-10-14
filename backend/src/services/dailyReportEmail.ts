@@ -14,11 +14,21 @@ const num = (value: number | null | undefined) => typeof value === 'number' ? va
 const plural = (count: number, word: string, many = `${word}s`) => `${num(count)} ${count === 1 ? word : many}`;
 const pct = (part: number | null | undefined, whole: number | null | undefined) => typeof part === 'number' && whole ? `${Math.round((part / whole) * 100)}%` : null;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(word => word[0]).slice(0, 2).join('').toUpperCase() || '?';
+const usesCrmTime = (person: ReportPerson) => (person.timeSource ?? (person.profile === 'software' ? 'hubstaff' : 'crm')) === 'crm';
+function hubstaffTrackedSeconds(report: DailyReportPayload): number | null {
+  const values = report.people.filter(person => !usesCrmTime(person)).map(person => person.time.trackedSeconds)
+    .filter((value): value is number => typeof value === 'number');
+  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+}
 function duration(seconds: number | null): string {
   if (seconds === null) return '—';
   if (seconds > 0 && seconds < 60) return '<1m';
   const minutes = Math.round(seconds / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m` : `${minutes}m`;
+}
+function measuredDuration(seconds: number): string {
+  const whole = Math.floor(seconds);
+  return `${whole >= 3600 ? `${Math.floor(whole / 3600)}h ` : ''}${Math.floor((whole % 3600) / 60)}m ${whole % 60}s`;
 }
 /** Sum across people; undefined when nobody has the metric, null when any value is unavailable. */
 function sum(people: ReportPerson[], ...keys: string[]): number | null | undefined {
@@ -87,24 +97,49 @@ function sectionLine(person: ReportPerson, section: Section): Line | null {
 
 function timeLine(person: ReportPerson): Line {
   const time = person.time;
-  if (time.trackedSeconds === null) return { name: 'Time', groups: [time.status === 'restricted' ? 'Not shared with this report' : 'Hubstaff data not available yet'] };
+  if (time.trackedSeconds === null) return { name: 'Hubstaff time', groups: [time.status === 'restricted' ? 'Not shared with this report' : 'Hubstaff data not available yet'] };
   const activity = time.inputActivityPercent === null ? null : Math.round(time.inputActivityPercent);
   const entries: [number | null, string, (value: number) => string][] = [
     [time.trackedSeconds, 'tracked', duration], [activity, 'activity', value => `${value}%`],
-    [time.idleSeconds, 'idle', duration], [time.manualSeconds, 'manual', duration], [time.unallocatedSeconds, 'no task', duration],
+    [time.idleSeconds, 'recorded idle', duration], [time.manualSeconds, 'manual', duration], [time.unallocatedSeconds, 'no task', duration],
   ];
   const items = entries.flatMap(([value, label, format]): Item[] => value === null ? [] : [{ text: format(value), label, tone: value ? 'normal' : 'zero' }]);
-  return { name: 'Time', groups: time.status === 'complete' ? [items] : [items, `${time.status} data`] };
+  return { name: 'Hubstaff time', groups: time.status === 'complete' ? [items] : [items, `${time.status} data`] };
 }
 
+function crmInactivityLine(person: ReportPerson): Line {
+  const data = person.crmInactivity;
+  if (!data || data.status !== 'measured' || data.idleSeconds === null) return {
+    name: 'CRM time', groups: [data ? 'Unavailable — no measured CRM intervals' : 'Unavailable — not measured in this saved report'],
+  };
+  return { name: 'CRM time', groups: [[
+    { text: typeof data.activeSeconds === 'number' ? measuredDuration(data.activeSeconds) : 'Unavailable', label: 'active', tone: data.activeSeconds ? 'normal' : 'zero' },
+    { text: measuredDuration(data.idleSeconds), label: 'idle', tone: data.idleSeconds ? 'normal' : 'zero' },
+  ], `during ${measuredDuration(data.observedSeconds)} observed CRM time`] };
+}
+
+function crmBreakLine(person: ReportPerson): Line {
+  const data = person.crmInactivity;
+  if (typeof data?.breakSeconds !== 'number') return {
+    name: 'Recorded break', groups: ['Unavailable — not recorded in this saved report'],
+  };
+  return { name: 'Recorded break', groups: [
+    [{ text: measuredDuration(data.breakSeconds), label: 'total', tone: data.breakSeconds ? 'normal' : 'zero' }],
+    ...(data.breakOngoing ? ['Ongoing at report cutoff'] : []),
+  ] };
+}
+
+const timingLines = (person: ReportPerson): Line[] => usesCrmTime(person)
+  ? [crmInactivityLine(person), crmBreakLine(person)] : [timeLine(person)];
+
 function personLines(person: ReportPerson): Line[] {
-  if (person.profile === 'software') return [timeLine(person), sectionLine(person, HUBSTAFF_TASKS)].filter((line): line is Line => !!line);
+  if (person.profile === 'software') return [...timingLines(person), sectionLine(person, HUBSTAFF_TASKS)].filter((line): line is Line => !!line);
   const lines = CRM_SECTIONS.map(section => sectionLine(person, section)).filter((line): line is Line => !!line);
   // Missing tracking can mean legacy mail or an interrupted evidence write.
   const untracked = metric(person, 'emailsUntracked');
   const email = lines.find(line => line.name === 'Email');
   if (email && untracked) email.groups.push(`${plural(untracked, 'email')} without confirmed engagement tracking; counts include verified events only`);
-  return lines;
+  return [...timingLines(person), ...lines];
 }
 
 // Keep genuinely empty CRM rows short, while retaining open/overdue work,
@@ -131,11 +166,11 @@ function personView(person: ReportPerson, fullDay: boolean): PersonView {
   const overdue = total(person, overdueKeys(person));
   // Someone with no activity is listed as such, not again under each goal.
   const below = fullDay && !empty ? belowGoals(person) : [];
-  const status = empty ? { label: 'No activity', tone: 'muted' as const }
+  const status = empty ? { label: 'No work activity', tone: 'muted' as const }
     : overdue ? { label: `${num(overdue)} overdue`, tone: 'bad' as const }
       : below.length ? { label: 'Below goal', tone: 'warn' as const }
         : overdueKeys(person).some(key => typeof metric(person, key) === 'number') ? { label: 'On track', tone: 'ok' as const } : null;
-  return { person, empty, below, status, lines: empty ? [] : personLines(person) };
+  return { person, empty, below, status, lines: empty ? timingLines(person) : personLines(person) };
 }
 
 /** Plain-language watch list built only from numbers already in the report. */
@@ -157,7 +192,7 @@ function attentionItems(report: DailyReportPayload, views: PersonView[]): Attent
     if (below.length) items.push({ title: `Below daily ${kind} goal`, people: below });
   }
   const idle = who(view => view.empty ? '' : null);
-  if (idle.length) items.push({ title: 'No activity recorded', people: idle });
+  if (idle.length) items.push({ title: 'No work activity recorded', people: idle });
   return items;
 }
 const MAX_NAMES = 5;
@@ -171,6 +206,7 @@ interface Note { text: string; bad?: boolean }
 interface Tile { label: string; value: string; notes: Note[] }
 function summaryTiles(report: DailyReportPayload): Tile[] {
   const people = report.people, crm = people.filter(person => person.profile !== 'software');
+  const hubstaffTime = hubstaffTrackedSeconds(report);
   const tile = (label: string, value: number | null | undefined, ...notes: (Note | null)[]): Tile[] =>
     value === undefined ? [] : [{ label, value: num(value), notes: notes.filter((note): note is Note => !!note) }];
   // Notes are left out when their number is missing or unavailable; alerts also when zero.
@@ -180,7 +216,7 @@ function summaryTiles(report: DailyReportPayload): Tile[] {
   const tasks = (kind: TaskKind) => teamTasks(report, kind).value;
   const tasksMissing = teamTasks(report, 'Completed').partial ? { text: 'some data not available' } : null;
   if (!crm.length) return [
-    ...(report.summary.trackedSeconds === null ? [] : [{ label: 'Time tracked', value: duration(report.summary.trackedSeconds), notes: [{ text: plural(report.summary.people, 'person', 'people') }] }]),
+    ...(hubstaffTime === null ? [] : [{ label: 'Hubstaff tracked', value: duration(hubstaffTime), notes: [] }]),
     ...tile('Tasks done', tasks('Completed'), count(tasks('Worked'), 'worked on'), tasksMissing),
     ...tile('Tasks open', tasks('Open'), alert(tasks('Overdue'), 'overdue')),
   ];
@@ -209,12 +245,14 @@ function summaryTiles(report: DailyReportPayload): Tile[] {
 }
 
 function coverageNotice(report: DailyReportPayload): string {
-  const crm = report.people.some(person => person.profile !== 'software');
+  const hubstaffPeople = report.people.filter(person => !usesCrmTime(person) || person.profile === 'software');
+  if (!hubstaffPeople.length) return '';
+  const crm = report.people.some(usesCrmTime);
   if (report.sources.length && report.sources.every(source => source.status === 'not_connected')) {
-    return `Hubstaff not connected. ${crm ? 'CRM results are included.' : 'Task and time data are unavailable.'}`;
+    return `Hubstaff not connected. ${crm ? 'Available CRM results and measured CRM time are independent of Hubstaff.' : 'Hubstaff task and time data are unavailable.'}`;
   }
-  if (report.sources.some(source => source.status !== 'synced') || report.people.some(person => person.time.status !== 'complete')) {
-    return `Hubstaff data is incomplete for some users.${crm ? ' Available CRM results are included.' : ''}`;
+  if (report.sources.some(source => source.status !== 'synced') || hubstaffPeople.some(person => person.time.status !== 'complete')) {
+    return `Hubstaff data is incomplete for some users.${crm ? ' Available CRM results and measured CRM time are independent of Hubstaff.' : ''}`;
   }
   return '';
 }
@@ -237,7 +275,7 @@ function lineHtml(line: Line) {
 }
 
 const DEPARTMENTS: Record<string, string> = { software: 'Software / IT', marketing_sales: 'Marketing / Sales', recruitment: 'Recruitment', general: 'Other teams' };
-const FOOTNOTE = 'Gray = nothing recorded. Red = needs attention (bounced or overdue). — = not available. Sent counts emails accepted for sending; replies are also counted in received. Delivered, bounced, opened and clicked count each person an email was sent to, as reported by SendGrid when this report was saved. Opens are estimates: some mail apps load or block images automatically. Open and overdue show the status when this report was saved.';
+const FOOTNOTE = 'Gray = nothing recorded. Red = needs attention (bounced or overdue). — = not available. CRM active and idle time apply to non-IT roles and count measured intervals only; unobserved time is unknown. Active includes the configured inactivity grace period. Recorded breaks run from explicit start to explicit end or logout, including offline time, and are excluded from active, idle and observed CRM time. An ongoing break is counted only up to the report cutoff. These values do not measure total working time, computer inactivity or work quality and are separate from Hubstaff time. Sent counts emails accepted for sending; replies are also counted in received. Delivered, bounced, opened and clicked count each person an email was sent to, as reported by SendGrid when this report was saved. Opens are estimates: some mail apps load or block images automatically. Open and overdue show the status when this report was saved.';
 
 /** Shared calculations keep the saved report screen and delivered email consistent. */
 function prepareDailyReport(report: DailyReportPayload) {
@@ -246,7 +284,8 @@ function prepareDailyReport(report: DailyReportPayload) {
   const tiles = summaryTiles(report);
   const views = report.people.map(person => personView(person, fullDay));
   const attention = attentionItems(report, views);
-  const tracked = report.summary.trackedSeconds === null ? '' : ` · ${duration(report.summary.trackedSeconds)} tracked`;
+  const hubstaffTime = hubstaffTrackedSeconds(report);
+  const tracked = hubstaffTime === null ? '' : ` · ${duration(hubstaffTime)} Hubstaff tracked`;
   const headline = `${plural(report.summary.people, 'person', 'people')}${tracked} · ${report.timezone}`;
   const groups = [...new Set([...report.profiles, ...report.people.map(person => person.profile)])]
     .map(profile => ({ key: profile, label: DEPARTMENTS[profile] ?? profile, views: views.filter(view => view.person.profile === profile) }))
@@ -292,8 +331,8 @@ export function buildDailyReportPresentation(report: DailyReportPayload): DailyR
         roleLabel: formatRoleLabel(person.role),
         empty,
         status,
-        trackedLabel: person.time.trackedSeconds === null ? null
-          : `${duration(person.time.trackedSeconds)} tracked${person.time.status === 'complete' ? '' : ` (${person.time.status})`}`,
+        trackedLabel: usesCrmTime(person) || person.time.trackedSeconds === null ? null
+          : `${duration(person.time.trackedSeconds)} Hubstaff tracked${person.time.status === 'complete' ? '' : ` (${person.time.status})`}`,
         lines,
       })),
     })),
@@ -307,14 +346,14 @@ export function renderDailyReport(report: DailyReportPayload, url: string) {
 
   const personCard = ({ person, empty, status, lines }: PersonView) => {
     const tag = status ? `<span style="display:inline-block;font-size:10.5px;font-weight:bold;border-radius:99px;padding:2px 8px;background:${TAG[status.tone][0]};color:${TAG[status.tone][1]}">${escape(status.label)}</span>` : '';
-    const trackedLine = person.time.trackedSeconds === null ? '' : `<div style="font-size:11px;color:${C.muted};margin-top:3px">${escape(duration(person.time.trackedSeconds))} tracked${person.time.status === 'complete' ? '' : ` (${escape(person.time.status)})`}</div>`;
+    const trackedLine = usesCrmTime(person) || person.time.trackedSeconds === null ? '' : `<div style="font-size:11px;color:${C.muted};margin-top:3px">${escape(duration(person.time.trackedSeconds))} Hubstaff tracked${person.time.status === 'complete' ? '' : ` (${escape(person.time.status)})`}</div>`;
     const header = `<tr><td colspan="2" style="background:#f8fafc;border-bottom:1px solid ${C.line};padding:9px 12px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
       <td width="38" valign="middle"><div style="width:28px;height:28px;border-radius:14px;background:#e0f2f1;color:${C.teal};font-size:11px;font-weight:bold;text-align:center;line-height:28px">${escape(initials(person.name))}</div></td>
       <td valign="middle"><a href="${escape(personUrl(person))}" style="color:${C.ink};font-size:14px;font-weight:bold;text-decoration:none">${escape(person.name)} ↗</a><div style="font-size:11px;color:${C.muted}">${escape(formatRoleLabel(person.role))} · ${escape(person.agencyName)}</div></td>
       <td align="right" valign="middle" style="white-space:nowrap">${tag}${trackedLine}</td></tr></table></td></tr>`;
-    const rows = empty
-      ? `<tr><td colspan="2" style="padding:8px 12px 10px;font-size:11.5px;color:${C.muted}">No activity recorded.</td></tr>`
-      : lines.map((line, index) => {
+    const rows = (empty
+      ? `<tr><td colspan="2" style="padding:8px 12px 10px;font-size:11.5px;color:${C.muted}">No work activity recorded.</td></tr>`
+      : '') + lines.map((line, index) => {
         const border = index ? `border-top:1px solid ${C.row};` : '';
         return `<tr><td width="92" valign="top" style="${border}padding:6px 8px 6px 12px;font-size:11.5px;color:${C.muted};font-weight:bold;white-space:nowrap">${escape(line.name)}</td><td valign="top" style="${border}padding:6px 12px 6px 0;font-size:12.5px;line-height:1.55;color:${C.text}">${lineHtml(line)}</td></tr>`;
       }).join('');
@@ -352,8 +391,8 @@ export function renderDailyReport(report: DailyReportPayload, url: string) {
     tiles.map(item => `${item.label}: ${item.value}${item.notes.length ? ` (${item.notes.map(entry => entry.text).join(' · ')})` : ''}`).join('\n'),
     attention.length ? ['Needs attention:', ...attention.map(item => `- ${item.title}: ${item.people ? names(item.people, (name, value) => `${name}${value ? ` ${value}` : ''}`, ', ') : item.detail}`)].join('\n') : '',
     ...groups.map(group => [`${group.label.toUpperCase()} (${group.views.length})`, ...group.views.map(({ person, empty, status, lines }) => {
-      const head = [person.name, `${formatRoleLabel(person.role)} · ${person.agencyName}`, status?.label, person.time.trackedSeconds === null ? '' : `${duration(person.time.trackedSeconds)} tracked`].filter(Boolean).join(' — ');
-      const body = empty ? ['  No activity recorded.'] : lines.map(line => `  ${`${line.name}:`.padEnd(TEXT_LABEL_WIDTH)}${lineText(line)}`);
+      const head = [person.name, `${formatRoleLabel(person.role)} · ${person.agencyName}`, status?.label, usesCrmTime(person) || person.time.trackedSeconds === null ? '' : `${duration(person.time.trackedSeconds)} Hubstaff tracked`].filter(Boolean).join(' — ');
+      const body = [...(empty ? ['  No work activity recorded.'] : []), ...lines.map(line => `  ${`${line.name}:`.padEnd(TEXT_LABEL_WIDTH)}${lineText(line)}`)];
       return [head, ...body, `  Details: ${personUrl(person)}`].join('\n');
     })].join('\n\n')),
     `Open full report (CRM access required): ${url}`, FOOTNOTE,
