@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { apiFetch, fetchAccessibleAgencies } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
-import { useCanAccessMultipleAgencies, useHasPermission } from '@/lib/access';
-import { useEffectiveUser } from '@/lib/effectiveUser';
+import { useHasPermission } from '@/lib/access';
 import { CheckInWidget } from '@/components/dashboard/CheckInWidget';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,9 +15,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Clock, ChevronLeft, ChevronRight, Users, CalendarDays, Loader2, RefreshCw } from 'lucide-react';
-import { format, parseISO, startOfMonth, addMonths, subMonths } from 'date-fns';
+import { DateRangeFilterRow } from '@/components/DateRangeFilterRow';
+import { ScopeFilterBar } from '@/components/ScopeFilterBar';
+import { StickyHeader } from '@/components/StickyHeader';
+import { useAttendanceDateFilter } from '@/hooks/useAttendanceDateFilter';
+import { useScopeFilter } from '@/hooks/useElevatedScopeFilter';
+import { useScopeQueryParams } from '@/hooks/useScopeQueryParams';
+import { attendanceEmptyMessage } from '@/lib/attendanceDateRange';
+import { ATTENDANCE_PERIOD_OPTIONS } from '@/lib/dateRangeFilter';
+import { Clock, Users, CalendarDays, Loader2, RefreshCw } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 
 interface AttendanceRecord {
   id: string;
@@ -43,27 +49,12 @@ function formatTime(iso: string): string {
   return format(parseISO(iso), 'h:mm a');
 }
 
-function MonthNav({ month, onChange }: { month: Date; onChange: (d: Date) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" size="icon" onClick={() => onChange(subMonths(month, 1))}>
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-      <span className="text-sm font-medium w-28 text-center">{format(month, 'MMMM yyyy')}</span>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => onChange(addMonths(month, 1))}
-        disabled={format(addMonths(month, 1), 'yyyy-MM') > format(new Date(), 'yyyy-MM')}
-      >
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-    </div>
-  );
-}
+const NO_RECORDS: AttendanceRecord[] = [];
 
 function RecordRow({ record }: { record: AttendanceRecord }) {
-  const date = format(parseISO(record.date), 'EEE, MMM d');
+  // `date` is a DATE column serialised as midnight UTC; parsing the whole instant would show the previous
+  // day to anyone west of UTC, so read just the calendar day.
+  const date = format(parseISO(record.date.slice(0, 10)), 'EEE, MMM d');
   const checkIn = formatTime(record.checkInAt);
   const checkOut = record.checkOutAt ? formatTime(record.checkOutAt) : null;
   const duration = record.totalMinutes != null ? formatMinutes(record.totalMinutes) : null;
@@ -87,7 +78,7 @@ function RecordRow({ record }: { record: AttendanceRecord }) {
   );
 }
 
-function AllEmployeesTable({ records }: { records: AttendanceRecord[] }) {
+function AllEmployeesTable({ records, emptyMessage }: { records: AttendanceRecord[]; emptyMessage: string }) {
   const byUser: Record<string, AttendanceRecord[]> = {};
   for (const r of records) {
     if (!byUser[r.userId]) byUser[r.userId] = [];
@@ -124,7 +115,7 @@ function AllEmployeesTable({ records }: { records: AttendanceRecord[] }) {
         );
       })}
       {Object.keys(byUser).length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">No attendance records this month.</p>
+        <p className="text-sm text-muted-foreground text-center py-8">{emptyMessage}</p>
       )}
     </div>
   );
@@ -133,41 +124,56 @@ function AllEmployeesTable({ records }: { records: AttendanceRecord[] }) {
 export default function Attendance() {
   const queryClient = useQueryClient();
   const canViewAll = useHasPermission('attendance:view_all');
-  const user = useAuthStore((state) => state.user);
-  const userId = user?.id;
+  const userId = useAuthStore((state) => state.user?.id);
   const permissions = useAuthStore((state) => state.permissions);
-  const canAccessMultipleAgencies = useCanAccessMultipleAgencies();
-  const effectiveUser = useEffectiveUser();
-  const [agencyId, setAgencyId] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
-  const [month, setMonth] = useState<Date>(startOfMonth(new Date()));
+  const dateFilter = useAttendanceDateFilter();
   const [selectedView, setView] = useState<'mine' | 'all' | null>(null);
   const view = canViewAll ? selectedView ?? 'all' : 'mine';
-  const showAgencyPicker = canViewAll && (user?.role === 'super_admin' || canAccessMultipleAgencies);
-  const { data: accessibleAgencies = [], isLoading: agenciesLoading } = useQuery({
-    queryKey: ['attendance-agencies', userId, user?.role, permissions, effectiveUser.isActingAs, effectiveUser.subCompanyId],
-    queryFn: fetchAccessibleAgencies,
-    enabled: showAgencyPicker,
-  });
-  const agencies = effectiveUser.isActingAs
-    ? accessibleAgencies.filter((agency) => agency.id === effectiveUser.subCompanyId)
-    : accessibleAgencies;
-  const monthParam = format(month, 'yyyy-MM');
-  const currentMonth = monthParam === format(new Date(), 'yyyy-MM');
-  const { data: records = [], isLoading: loading, isFetching, isError, refetch } = useQuery({
-    queryKey: ['attendance-records', userId, monthParam, view, agencyId, searchParams.get('linkedUserId'), permissions],
+
+  // The same agency / authority / manager / team chips as Clients, Tasks and Bulk Mail. They only appear for
+  // roles that have them (and only in the All Employees view); everyone else keeps the plain agency-wide list.
+  const scopeFilter = useScopeFilter();
+  const { showHierarchyFilters, filterRowProps, agenciesLoading, agencyUsersLoading } = scopeFilter;
+  const { agencyId: scopeAgencyId, ownerIds, scopeKey } = useScopeQueryParams(scopeFilter);
+  const showScopeChips = view === 'all' && showHierarchyFilters;
+  // undefined = nobody is narrowed out. With the chips, nothing selected resolves to the viewer's own record.
+  const chipOwnerIds = showScopeChips ? ownerIds : undefined;
+  const chipAgencyId = showScopeChips ? scopeAgencyId : undefined;
+  // Chip state needs the agency and people lists before it can name owners; don't request with a half-built scope.
+  const scopeLoading = showScopeChips && (agenciesLoading || agencyUsersLoading);
+
+  const { data, isLoading: recordsLoading, isFetching, isError, refetch } = useQuery({
+    queryKey: [
+      'attendance-records', userId, dateFilter.key, view,
+      showScopeChips ? scopeKey : '', chipAgencyId ?? '', chipOwnerIds?.join(',') ?? '',
+      searchParams.get('linkedUserId'), permissions,
+    ],
     queryFn: async () => {
       const path = view === 'mine' ? '/attendance/me' : '/attendance';
-      const agencyQuery = view === 'all' && agencyId ? `subCompanyId=${encodeURIComponent(agencyId)}` : 'allAgencies=true';
-      const res = await apiFetch<{ data: AttendanceRecord[] }>(`${path}?month=${monthParam}&${agencyQuery}`);
+      const params = new URLSearchParams({ from: dateFilter.query.from, to: dateFilter.query.to });
+      if (view === 'all') {
+        // apiFetch adds the viewed agency unless subCompanyId= / allAgencies= is already in the URL.
+        if (chipAgencyId) params.set('subCompanyId', chipAgencyId);
+        else params.set('allAgencies', 'true');
+        if (chipOwnerIds && chipOwnerIds.length > 0) params.set('ownerIds', chipOwnerIds.join(','));
+      }
+      const res = await apiFetch<{ data: AttendanceRecord[]; truncated?: boolean }>(`${path}?${params.toString()}`);
       if (res.ok === false) throw new Error(res.error ?? 'Failed to load attendance records');
-      return res.data.data ?? [];
+      return { records: res.data.data ?? [], truncated: res.data.truncated === true };
     },
-    refetchInterval: view === 'all' && currentMonth ? 30_000 : false,
+    enabled: !scopeLoading,
+    // Live view only while the range includes today; a past range can't change.
+    refetchInterval: view === 'all' && dateFilter.includesToday ? 30_000 : false,
   });
+  // A disabled query (scope still loading) is not "loading" to React Query, but the page still has nothing to show.
+  const loading = recordsLoading || scopeLoading;
+  const records = data?.records ?? NO_RECORDS;
+  const truncated = data?.truncated === true;
   const myRecords = view === 'mine' ? records : [];
 
   const myTotalMins = myRecords.reduce((sum, r) => sum + (r.totalMinutes ?? 0), 0);
+  const emptyMessage = attendanceEmptyMessage(dateFilter.label);
 
   return (
     <div className="flex flex-col min-h-full p-6 gap-6">
@@ -188,7 +194,6 @@ export default function Attendance() {
               </SelectContent>
             </Select>
           )}
-          <MonthNav month={month} onChange={setMonth} />
           <Button variant="outline" size="sm" onClick={() => { void refetch(); }} disabled={isFetching}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
           </Button>
@@ -200,22 +205,29 @@ export default function Attendance() {
         <CheckInWidget key={userId} onAttendanceChange={() => { void queryClient.invalidateQueries({ queryKey: ['attendance-records', userId] }); }} />
       </section>
 
-      {view === 'all' && <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-medium">Employee Attendance — {format(month, 'MMMM yyyy')}</h2>
-          {currentMonth && <p className="text-xs text-muted-foreground mt-1">Updates every 30 seconds.</p>}
-        </div>
-        {showAgencyPicker && <div className="space-y-1.5 w-full sm:w-72">
-          <Label htmlFor="attendance-agency">Agency</Label>
-          <Select value={agencyId ?? 'all'} onValueChange={(value) => setAgencyId(value === 'all' ? null : value)} disabled={agenciesLoading}>
-            <SelectTrigger id="attendance-agency"><SelectValue placeholder="Select an agency" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All accessible agencies</SelectItem>
-              {agencies.map((agency) => <SelectItem key={agency.id} value={agency.id}>{agency.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>}
+      <StickyHeader zIndex={40}>
+        {showScopeChips && <ScopeFilterBar show={showHierarchyFilters} filterRowProps={filterRowProps} />}
+        {/* mt-4: the chip rows sit 8px apart, so the same gap here read as a fifth chip row */}
+        <DateRangeFilterRow
+          className={showScopeChips ? 'mt-4' : undefined}
+          options={ATTENDANCE_PERIOD_OPTIONS}
+          period={dateFilter.period}
+          customRange={dateFilter.customRange}
+          onPeriodChange={dateFilter.setPeriod}
+          onCustomRangeChange={dateFilter.setCustomRange}
+        />
+      </StickyHeader>
+
+      {view === 'all' && <div>
+        <h2 className="text-sm font-medium">Employee Attendance — {dateFilter.caption}</h2>
+        {dateFilter.includesToday && <p className="text-xs text-muted-foreground mt-1">Updates every 30 seconds.</p>}
       </div>}
+
+      {!loading && !isError && truncated && (
+        <p role="status" className="text-xs text-amber-600">
+          Showing only the most recent records. Narrow the date range{view === 'all' ? ' or the people selected above' : ''} to see the rest.
+        </p>
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-16">
@@ -250,11 +262,11 @@ export default function Attendance() {
           )}
           <Card>
             <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm font-medium text-muted-foreground">My Records — {format(month, 'MMMM yyyy')}</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">My Records — {dateFilter.caption}</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
               {myRecords.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No attendance records this month.</p>
+                <p className="text-sm text-muted-foreground text-center py-8">{emptyMessage}</p>
               ) : (
                 myRecords.map((r) => <RecordRow key={r.id} record={r} />)
               )}
@@ -264,7 +276,7 @@ export default function Attendance() {
       )}
 
       {!loading && !isError && view === 'all' && (
-        <AllEmployeesTable records={records} />
+        <AllEmployeesTable records={records} emptyMessage={emptyMessage} />
       )}
     </div>
   );
