@@ -12,6 +12,7 @@ import { AgencyBulkEmailConversionCard } from '@/components/AgencyBulkEmailConve
 import { MyConversionRateCard } from '@/components/MyConversionRateCard';
 import { useReportData, type ReportRawData } from '@/hooks/useReportData';
 import { CrmTimeReportCard } from '@/components/reports/CrmTimeReportCard';
+import { EmailActivityReportCard } from '@/components/reports/EmailActivityReportCard';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { PersonCardIdentity } from '@/components/PersonSectionHeader';
 import { StickyHeader } from '@/components/StickyHeader';
@@ -220,6 +221,10 @@ function UserFullReportSection({
 
       <CardContent className="pt-4 space-y-4">
         <CrmTimeReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" userIds={[user.id]}
+          names={{ [user.id]: fullName }}
+        />
+        <EmailActivityReportCard
           dateFrom={dateFrom} dateTo={dateTo} scope="all" userIds={[user.id]}
           names={{ [user.id]: fullName }}
         />
@@ -543,6 +548,10 @@ function AgencyReportSection({
 
       <CardContent className="pt-4 space-y-3">
         <CrmTimeReportCard
+          dateFrom={dateFrom} dateTo={dateTo} scope="all" agencyIds={[agency.id]}
+          userIds={ownerIds} names={Object.fromEntries(users.map(user => [user.id, user.name]))}
+        />
+        <EmailActivityReportCard
           dateFrom={dateFrom} dateTo={dateTo} scope="all" agencyIds={[agency.id]}
           userIds={ownerIds} names={Object.fromEntries(users.map(user => [user.id, user.name]))}
         />
@@ -1931,12 +1940,21 @@ function SalesReports() {
       {reportView === 'activity' && !useGlobalDbReports && (<>
 
       {!showAgencySections && !showAllTeamView && (
-        <CrmTimeReportCard
-          dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
-          agencyIds={reportAgencyId ? [reportAgencyId] : undefined}
-          userIds={isElevated ? reportOwnerIds : selectedUserIds}
-          names={Object.fromEntries(activeSelectedUsers.map(user => [user.id, user.name]))}
-        />
+        <>
+          <CrmTimeReportCard
+            dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
+            agencyIds={reportAgencyId ? [reportAgencyId] : undefined}
+            userIds={isElevated ? reportOwnerIds : selectedUserIds}
+            names={Object.fromEntries(activeSelectedUsers.map(user => [user.id, user.name]))}
+          />
+          {/* Same scope as the time card, so the agency / manager / user filters pick whose email counts show. */}
+          <EmailActivityReportCard
+            dateFrom={effectiveDateFrom} dateTo={effectiveDateTo} scope={reportScope}
+            agencyIds={reportAgencyId ? [reportAgencyId] : undefined}
+            userIds={isElevated ? reportOwnerIds : selectedUserIds}
+            names={Object.fromEntries(activeSelectedUsers.map(user => [user.id, user.name]))}
+          />
+        </>
       )}
 
       {/* Loading State — hidden in "All agencies" mode (each section has its own loader) */}

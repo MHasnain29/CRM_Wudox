@@ -105,9 +105,14 @@ export interface CrmTimeReport {
   people: { userId: string; name: string; role: string; agencyId: string | null; timeSource: 'crm' | 'hubstaff'; crmInactivity?: CrmInactivity; currentTracking?: CurrentCrmTracking }[];
 }
 
-/** Filters only narrow the current account's live permissions and agency audience. */
-export async function buildCrmTimeReport(userId: string, rawQuery: unknown, now = new Date()): Promise<CrmTimeReport> {
-  const query = crmTimeReportQuerySchema.parse(rawQuery);
+/**
+ * Who a viewer may read in a Reports-page card, shared so cards fed by the same filters never disagree.
+ * Filters only narrow the current account's live permissions and agency audience.
+ * Returns null when an explicit agency filter names no agency the viewer may read.
+ */
+export async function resolveReportPeople(
+  userId: string, query: z.infer<typeof crmTimeReportQuerySchema>,
+): Promise<{ agencyIds: string[]; people: CrmTimeUser[] } | null> {
   const viewer = await prisma.user.findUnique({ where: { id: userId }, select: crmTimeUserSelect });
   if (!viewer?.isActive) throw Object.assign(new Error('Account unavailable'), { status: 403 });
   const token = userToken(viewer);
@@ -117,12 +122,8 @@ export async function buildCrmTimeReport(userId: string, rawQuery: unknown, now 
   }
   const agencyIds = [...new Set(query.agencyIds === undefined ? permittedAgencyIds
     : query.agencyIds.filter(id => permittedAgencyIds.includes(id)))];
-  const from = new Date(query.from);
-  const to = new Date(query.to);
-  const cutoff = new Date(Math.min(to.getTime(), now.getTime()));
-  const empty: CrmTimeReport = { from: from.toISOString(), to: to.toISOString(), asOf: cutoff.toISOString(), people: [] };
   // An explicit inaccessible filter must never silently fall back to all agencies.
-  if (query.agencyIds !== undefined && !agencyIds.length) return empty;
+  if (query.agencyIds !== undefined && !agencyIds.length) return null;
 
   const selectedIds = query.userIds ? new Set(query.userIds) : null;
   const broad = canAccessMultipleAgencies(access) || canViewAllDataInAgency(access);
@@ -164,7 +165,19 @@ export async function buildCrmTimeReport(userId: string, rawQuery: unknown, now 
       if (ownAgencies.every(id => permittedAgencyIds.includes(id)) && agencyIds.some(id => ownAgencies.includes(id))) audience.set(person.id, person);
     }
   }
-  const people = [...audience.values()].sort((a, b) => a.id.localeCompare(b.id));
+  return { agencyIds, people: [...audience.values()].sort((a, b) => a.id.localeCompare(b.id)) };
+}
+
+/** Filters only narrow the current account's live permissions and agency audience. */
+export async function buildCrmTimeReport(userId: string, rawQuery: unknown, now = new Date()): Promise<CrmTimeReport> {
+  const query = crmTimeReportQuerySchema.parse(rawQuery);
+  const from = new Date(query.from);
+  const to = new Date(query.to);
+  const cutoff = new Date(Math.min(to.getTime(), now.getTime()));
+  const empty: CrmTimeReport = { from: from.toISOString(), to: to.toISOString(), asOf: cutoff.toISOString(), people: [] };
+  const audience = await resolveReportPeople(userId, query);
+  if (!audience) return empty;
+  const { agencyIds, people } = audience;
   // The loader returns unavailable, never invented active/idle zeroes, for an
   // empty or wholly future window and does not query observations in that case.
   const [timing, currentTracking] = await Promise.all([
